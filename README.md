@@ -81,6 +81,32 @@ pytest --log-cli-level=INFO test/spark_partition_aware_deduplicattion_v2_integra
 ## local UI monitoring
 http://192.168.100.130:4040/
 
+# Terraform
+Note ethat terraform init will create .terraform.locl.hcl file 
+for dependency package control. We need to upload this file to git as well.
+
+one-off command
+```
+terraform init
+```
+
+```
+terraform apply 
+```
+
+Note - you need to create your own terraform.tfvars file looks like this:
+```
+cluster_name   = "" # EMR cluster name
+subnet_id      = "subnet-xxxxxx"          # Your subnet ID
+vpc_id         = "vpc-xxxxxx"             # Your VPC ID
+scripts_bucket = ""        # Your S3 bucket name
+```
+
+How to cleanup
+```
+terraform destroy
+```
+
 # math behind
 
 1.128 sampling called min hash
