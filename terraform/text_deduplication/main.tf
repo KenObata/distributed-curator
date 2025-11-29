@@ -174,6 +174,12 @@ resource "aws_iam_role_policy_attachment" "emr_service_policy" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEMRServicePolicy_v2"
 }
 
+# Additional EC2 permissions for EMR service role
+resource "aws_iam_role_policy_attachment" "emr_service_ec2_full" {
+  role       = aws_iam_role.emr_service_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
+}
+
 # IAM Role for EC2 Instances (Instance Profile)
 resource "aws_iam_role" "emr_ec2_role" {
   name = "${var.cluster_name}-ec2-role"
@@ -259,6 +265,56 @@ resource "aws_iam_instance_profile" "emr_ec2_profile" {
 # Get current AWS account ID
 data "aws_caller_identity" "current" {}
 
+# Add S3 permissions to EMR_EC2_DefaultRole for bootstrap scripts and Common Crawl
+resource "aws_iam_role_policy" "emr_ec2_default_s3_access" {
+  name = "${var.cluster_name}-ec2-s3-access"
+  role = "EMR_EC2_DefaultRole"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowScriptsBucketAccess"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:ListBucket",
+          "s3:PutObject"
+        ]
+        Resource = [
+          "arn:aws:s3:::${var.scripts_bucket}-${data.aws_caller_identity.current.account_id}",
+          "arn:aws:s3:::${var.scripts_bucket}-${data.aws_caller_identity.current.account_id}/*"
+        ]
+      },
+      {
+        Sid    = "AllowCommonCrawlAccess"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          "arn:aws:s3:::commoncrawl",
+          "arn:aws:s3:::commoncrawl/*"
+        ]
+      },
+      {
+        Sid    = "AllowEMRLogsBucket"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:ListBucket",
+          "s3:PutObject"
+        ]
+        Resource = [
+          "arn:aws:s3:::${var.scripts_bucket}-emr-logs-${data.aws_caller_identity.current.account_id}",
+          "arn:aws:s3:::${var.scripts_bucket}-emr-logs-${data.aws_caller_identity.current.account_id}/*"
+        ]
+      }
+    ]
+  })
+}
+
 # S3 bucket for scripts and data (name must be globally unique)
 resource "aws_s3_bucket" "scripts_bucket" {
   bucket = "${var.scripts_bucket}-${data.aws_caller_identity.current.account_id}"
@@ -297,13 +353,14 @@ resource "aws_emr_cluster" "dedup_cluster" {
   release_label = "emr-7.12.0"
   applications  = ["Spark", "Hadoop", "Hive", "JupyterEnterpriseGateway", "Livy"]
 
-  service_role = aws_iam_role.emr_service_role.arn
+  # service_role = aws_iam_role.emr_service_role.arn # permission error
+  service_role = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/EMR_DefaultRole"
 
   ec2_attributes {
     subnet_id                         = var.subnet_id
     # emr_managed_master_security_group = aws_security_group.emr_master.id # let EMR manage its own security
     # emr_managed_slave_security_group  = aws_security_group.emr_core.id # let EMR manage its own security
-    instance_profile                  = aws_iam_instance_profile.emr_ec2_profile.arn
+    instance_profile                  = "arn:aws:iam::REDACTED_ACCOUNT_ID:instance-profile/EMR_EC2_DefaultRole"
     key_name                          = aws_key_pair.emr_key.key_name
   }
 
