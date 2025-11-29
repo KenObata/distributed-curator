@@ -102,19 +102,29 @@ vpc_id         = "vpc-xxxxxx"             # Your VPC ID
 scripts_bucket = ""        # Your S3 bucket name
 ```
 
+upon succes, you should see terminal output:
+cluster_id = "j-xxxx"
+master_public_dns = "ec2-xx-xxx-xxx-xx.compute-1.amazonaws.com"
+private_key_file = "./your-emr-key.pem"
+private_key_pem = <sensitive>
+spark_submit_example = "spark-submit --master yarn --deploy-mode cluster s3://text-deduplication/scripts/deduplication_benchmark.py"
+spark_ui_url = "http://ec2-34-203-229-18.compute-1.amazonaws.com:4040"
+ssh_command = "ssh -i ./your-emr-key.pem hadoop@ec2-34-203-229-18.compute-1.amazonaws.com"
+yarn_ui_url = "http://ec2-34-203-229-18.compute-1.amazonaws.com:8088"
+
 Step2:
 then run these
 ```
 terraform output master_public_dns
 ```
 
-Step3: upload your requirements.txt to S3:
+Step3: upload your requirements.txt to S3:xw
 ```
-aws s3 cp requirements.txt s3://your-scripts-bucket/scripts/
-```
+aws s3 cp requirements.txt s3://your-scripts-bucket/scripts/```
 Then from SSH session on the master node:
 
 ```
+ssh -i ./your-emr-key.pem hadoop@<master-public-dns>
 aws s3 cp s3://your-scripts-bucket/scripts/requirements.txt .
 sudo pip3 install -r requirements.txt
 ```
@@ -128,7 +138,15 @@ Step 4: Upload Your Deduplication Script to S3
 ```
 aws s3 cp your_dedup_script.py s3://your-scripts-bucket/scripts/
 ```
-Step 5: Run Your Benchmark
+
+Step4: install YARN(8088), Spark UI (4040)
+```
+ssh -L 8888:localhost:8888 hadoop@<master>
+ssh -L 8088:localhost:8088 hadoop@<master>
+ssh -L 4040:localhost:4040 hadoop@<master>
+```
+
+Step 6: Run Your Benchmark
 Option A — From SSH session:
 ```
 spark-submit \
@@ -141,6 +159,22 @@ How to cleanup
 ```
 terraform destroy
 ```
+
+## Terraform trouble shooting.
+
+### terraform destroy
+- An error occurred (DependencyViolation) when calling the DeleteSecurityGroup operation: resource sg-06e7dd56aad4ff534 has a dependent object
+    - First check child (=executor EC2's security group deoending on parent (=driver) security group.)
+        - ```aws ec2 describe-security-groups --filters "Name=ip-permission.group-id,Values=sg-06e7dd56aad4ff534" --query 'SecurityGroups[*].[GroupId,GroupName]' --output table```
+        - then ```aws ec2 delete-security-group --group-id {response from above step}```
+        - then delete master ```aws ec2 delete-security-group --group-name text-dedupe-benchmark-master-stg```
+    - alternatively, try if this works for clean up secutiry group
+        - ```# Delete the security groups again
+            aws ec2 delete-security-group --group-name text-dedupe-benchmark-core-sg
+            aws ec2 delete-security-group --group-name text-dedupe-benchmark-master-sg
+          ```
+        - 
+
 
 # math behind
 

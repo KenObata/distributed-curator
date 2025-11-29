@@ -66,11 +66,11 @@ variable "vpc_id" {
 variable "scripts_bucket" {
   description = "S3 bucket for scripts and bootstrap actions"
   type        = string
-  default     = "text-deduplication"
+  default     = "text-deduplication" 
 }
 
 # Security Group for EMR
-resource "aws_security_group" "emr_master" {
+resource "aws_security_group" "emr_master" { # master means spark driver
   name        = "${var.cluster_name}-master-sg"
   description = "Security group for EMR master node"
   vpc_id      = var.vpc_id
@@ -83,29 +83,31 @@ resource "aws_security_group" "emr_master" {
     cidr_blocks = ["0.0.0.0/0"]  # Restrict to your IP in production
   }
 
+  # Spark UI and YARN commented out because 
+  # EMR doesn't allow security groups with public access to ports other than SSH (22).
   # Spark UI
-  ingress {
-    from_port   = 4040
-    to_port     = 4040
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  #ingress {
+  #  from_port   = 4040
+  #  to_port     = 4040
+  #  protocol    = "tcp"
+  #  cidr_blocks = ["0.0.0.0/0"]
+  #}
 
   # YARN ResourceManager
-  ingress {
-    from_port   = 8088
-    to_port     = 8088
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  #ingress {
+  #  from_port   = 8088
+  #  to_port     = 8088
+  #  protocol    = "tcp"
+  #  cidr_blocks = ["0.0.0.0/0"]
+  #}
 
   # Jupyter
-  ingress {
-    from_port   = 8888
-    to_port     = 8888
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  #ingress {
+  #  from_port   = 8888
+  #  to_port     = 8888
+  #  protocol    = "tcp"
+  #  cidr_blocks = ["0.0.0.0/0"]
+  #}
 
   egress {
     from_port   = 0
@@ -119,7 +121,7 @@ resource "aws_security_group" "emr_master" {
   }
 }
 
-resource "aws_security_group" "emr_core" {
+resource "aws_security_group" "emr_core" { # core means spark executors
   name        = "${var.cluster_name}-core-sg"
   description = "Security group for EMR core nodes"
   vpc_id      = var.vpc_id
@@ -318,6 +320,7 @@ resource "aws_iam_role_policy" "emr_ec2_default_s3_access" {
 # S3 bucket for scripts and data (name must be globally unique)
 resource "aws_s3_bucket" "scripts_bucket" {
   bucket = "${var.scripts_bucket}-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true # destroy including existing S3 files
 }
 
 # Wait for S3 bucket to propagate (eventual consistency)
@@ -329,6 +332,20 @@ resource "time_sleep" "wait_for_bucket" {
 # S3 bucket for logs
 resource "aws_s3_bucket" "emr_logs" {
   bucket = "${var.scripts_bucket}-emr-logs-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true
+}
+
+# useful for uploading local files
+variable "scripts_source_src_dir" {
+  description = "Path to the directory containing Python scripts"
+  type        = string
+  default     = "../../src"
+}
+
+variable "scripts_source_test_dir" {
+  description = "Path to the directory containing Python scripts"
+  type        = string
+  default     = "../../test"
 }
 
 # Bootstrap action script
@@ -347,6 +364,33 @@ resource "aws_s3_object" "bootstrap_script" {
   EOF
 }
 
+# Upload requirements.txt to S3
+resource "aws_s3_object" "requirements" {
+  bucket = aws_s3_bucket.scripts_bucket.id
+  key    = "scripts/requirements.txt"
+  source = "${path.module}/requirements.txt"  # Local file path
+  
+  depends_on = [time_sleep.wait_for_bucket]
+}
+
+# Upload deduplication script to S3
+resource "aws_s3_object" "dedup_script" {
+  bucket = aws_s3_bucket.scripts_bucket.id
+  key    = "scripts/spark_partition_aware_deduplicattion_v2.py"
+  source = "${path.module}/${var.scripts_source_src_dir}/spark_partition_aware_deduplicattion_v2.py"
+  
+  depends_on = [time_sleep.wait_for_bucket]
+}
+
+# Upload integration test script to S3
+resource "aws_s3_object" "integration_test_script" {
+  bucket = aws_s3_bucket.scripts_bucket.id
+  key    = "scripts/spark_partition_aware_deduplicattion_v2_integration_test.py"
+  source = "${path.module}/${var.scripts_source_test_dir}/spark_partition_aware_deduplicattion_v2.py"
+  
+  depends_on = [time_sleep.wait_for_bucket]
+}
+
 # EMR Cluster
 resource "aws_emr_cluster" "dedup_cluster" {
   name          = var.cluster_name
@@ -362,6 +406,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
     # emr_managed_slave_security_group  = aws_security_group.emr_core.id # let EMR manage its own security
     instance_profile                  = "arn:aws:iam::REDACTED_ACCOUNT_ID:instance-profile/EMR_EC2_DefaultRole"
     key_name                          = aws_key_pair.emr_key.key_name
+    additional_master_security_groups = aws_security_group.emr_master.id
   }
 
   # Primary (Master) node - On-Demand
@@ -385,7 +430,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
     instance_count = 4
     name           = "Core"
 
-    bid_price = "0.10"  # Spot price (slightly above current $0.088)
+    # bid_price = "0.10"  # Spot price (slightly above current $0.088)
 
     ebs_config {
       size                 = 100
