@@ -366,7 +366,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
 
   # Primary (Master) node - On-Demand
   master_instance_group {
-    instance_type  = "r8g.xlarge"
+    instance_type  = "r5.xlarge" # "r8g.xlarge"
     instance_count = 1
     name           = "Primary"
 
@@ -381,7 +381,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
 
   # Core nodes - Spot instances for cost savings
   core_instance_group {
-    instance_type  = "r8g.xlarge"
+    instance_type  = "r5.xlarge" # "r8g.xlarge"
     instance_count = 4
     name           = "Core"
 
@@ -405,11 +405,6 @@ resource "aws_emr_cluster" "dedup_cluster" {
     }
   }
 
-  # Bootstrap action to install dependencies
-  bootstrap_action {
-    name = "Install Python dependencies"
-    path = "s3://${var.scripts_bucket}/bootstrap/install_dependencies.sh"
-  }
 
   # Spark and YARN configurations
   configurations_json = jsonencode([

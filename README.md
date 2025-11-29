@@ -89,7 +89,7 @@ one-off command
 ```
 terraform init
 ```
-
+Step1:  Get Cluster DNS
 ```
 terraform apply 
 ```
@@ -100,6 +100,41 @@ cluster_name   = "" # EMR cluster name
 subnet_id      = "subnet-xxxxxx"          # Your subnet ID
 vpc_id         = "vpc-xxxxxx"             # Your VPC ID
 scripts_bucket = ""        # Your S3 bucket name
+```
+
+Step2:
+then run these
+```
+terraform output master_public_dns
+```
+
+Step3: upload your requirements.txt to S3:
+```
+aws s3 cp requirements.txt s3://your-scripts-bucket/scripts/
+```
+Then from SSH session on the master node:
+
+```
+aws s3 cp s3://your-scripts-bucket/scripts/requirements.txt .
+sudo pip3 install -r requirements.txt
+```
+
+Or Even Simpler — Copy Directly
+```
+scp -i ./your-emr-key.pem requirements.txt hadoop@<master-public-dns>:~/
+```
+
+Step 4: Upload Your Deduplication Script to S3
+```
+aws s3 cp your_dedup_script.py s3://your-scripts-bucket/scripts/
+```
+Step 5: Run Your Benchmark
+Option A — From SSH session:
+```
+spark-submit \
+  --master yarn \
+  --deploy-mode client \
+  s3://your-scripts-bucket/scripts/spark_partition_aware_deduplicattion_v2.py
 ```
 
 How to cleanup
