@@ -357,8 +357,9 @@ resource "aws_s3_object" "bootstrap_script" {
     set -e
     
     echo "Installing Python dependencies..."
-    sudo pip3 install --upgrade pip
-    sudo pip3 install numpy mmh3 xxhash
+    pip3 install --user numpy mmh3 xxhash
+    echo "Verifying installation..."
+    python3 -c "import numpy; import mmh3; import xxhash; print('All packages installed successfully')"
     
     echo "Bootstrap complete!"
   EOF
@@ -448,6 +449,11 @@ resource "aws_emr_cluster" "dedup_cluster" {
       throughput           = 125
       volumes_per_instance = 1
     }
+  }
+
+  bootstrap_action {
+    name = "Install Python dependencies"
+    path = "s3://${aws_s3_bucket.scripts_bucket.id}/bootstrap/install_dependencies.sh"
   }
 
 
