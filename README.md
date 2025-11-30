@@ -118,9 +118,13 @@ then run these
 terraform output master_public_dns
 ```
 
-Step3: upload your requirements.txt to S3:xw
+Step3: upload your requirements.txt to S3:
+
+terraform script auto upload files to S3, so below is only if you need to manually upload files.
 ```
-aws s3 cp requirements.txt s3://your-scripts-bucket/scripts/```
+aws s3 cp requirements.txt s3://your-scripts-bucket/scripts/
+aws s3 cp {your_dedup_script.py} s3://your-scripts-bucket/scripts/
+```
 Then from SSH session on the master node:
 
 ```
@@ -134,10 +138,6 @@ Or Even Simpler — Copy Directly
 scp -i ./your-emr-key.pem requirements.txt hadoop@<master-public-dns>:~/
 ```
 
-Step 4: Upload Your Deduplication Script to S3
-```
-aws s3 cp your_dedup_script.py s3://your-scripts-bucket/scripts/
-```
 
 Step4: install YARN(8088), Spark UI (4040)
 ```

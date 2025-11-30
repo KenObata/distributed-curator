@@ -1,23 +1,26 @@
 # requirements.txt
 # Core AWS and SageMaker dependencies
 boto3>=1.34.0
-sagemaker>=2.200.0
+# sagemaker>=2.200.0
 awscli>=1.32.0
 
 # ML and data processing
-torch>=2.0.0
-torchvision>=0.15.0
-numpy>=1.24.0
+# torch>=2.0.0
+# torchvision>=0.15.0
 pandas>=2.0.0
 
 # Utilities for development
 jupyter>=1.0.0
-matplotlib>=3.7.0
-tqdm>=4.65.0
-pytest
+# matplotlib>=3.7.0
+# tqdm>=4.65.0
 
 # Optional: for advanced features later
-transformers>=4.30.0
-datasets>=2.12.0
+# transformers>=4.30.0
+# datasets>=2.12.0
+
+# packages for text deduplication
 mmh3
+xxhash
 pyspark==3.5.0
+pytest
+numpy>=1.24.0
