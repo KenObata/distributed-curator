@@ -1,0 +1,59 @@
+================================================================================
+COMMON CRAWL STRESS TEST - PARTITION-AWARE DEDUPLICATION
+================================================================================
+Loading Common Crawl WET files from: https://data.commoncrawl.org/crawl-data/CC-MAIN-2024-22/segments/1715971057216.39/wet/CC-MAIN-20240517233122-20240518023122-00000.warc.wet.gz
+Downloading WET file to local storage...
+Downloaded 86.9MB to /tmp/tmp711qm0or/wet_file.gz
+Reading local WET file with Spark...
+Counting lines in WET file...
+Read 5557271 lines from WET file
+Parsing WET format...
+Parsed 29344 records from WET file
+Creating DataFrame from parsed records...
+Applying filters...
+After filtering: 29076 records
+Taking sample...
+Preparing test data with synthetic duplicates...
+Test dataset size: 29,076 documents
+Cleaning up downloaded file...
+Starting deduplication at: 2025-11-30 22:46:33
+2025-11-30 22:46:33,297 - spark_partition_aware_deduplicattion_v2 - INFO - Starting PARTITION-AWARE deduplication...
+2025-11-30 22:46:33,298 - spark_partition_aware_deduplicattion_v2 - INFO - Parameters: threshold=0.9, hashes=64, bands=8, partitions=200
+2025-11-30 22:46:33,299 - spark_partition_aware_deduplicattion_v2 - INFO - Spark UI available at: http://ip-172-31-46-228.ec2.internal:4040
+🚀 Spark UI: http://ip-172-31-46-228.ec2.internal:4040
+2025-11-30 22:46:33,299 - spark_partition_aware_deduplicattion_v2 - INFO - Step 1: Computing MinHash signatures...
+2025-11-30 22:58:18,912 - spark_partition_aware_deduplicattion_v2 - INFO - Processing 29076 documents...
+2025-11-30 22:58:18,913 - spark_partition_aware_deduplicattion_v2 - INFO - Step 2: Computing partition assignments (KEY INNOVATION)...
+2025-11-30 22:58:26,966 - spark_partition_aware_deduplicattion_v2 - INFO - Partition assignment stats - Avg: 7.86, Min: 5, Max: 8
+2025-11-30 22:58:26,966 - spark_partition_aware_deduplicattion_v2 - INFO - Step 3: Smart partitioning - co-locating similar documents...
+2025-11-30 22:58:26,993 - spark_partition_aware_deduplicattion_v2 - INFO - Step 4: Local deduplication within partitions (NO SHUFFLE)...
+2025-11-30 22:58:50,775 - spark_partition_aware_deduplicattion_v2 - INFO - Found 3767 similar document pairs
+2025-11-30 22:58:50,776 - spark_partition_aware_deduplicattion_v2 - INFO - Step 5: Building duplicate groups...
+2025-11-30 22:58:50,787 - spark_partition_aware_deduplicattion_v2 - INFO - edges records:
+2025-11-30 22:58:57,879 - spark_utils - INFO - Documents involved in duplicates: 3767
+2025-11-30 22:58:57,946 - spark_partition_aware_deduplicattion_v2 - INFO - docs_with_duplicates:
+2025-11-30 22:59:04,875 - spark_utils - INFO - Documents involved in duplicates: 3793
+2025-11-30 22:59:04,905 - spark_partition_aware_deduplicattion_v2 - INFO - edges_group_by_src_df records:
+2025-11-30 22:59:11,438 - spark_utils - INFO - Documents involved in duplicates: 3560
+2025-11-30 22:59:11,461 - spark_partition_aware_deduplicattion_v2 - INFO - combine_src_and_connected_docs_df records:
+2025-11-30 22:59:17,708 - spark_utils - INFO - Documents involved in duplicates: 3560
+2025-11-30 22:59:17,725 - spark_partition_aware_deduplicattion_v2 - INFO - doc_id_and_representative_doc_id_df records:
+2025-11-30 22:59:24,671 - spark_utils - INFO - Documents involved in duplicates: 4071
+2025-11-30 22:59:24,776 - spark_partition_aware_deduplicattion_v2 - INFO - doc_id_and_representative_doc_id_df_deduped:
+2025-11-30 22:59:31,504 - spark_utils - INFO - Documents involved in duplicates: 3793
+2025-11-30 22:59:31,504 - spark_partition_aware_deduplicattion_v2 - INFO - Step 6: Marking duplicates...
+2025-11-30 22:59:41,392 - spark_partition_aware_deduplicattion_v2 - INFO - 
+============================================================
+2025-11-30 22:59:41,393 - spark_partition_aware_deduplicattion_v2 - INFO - PARTITION-AWARE DEDUPLICATION COMPLETE
+2025-11-30 22:59:41,393 - spark_partition_aware_deduplicattion_v2 - INFO - ============================================================
+2025-11-30 22:59:41,393 - spark_partition_aware_deduplicattion_v2 - INFO - Total documents: 29,076
+2025-11-30 22:59:41,393 - spark_partition_aware_deduplicattion_v2 - INFO - Duplicate documents: 341
+2025-11-30 22:59:41,393 - spark_partition_aware_deduplicattion_v2 - INFO - Unique documents: 28,735
+2025-11-30 22:59:41,394 - spark_partition_aware_deduplicattion_v2 - INFO - Deduplication rate: 1.17%
+2025-11-30 22:59:41,394 - spark_partition_aware_deduplicattion_v2 - INFO - Speedup vs vanilla: ~10x for large datasets
+2025-11-30 22:59:41,394 - spark_partition_aware_deduplicattion_v2 - INFO - ============================================================
+COMMON CRAWL STRESS TEST RESULTS
+================================================================================
+Processing time: 788.10 seconds
+================================================================================
+2025-11-30 22:59:42,145 - py4j.clientserver - INFO - Closing down clientserver connection
