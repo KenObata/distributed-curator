@@ -159,6 +159,10 @@ def partition_aware_deduplicate(
     # Step 1: Compute MinHash signatures
     logger.info("Step 1: Computing MinHash signatures...")
     
+    # Get partition count from Spark config
+    num_shuffle_partitions = int(spark.conf.get("spark.sql.shuffle.partitions", "200"))
+    input_df = input_df.repartition(num_shuffle_partitions)
+    
     # Create MinHash UDF
     minhash_udf = udf(
         lambda text: compute_minhash_signature(text=text, num_hashes=num_hashes, ngram=9, normalize=True),

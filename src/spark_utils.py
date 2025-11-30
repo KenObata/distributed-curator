@@ -66,6 +66,7 @@ def create_spark_session_partition_aware_emr(app_name: str = "PartitionAwareDedu
     """Create optimized Spark session for large-scale deduplication"""
     
     # these are default config, so they can be overriden
+    # do not set hadoop jar here because EMR already defines hadoop.
     spark = SparkSession.builder \
         .appName(app_name) \
         .config("spark.sql.adaptive.enabled", "true") \
@@ -77,9 +78,7 @@ def create_spark_session_partition_aware_emr(app_name: str = "PartitionAwareDedu
         .config("spark.memory.offHeap.size", "2g") \
         .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
         .config("spark.ui.enabled", "true") \
-        .config("spark.ui.port", "4040") \
         .config("spark.sql.execution.arrow.pyspark.enabled", "false") \
-        .config("spark.jars.packages", "org.apache.hadoop:hadoop-aws:3.3.4") \
         .getOrCreate()
 
     # Set log level to reduce verbosity

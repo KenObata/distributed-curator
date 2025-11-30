@@ -60,7 +60,7 @@ def test_integration_commoncrawl_sample():
             # upload to S3
             s3.upload_file(local_path, 'your-scripts-bucket', 'data/wet_file.gz')
 
-            wet_rdd = spark.read.text("s3://your-scripts-bucket/data/wet_file.gz").rdd
+            wet_rdd = spark.read.text("s3://your-scripts-bucket/data/wet_file.gz").repartition(100).rdd
             # Convert Row objects to strings
             wet_rdd = wet_rdd.map(lambda row: row.value)
             # wet_rdd = spark.sparkContext.textFile(local_path)

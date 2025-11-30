@@ -122,7 +122,7 @@ Step3: upload your requirements.txt to S3:
 
 terraform script auto upload files to S3, so below is only if you need to manually upload files.
 ```
-aws s3 cp requirements.txt s3://your-scripts-bucket/scripts/
+aws s3 cp requirements_emr.txt s3://your-scripts-bucket/scripts/
 aws s3 cp {your_dedup_script.py} s3://your-scripts-bucket/scripts/
 ```
 Then from SSH session on the master node:
@@ -142,8 +142,10 @@ scp -i ./your-emr-key.pem requirements.txt hadoop@<master-public-dns>:~/
 Step4: Exit ssh, and on your macbook, install YARN(8088), Spark UI (4040)
 ```
 ssh -i ./your-emr-key.pem -L 8888:localhost:8888 hadoop@<master>
-ssh -i ./your-emr-key.pem -L 8088:localhost:8088 hadoop@<master>
-ssh -i ./your-emr-key.pem -L 4040:localhost:4040 hadoop@<master>
+ssh -i ./your-emr-key.pem \
+  -L 8088:localhost:8088 \
+  -L 4040:ip-172-31-46-228.ec2.internal:4040 \
+  hadoop@<master-public-dns>
 ```
 Step5: setup YARN
 ```
@@ -164,7 +166,7 @@ spark-submit \
   --master yarn \
   --py-files s3://your-scripts-bucket/scripts/spark_utils.py \
   --py-files s3://your-scripts-bucket/scripts/spark_partition_aware_deduplicattion_v2.py \
-  -executor-memory 16g \
+  --executor-memory 16g \
   --driver-memory 4g \
   --deploy-mode client \
   s3://your-scripts-bucket/scripts/spark_deduplication_test.py
@@ -175,7 +177,7 @@ or use zip file
 spark-submit \
   --master yarn \
   --py-files s3://your-scripts-bucket/scripts/dependencies.zip \
-  --executor-memory 16g \
+  --executor-memory 8g \
   --driver-memory 4g \
   --conf spark.memory.offHeap.size=1g \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
