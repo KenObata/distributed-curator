@@ -386,7 +386,7 @@ resource "aws_s3_object" "dedup_script" {
 resource "aws_s3_object" "integration_test_script" {
   bucket = aws_s3_bucket.scripts_bucket.id
   key    = "scripts/spark_partition_aware_deduplicattion_v2_integration_test.py"
-  source = "${path.module}/${var.scripts_source_test_dir}/spark_partition_aware_deduplicattion_v2.py"
+  source = "${path.module}/${var.scripts_source_test_dir}/spark_partition_aware_deduplicattion_v2_integration_test.py"
   
   depends_on = [time_sleep.wait_for_bucket]
 }
