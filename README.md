@@ -129,8 +129,8 @@ Then from SSH session on the master node:
 
 ```
 ssh -i ./your-emr-key.pem hadoop@<master-public-dns>
-aws s3 cp s3://your-scripts-bucket/scripts/requirements.txt .
-sudo pip3 install -r requirements.txt
+aws s3 cp s3://your-scripts-bucket/scripts/requirements_emr.txt .
+sudo pip3 install --ignore-installed --no-cache-dir --no-deps -r requirements_emr.txt
 ```
 
 Or Even Simpler — Copy Directly
@@ -139,22 +139,50 @@ scp -i ./your-emr-key.pem requirements.txt hadoop@<master-public-dns>:~/
 ```
 
 
-Step4: install YARN(8088), Spark UI (4040)
+Step4: Exit ssh, and on your macbook, install YARN(8088), Spark UI (4040)
 ```
-ssh -L 8888:localhost:8888 hadoop@<master>
-ssh -L 8088:localhost:8088 hadoop@<master>
-ssh -L 4040:localhost:4040 hadoop@<master>
+ssh -i ./your-emr-key.pem -L 8888:localhost:8888 hadoop@<master>
+ssh -i ./your-emr-key.pem -L 8088:localhost:8088 hadoop@<master>
+ssh -i ./your-emr-key.pem -L 4040:localhost:4040 hadoop@<master>
+```
+Step5: setup YARN
+```
+source /etc/spark/conf/spark-env.sh
+export HADOOP_CONF_DIR=/etc/hadoop/conf
+export YARN_CONF_DIR=/etc/hadoop/conf
+```
+Step6: upload helper functions as zip
+```
+cd src
+zip -r dependencies.zip spark_utils.py spark_partition_aware_deduplicattion_v2.py
 ```
 
-Step 6: Run Your Benchmark
-Option A — From SSH session:
+Step 7: Run Your Benchmark
+From SSH session:
 ```
 spark-submit \
   --master yarn \
+  --py-files s3://your-scripts-bucket/scripts/spark_utils.py \
+  --py-files s3://your-scripts-bucket/scripts/spark_partition_aware_deduplicattion_v2.py \
+  -executor-memory 16g \
+  --driver-memory 4g \
   --deploy-mode client \
-  s3://your-scripts-bucket/scripts/spark_partition_aware_deduplicattion_v2.py
+  s3://your-scripts-bucket/scripts/spark_deduplication_test.py
 ```
 
+or use zip file
+```
+spark-submit \
+  --master yarn \
+  --py-files s3://your-scripts-bucket/scripts/dependencies.zip \
+  --executor-memory 16g \
+  --driver-memory 4g \
+  --conf spark.memory.offHeap.size=1g \
+  --conf spark.hadoop.fs.s3a.signing-algorithm="" \
+  --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
+  --deploy-mode client \
+  s3://your-scripts-bucket/scripts/spark_deduplication_test.py
+```
 How to cleanup
 ```
 terraform destroy

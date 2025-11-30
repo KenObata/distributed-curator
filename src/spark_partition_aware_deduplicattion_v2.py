@@ -19,7 +19,10 @@ import hashlib
 import time
 import json
 import logging
-from .spark_utils import log_dataframe
+try:
+    from .spark_utils import log_dataframe
+except:
+    from spark_utils import log_dataframe
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
