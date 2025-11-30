@@ -41,3 +41,16 @@ plot_results(results)
         - won't do. we found a problem. if we sort and store delta between
           two min hashes within a doc, it loses ordering. 
           Reminder that the ordering matters because each 128 min hash is based on different seed.
+    - complete EMR run
+        - DONE
+    - optimize UDF by vectorized UDF
+        ```
+        from pyspark.sql.functions import pandas_udf
+        import pandas as pd
+
+        @pandas_udf(ArrayType(IntegerType()))
+        def minhash_pandas_udf(texts: pd.Series) -> pd.Series:
+            return texts.apply(
+                lambda text: compute_minhash_signature(text=text, num_hashes=64, ngram=9, normalize=True)
+            )
+        ```
