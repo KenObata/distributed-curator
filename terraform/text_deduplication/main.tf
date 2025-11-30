@@ -357,7 +357,7 @@ resource "aws_s3_object" "bootstrap_script" {
     set -e
     
     echo "Installing Python dependencies..."
-    pip3 install --user numpy mmh3 xxhash
+    sudo /usr/bin/pip3 install numpy mmh3 xxhash
     echo "Verifying installation..."
     python3 -c "import numpy; import mmh3; import xxhash; print('All packages installed successfully')"
     
@@ -368,8 +368,8 @@ resource "aws_s3_object" "bootstrap_script" {
 # Upload requirements.txt to S3
 resource "aws_s3_object" "requirements" {
   bucket = aws_s3_bucket.scripts_bucket.id
-  key    = "scripts/requirements.txt"
-  source = "${path.module}/requirements.txt"  # Local file path
+  key    = "scripts/requirements_emr.txt"
+  source = "${path.module}/requirements_emr.txt"  # Local file path
   
   depends_on = [time_sleep.wait_for_bucket]
 }
