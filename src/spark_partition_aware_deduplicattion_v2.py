@@ -164,15 +164,29 @@ def partition_aware_deduplicate(
     input_df = input_df.repartition(num_shuffle_partitions)
     
     # Create MinHash UDF
-    minhash_udf = udf(
-        lambda text: compute_minhash_signature(text=text, num_hashes=num_hashes, ngram=9, normalize=True),
-        ArrayType(IntegerType())
-    )
+    #minhash_udf = udf(
+    #    lambda text: compute_minhash_signature(text=text, num_hashes=num_hashes, ngram=9, normalize=True),
+    #    ArrayType(IntegerType())
+    #)
+
+    @pandas_udf(ArrayType(IntegerType()))
+    def minhash_batch_udf(rows: pd.Series) -> pd.Series:
+        """Process entire batch using vectorized operations where possible"""
+        return rows.apply(
+            lambda t: compute_minhash_signature(t, num_hashes, ngram=9, True)
+        )
     
-    df_with_signatures = input_df.withColumn(
-        "minhash_signature",
-        minhash_udf(col(text_column))
-    ).cache()  # Cache as we'll use multiple times
+    # df_with_signatures = input_df.withColumn(
+    #    "minhash_signature",
+    #    minhash_udf(col(text_column))
+    # ).cache()  # Cache as we'll use multiple times
+
+    df_with_signatures = spark.createDataFrame(
+        input_df.rdd.mapPartitions(
+            lambda rows: minhash_batch_udf(rows)
+        ),
+        schema
+    ).cache()
     
     total_docs = df_with_signatures.count()
     logger.info(f"Processing {total_docs} documents...")
