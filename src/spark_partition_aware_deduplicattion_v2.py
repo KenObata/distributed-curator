@@ -13,6 +13,7 @@ from pyspark.sql.functions import *
 from pyspark.sql.types import *
 import mmh3
 import numpy as np
+import pandas as pd
 from typing import List, Tuple, Dict, Iterator, Set
 from collections import defaultdict
 import hashlib
@@ -173,7 +174,7 @@ def partition_aware_deduplicate(
     def minhash_batch_udf(rows: pd.Series) -> pd.Series:
         """Process entire batch using vectorized operations where possible"""
         return rows.apply(
-            lambda t: compute_minhash_signature(t, num_hashes, ngram=9, True)
+            lambda t: compute_minhash_signature(t, num_hashes, ngram=9, normalize=True)
         )
     
     # df_with_signatures = input_df.withColumn(
@@ -181,11 +182,16 @@ def partition_aware_deduplicate(
     #    minhash_udf(col(text_column))
     # ).cache()  # Cache as we'll use multiple times
 
-    df_with_signatures = spark.createDataFrame(
-        input_df.rdd.mapPartitions(
-            lambda rows: minhash_batch_udf(rows)
-        ),
-        schema
+    # df_with_signatures = spark.createDataFrame(
+    #    input_df.rdd.mapPartitions(
+    #        lambda rows: minhash_batch_udf(rows)
+    #    ),
+    #    schema
+    #).cache()
+
+    df_with_signatures = input_df.withColumn(
+        "minhash_signature",
+        minhash_batch_udf(col(text_column))
     ).cache()
     
     total_docs = df_with_signatures.count()

@@ -54,3 +54,22 @@ plot_results(results)
                 lambda text: compute_minhash_signature(text=text, num_hashes=64, ngram=9, normalize=True)
             )
         ```
+        DONE
+    - try better instance
+    main.tf
+    ```
+    core_instance_group {
+    instance_type  = "r5.2xlarge"  # 8 cores, 64GB RAM (was r5.xlarge)
+    instance_count = 8              # More nodes (was 4)
+    
+    ebs_config {
+        size                 = "100"
+        type                 = "gp3"
+        volumes_per_instance = 1
+    }
+    }
+    ```
+
+    and spark-submit
+    --executor-cores 4 \
+    --num-executors 16 \

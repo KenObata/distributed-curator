@@ -123,7 +123,7 @@ Step3: upload your requirements.txt to S3:
 terraform script auto upload files to S3, so below is only if you need to manually upload files.
 ```
 aws s3 cp requirements_emr.txt s3://your-scripts-bucket/scripts/
-aws s3 cp {your_dedup_script.py} s3://your-scripts-bucket/scripts/
+aws s3 cp ../../test/spark_deduplication_test.py s3://your-scripts-bucket/scripts/
 ```
 Then from SSH session on the master node:
 
@@ -144,9 +144,23 @@ Step4: Exit ssh, and on your macbook, install YARN(8088), Spark UI (4040)
 ssh -i ./your-emr-key.pem -L 8888:localhost:8888 hadoop@<master>
 ssh -i ./your-emr-key.pem \
   -L 8088:localhost:8088 \
-  -L 4040:ip-172-31-46-228.ec2.internal:4040 \
+  -L 4040:<EMR driver (master node) hostname>:4040 \
   hadoop@<master-public-dns>
 ```
+
+how did we find YAN host name?
+
+run
+```
+hostname -f
+```
+
+or
+
+```
+yarn application -list
+```
+
 Step5: setup YARN
 ```
 source /etc/spark/conf/spark-env.sh
@@ -157,6 +171,7 @@ Step6: upload helper functions as zip
 ```
 cd src
 zip -r dependencies.zip spark_utils.py spark_partition_aware_deduplicattion_v2.py
+aws s3 cp dependencies.zip s3://your-scripts-bucket/scripts/
 ```
 
 Step 7: Run Your Benchmark
