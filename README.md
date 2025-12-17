@@ -124,6 +124,7 @@ terraform script auto upload files to S3, so below is only if you need to manual
 ```
 aws s3 cp requirements_emr.txt s3://your-scripts-bucket/scripts/
 aws s3 cp ../../test/spark_deduplication_test.py s3://your-scripts-bucket/scripts/
+aws s3 cp ../../test/iceberg_setup_test.py s3://your-scripts-bucket/scripts/
 ```
 Then from SSH session on the master node:
 
@@ -179,12 +180,10 @@ From SSH session:
 ```
 spark-submit \
   --master yarn \
-  --py-files s3://your-scripts-bucket/scripts/spark_utils.py \
-  --py-files s3://your-scripts-bucket/scripts/spark_partition_aware_deduplicattion_v2.py \
   --executor-memory 16g \
   --driver-memory 4g \
   --deploy-mode client \
-  s3://your-scripts-bucket/scripts/spark_deduplication_test.py
+   s3://your-scripts-bucket/scripts/iceberg_setup_test.py
 ```
 
 or use zip file

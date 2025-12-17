@@ -69,6 +69,12 @@ variable "scripts_bucket" {
   default     = "text-deduplication" 
 }
 
+variable "region" {
+  description = "AWS region"
+  type        = string
+  default     = "us-east-1"
+}
+
 # Security Group for EMR
 resource "aws_security_group" "emr_master" { # master means spark driver
   name        = "${var.cluster_name}-master-sg"
@@ -254,6 +260,20 @@ resource "aws_iam_role_policy" "emr_ec2_policy" {
           "cloudwatch:PutMetricData"
         ]
         Resource = "*"
+      },
+      {
+        Sid    = "AllowDataBucketAccess"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          "arn:aws:s3:::${var.scripts_bucket}-data-${data.aws_caller_identity.current.account_id}",
+          "arn:aws:s3:::${var.scripts_bucket}-data-${data.aws_caller_identity.current.account_id}/*"
+        ]
       }
     ]
   })
@@ -312,6 +332,20 @@ resource "aws_iam_role_policy" "emr_ec2_default_s3_access" {
           "arn:aws:s3:::${var.scripts_bucket}-emr-logs-${data.aws_caller_identity.current.account_id}",
           "arn:aws:s3:::${var.scripts_bucket}-emr-logs-${data.aws_caller_identity.current.account_id}/*"
         ]
+      },
+      {
+        Sid    = "AllowDataBucketAccess"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          "arn:aws:s3:::${var.scripts_bucket}-data-${data.aws_caller_identity.current.account_id}",
+          "arn:aws:s3:::${var.scripts_bucket}-data-${data.aws_caller_identity.current.account_id}/*"
+        ]
       }
     ]
   })
@@ -332,6 +366,12 @@ resource "time_sleep" "wait_for_bucket" {
 # S3 bucket for logs
 resource "aws_s3_bucket" "emr_logs" {
   bucket = "${var.scripts_bucket}-emr-logs-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true
+}
+
+# S3 bucket for Iceberg data warehouse
+resource "aws_s3_bucket" "data" {
+  bucket = "${var.scripts_bucket}-data-${data.aws_caller_identity.current.account_id}"
   force_destroy = true
 }
 
@@ -388,6 +428,15 @@ resource "aws_s3_object" "integration_test_script" {
   bucket = aws_s3_bucket.scripts_bucket.id
   key    = "scripts/spark_partition_aware_deduplicattion_v2_integration_test.py"
   source = "${path.module}/${var.scripts_source_test_dir}/spark_partition_aware_deduplicattion_v2_integration_test.py"
+  
+  depends_on = [time_sleep.wait_for_bucket]
+}
+
+# Upload iceberg setup test script to S3
+resource "aws_s3_object" "iceberg_setup_test_script" {
+  bucket = aws_s3_bucket.scripts_bucket.id
+  key    = "scripts/iceberg_setup_test.py"
+  source = "${path.module}/${var.scripts_source_test_dir}/iceberg_setup_test.py"
   
   depends_on = [time_sleep.wait_for_bucket]
 }
@@ -473,6 +522,12 @@ resource "aws_emr_cluster" "dedup_cluster" {
         "spark.executor.cores"             = "4"
         "spark.dynamicAllocation.enabled"  = "false"
         "spark.sql.adaptive.enabled"       = "true"
+
+        "spark.sql.catalog.glue_catalog": "org.apache.iceberg.spark.SparkCatalog",
+        "spark.sql.catalog.glue_catalog.warehouse": "s3://${aws_s3_bucket.data.bucket}/iceberg/",
+        "spark.sql.catalog.glue_catalog.catalog-impl": "org.apache.iceberg.aws.glue.GlueCatalog",
+        "spark.sql.catalog.glue_catalog.io-impl": "org.apache.iceberg.aws.s3.S3FileIO",
+        "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
       }
     },
     {
@@ -493,6 +548,13 @@ resource "aws_emr_cluster" "dedup_cluster" {
           }
         }
       ]
+    },
+    # ICEBERG setting
+    {
+      "Classification": "iceberg-defaults",
+      "Properties": {
+        "iceberg.enabled": "true"
+      }
     }
   ])
 
@@ -555,4 +617,46 @@ output "private_key_pem" {
 output "spark_submit_example" {
   description = "Example spark-submit command"
   value       = "spark-submit --master yarn --deploy-mode cluster s3://${var.scripts_bucket}/scripts/deduplication_benchmark.py"
+}
+
+
+
+
+# Glue Catalog
+resource "aws_iam_role_policy" "emr_glue_access" {
+  name = "emr-glue-iceberg-access"
+  role = aws_iam_role.emr_ec2_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "glue:CreateDatabase",
+          "glue:GetDatabase",
+          "glue:GetDatabases",
+          "glue:CreateTable",
+          "glue:GetTable",
+          "glue:GetTables",
+          "glue:UpdateTable",
+          "glue:DeleteTable",
+          "glue:GetPartitions",
+          "glue:BatchCreatePartition",
+          "glue:BatchDeletePartition"
+        ]
+        Resource = [
+          "arn:aws:glue:${var.region}:${data.aws_caller_identity.current.account_id}:catalog",
+          "arn:aws:glue:${var.region}:${data.aws_caller_identity.current.account_id}:database/*",
+          "arn:aws:glue:${var.region}:${data.aws_caller_identity.current.account_id}:table/*"
+        ]
+      }
+    ]
+  })
+}
+# clean up
+resource "aws_glue_catalog_database" "lineage" {
+  name = "lineage"
+  
+  description = "Provenance tracking for LLM training data"
 }
