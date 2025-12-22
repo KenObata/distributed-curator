@@ -32,6 +32,10 @@ def create_deduplication_spark_session() -> SparkSession:
 def create_spark_session_partition_aware(app_name: str = "PartitionAwareDedup") -> SparkSession:
     """Create optimized Spark session for large-scale deduplication"""
     
+    import os
+    
+    # JARs are now installed in PySpark's jars directory - no need to specify paths
+    
     # these are default config, so they can be overriden
     spark = SparkSession.builder \
         .appName(app_name) \
@@ -47,17 +51,15 @@ def create_spark_session_partition_aware(app_name: str = "PartitionAwareDedup") 
         .config("spark.ui.port", "4040") \
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
         .config("spark.hadoop.fs.s3.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
-        .config("spark.hadoop.fs.s3a.aws.credentials.provider", "org.apache.hadoop.fs.s3a.AnonymousAWSCredentialsProvider") \
-        .config("spark.hadoop.fs.s3.aws.credentials.provider", "org.apache.hadoop.fs.s3a.AnonymousAWSCredentialsProvider") \
+        .config("spark.hadoop.fs.s3a.aws.credentials.provider", "org.apache.hadoop.fs.s3a.auth.IAMInstanceCredentialsProvider,com.amazonaws.auth.DefaultAWSCredentialsProviderChain") \
+        .config("spark.hadoop.fs.s3.aws.credentials.provider", "org.apache.hadoop.fs.s3a.auth.IAMInstanceCredentialsProvider,com.amazonaws.auth.DefaultAWSCredentialsProviderChain") \
         .config("spark.hadoop.fs.s3a.endpoint", "s3.amazonaws.com") \
-        .config("spark.hadoop.fs.s3a.signing-algorithm", "S3SignerType") \
-        .config("spark.hadoop.fs.s3a.path.style.access", "true") \
+        .config("spark.hadoop.fs.s3a.path.style.access", "false") \
         .config("spark.hadoop.fs.s3a.connection.timeout", "600000") \
         .config("spark.hadoop.fs.s3a.connection.establish.timeout", "60000") \
         .config("spark.hadoop.fs.s3a.attempts.maximum", "3") \
         .config("spark.hadoop.fs.s3a.retry.interval", "1000") \
         .config("spark.sql.execution.arrow.pyspark.enabled", "false") \
-        .config("spark.jars.packages", "org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262") \
         .getOrCreate()
 
     # Set log level to reduce verbosity
