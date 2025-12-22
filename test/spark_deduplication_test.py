@@ -12,6 +12,47 @@ import boto3
 
 s3 = boto3.client('s3')
 
+def read_common_crawl_http_file(spark: SparkSession, wet_s3_path: str) -> RDD:
+    import urllib.request
+    import tempfile
+    import os
+    
+    print("Downloading WET file to local storage...")
+    local_dir = tempfile.mkdtemp()
+    local_path = os.path.join(local_dir, "wet_file.gz")
+    
+    urllib.request.urlretrieve(wet_path, local_path)
+    file_size = os.path.getsize(local_path) / (1024 * 1024)  # MB
+    print(f"Downloaded {file_size:.1f}MB to {local_path}")
+    
+    # Read local WET file with Spark
+    print("Reading local WET file with Spark...")
+    
+    # upload to S3
+    s3.upload_file(local_path, 'your-scripts-bucket', 'data/wet_file.gz')
+
+    wet_rdd = spark.read.text("s3://your-scripts-bucket/data/wet_file.gz").rdd
+    wet_rdd = wet_rdd.map(lambda row: row.value)
+    
+    # Check if we can read any lines
+    print("Counting lines in WET file...")
+    line_count = wet_rdd.count()
+    print(f"Read {line_count} lines from WET file")
+    
+    if line_count == 0:
+        raise Exception("WET file appears to be empty or inaccessible")
+    return wet_rdd
+
+def read_wet_files_from_s3(spark: SparkSession, wet_s3_path: str) -> DataFrame:
+    try:
+      # Read all WET files directly from S3
+      print("Reading WET files from S3...")
+      wet_df = spark.read.text(wet_s3_path + "*.warc.wet.gz")
+      return wet_df
+    except Exception as e:
+      print(f"Error reading WET files from S3: {str(e)}")
+      raise Exception(f"Error reading WET files from S3: {str(e)}")
+
 def test_integration_commoncrawl_sample():
     """
     Stress test with Common Crawl data from AWS S3
@@ -28,9 +69,10 @@ def test_integration_commoncrawl_sample():
         # WET files contain extracted plain text from web pages
         # Use HTTP endpoint instead of S3 to avoid credential issues
         # wet_path = "https://data.commoncrawl.org/crawl-data/CC-MAIN-2024-22/segments/1715971057216.39/wet/CC-MAIN-20240517233122-20240518023122-00000.warc.wet.gz"
-        wet_path = "https://data.commoncrawl.org/crawl-data/CC-MAIN-2024-22/segments/1715971057216.39/wet/*.warc.wet.gz"
-        
-        print(f"Loading Common Crawl WET files from: {wet_path}")
+        # wet_rdd = read_common_crawl_http_file(spark, wet_s3_path)
+
+        wet_s3_path = "s3://commoncrawl/crawl-data/CC-MAIN-2024-22/segments/1715971057216.39/wet/"
+        print(f"Loading Common Crawl WET files from: {wet_s3_path}")
         
         # For WET files, we need to read them as text files and parse the format
         # WET format contains:
@@ -42,37 +84,8 @@ def test_integration_commoncrawl_sample():
         
         try:
             # Download WET file first to avoid Spark HTTP issues
-            import urllib.request
-            import tempfile
-            import os
+            wet_df = read_wet_files_from_s3(spark, wet_s3_path)
             
-            print("Downloading WET file to local storage...")
-            local_dir = tempfile.mkdtemp()
-            local_path = os.path.join(local_dir, "wet_file.gz")
-            
-            urllib.request.urlretrieve(wet_path, local_path)
-            file_size = os.path.getsize(local_path) / (1024 * 1024)  # MB
-            print(f"Downloaded {file_size:.1f}MB to {local_path}")
-            
-            # Read local WET file with Spark
-            print("Reading local WET file with Spark...")
-            # local_path = f"file:/{local_path}"
-
-            # upload to S3
-            s3.upload_file(local_path, 'your-scripts-bucket', 'data/wet_file.gz')
-
-            wet_rdd = spark.read.text("s3://your-scripts-bucket/data/wet_file.gz").rdd
-            # Convert Row objects to strings
-            wet_rdd = wet_rdd.map(lambda row: row.value)
-            # wet_rdd = spark.sparkContext.textFile(local_path)
-            
-            # Check if we can read any lines
-            print("Counting lines in WET file...")
-            line_count = wet_rdd.count()
-            print(f"Read {line_count} lines from WET file")
-            
-            if line_count == 0:
-                raise Exception("WET file appears to be empty or inaccessible")
             
             # Parse WET format to extract URL and text content
             def parse_wet_record(lines):
