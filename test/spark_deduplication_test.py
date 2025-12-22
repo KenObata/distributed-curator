@@ -25,6 +25,33 @@ import boto3
 
 s3 = boto3.client('s3')
 
+BENCHMARK_CONFIGS = {
+    "development": {
+        "wet_files": 1,
+        "size": "80MB",
+        "pages": "~100K",
+        "purpose": "Debug and optimize"
+    },
+    "validation": {
+        "wet_files": 100,
+        "size": "8GB", 
+        "pages": "~10M",
+        "purpose": "Compare with MLlib"
+    },
+    "production_proof": {
+        "wet_files": 1000,
+        "size": "80GB",
+        "pages": "~100M",
+        "purpose": "Show 10x improvement"
+    },
+    "scale_proof": {
+        "wet_files": 10000,
+        "size": "800GB",
+        "pages": "~1B",
+        "purpose": "Prove web-scale capability"
+    }
+}
+
 def read_common_crawl_http_file(spark: SparkSession, wet_s3_path: str) -> RDD:
     import urllib.request
     import tempfile
@@ -56,21 +83,67 @@ def read_common_crawl_http_file(spark: SparkSession, wet_s3_path: str) -> RDD:
         raise Exception("WET file appears to be empty or inaccessible")
     return wet_rdd
 
-def read_wet_files_from_s3(spark: SparkSession, wet_s3_path: str) -> DataFrame:
+def read_wet_files_from_s3(spark: SparkSession, wet_s3_path: str, max_files: int = None) -> DataFrame:
     try:
-      # Read all WET files directly from S3
-      print("Reading WET files from S3...")
-      wet_df = spark.read.text(wet_s3_path + "*.warc.wet.gz")
-      return wet_df
+        # Read all WET files directly from S3
+        print("Reading WET files from S3...")
+        
+        if max_files is None:
+            # Read all files
+            wet_df = spark.read.text(wet_s3_path + "*.warc.wet.gz")
+        else:
+            # Get list of specific files limited by max_files
+            import boto3
+            s3_client = boto3.client('s3')
+            
+            # Parse S3 path
+            bucket = "commoncrawl"
+            prefix = wet_s3_path.replace("s3://commoncrawl/", "")
+            
+            print(f"Listing WET files (limit: {max_files})...")
+            response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=max_files)
+            
+            if 'Contents' not in response:
+                raise Exception(f"No WET files found at {wet_s3_path}")
+            
+            # Build list of specific file paths
+            file_paths = []
+            for obj in response['Contents'][:max_files]:
+                if obj['Key'].endswith('.warc.wet.gz'):
+                    file_paths.append(f"s3://{bucket}/{obj['Key']}")
+            
+            print(f"Selected {len(file_paths)} WET files for processing")
+            
+            if not file_paths:
+                raise Exception("No .warc.wet.gz files found")
+            
+            # Read the selected files
+            wet_df = spark.read.text(','.join(file_paths))
+        
+        return wet_df
     except Exception as e:
-      print(f"Error reading WET files from S3: {str(e)}")
-      raise Exception(f"Error reading WET files from S3: {str(e)}")
+        print(f"Error reading WET files from S3: {str(e)}")
+        raise Exception(f"Error reading WET files from S3: {str(e)}")
 
-def test_integration_commoncrawl_sample():
+def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
     """
     Stress test with Common Crawl data from AWS S3
     Tests deduplication performance on real-world web crawl data
+    
+    Args:
+        benchmark_level: One of 'development', 'validation', 'production_proof', 'scale_proof'
     """
+    # Get benchmark configuration
+    if benchmark_level not in BENCHMARK_CONFIGS:
+        raise ValueError(f"Invalid benchmark_level. Choose from: {list(BENCHMARK_CONFIGS.keys())}")
+    
+    config = BENCHMARK_CONFIGS[benchmark_level]
+    max_files = config["wet_files"]
+    
+    print(f"Benchmark Level: {benchmark_level}")
+    print(f"Max WET files: {max_files} ({config['size']}, {config['pages']} pages)")
+    print(f"Purpose: {config['purpose']}")
+    
     # Detect environment and choose appropriate Spark session
     is_emr = os.path.exists('/emr') or 'EMR' in os.environ.get('SPARK_HOME', '') or os.environ.get('AWS_EMR_CLUSTER_ID')
     
@@ -105,7 +178,7 @@ def test_integration_commoncrawl_sample():
         
         try:
             # Download WET file first to avoid Spark HTTP issues
-            wet_df = read_wet_files_from_s3(spark, wet_s3_path)
+            wet_df = read_wet_files_from_s3(spark, wet_s3_path, max_files)
             wet_df.show()
             wet_rdd = wet_df.rdd.map(lambda row: row.value)
             
@@ -278,4 +351,19 @@ def test_integration_commoncrawl_sample():
         spark.stop()
 
 if __name__ == "__main__":
-    test_integration_commoncrawl_sample()
+    import sys
+    
+    # Default benchmark level
+    benchmark_level = "development"
+    
+    # Parse command line arguments
+    if len(sys.argv) > 1:
+        benchmark_level = sys.argv[1]
+        print(f"Using benchmark level from command line: {benchmark_level}")
+    else:
+        print(f"No benchmark level specified, using default: {benchmark_level}")
+        print("Available levels: development, validation, production_proof, scale_proof")
+        print("Usage: python script.py <benchmark_level>")
+        print("   or: spark-submit script.py <benchmark_level>")
+    
+    test_integration_commoncrawl_sample(benchmark_level)
