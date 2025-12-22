@@ -18,7 +18,8 @@ except ImportError:
         estimate_similarity,
         partition_aware_deduplicate
     )
-from spark_utils import create_spark_session_partition_aware_emr
+from spark_utils import create_spark_session_partition_aware_emr, create_spark_session_partition_aware
+import os
 import boto3
 
 s3 = boto3.client('s3')
@@ -69,7 +70,15 @@ def test_integration_commoncrawl_sample():
     Stress test with Common Crawl data from AWS S3
     Tests deduplication performance on real-world web crawl data
     """
-    spark = create_spark_session_partition_aware_emr("CommonCrawlStressTest")
+    # Detect environment and choose appropriate Spark session
+    is_emr = os.path.exists('/emr') or 'EMR' in os.environ.get('SPARK_HOME', '') or os.environ.get('AWS_EMR_CLUSTER_ID')
+    
+    if is_emr:
+        print("Running on EMR - using EMR Spark session")
+        spark = create_spark_session_partition_aware_emr("CommonCrawlStressTest")
+    else:
+        print("Running locally - using local Spark session with S3 support")
+        spark = create_spark_session_partition_aware("CommonCrawlStressTest")
     
     try:
         print("\n" + "="*80)
