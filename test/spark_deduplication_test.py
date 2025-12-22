@@ -1,12 +1,23 @@
-from pyspark.sql import SparkSession
+from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import col, length
+from pyspark import RDD
 import numpy as np
 import time
-from spark_partition_aware_deduplicattion_v2 import (
-    compute_minhash_signature,
-    estimate_similarity,
-    partition_aware_deduplicate
-)
+try:
+    from spark_partition_aware_deduplicattion_v2 import (
+        compute_minhash_signature,
+        estimate_similarity,
+        partition_aware_deduplicate
+    )
+except ImportError:
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
+    from spark_partition_aware_deduplicattion_v2 import (
+        compute_minhash_signature,
+        estimate_similarity,
+        partition_aware_deduplicate
+    )
 from spark_utils import create_spark_session_partition_aware_emr
 import boto3
 
@@ -85,10 +96,11 @@ def test_integration_commoncrawl_sample():
         try:
             # Download WET file first to avoid Spark HTTP issues
             wet_df = read_wet_files_from_s3(spark, wet_s3_path)
+            wet_rdd = wet_df.show()
             
             
             # Parse WET format to extract URL and text content
-            def parse_wet_record(lines):
+            def parse_wet_record(lines) -> List[Tuple[str, str]]:
                 """Parse WET record format to extract URL and text"""
                 records = []
                 current_record = {}
@@ -148,6 +160,7 @@ def test_integration_commoncrawl_sample():
             
             print("Creating DataFrame from parsed records...")
             df_parsed = spark.createDataFrame(parsed_rdd, schema)
+            df_parsed.show()
             
             print("Applying filters...")
             df_filtered = df_parsed.filter(col("text").isNotNull() & (length(col("text")) > 100))

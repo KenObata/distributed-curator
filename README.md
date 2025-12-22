@@ -12,11 +12,11 @@ source venv/bin/activate
 You should see (venv) after actuvation.
 # Install PySpark locally
 ```
-pip install -r requirements.txt
+pip install -r requirements_emr.txt
 ```
 # Run Spark locally with 4GB RAM
 ```
-spark-submit --driver-memory 4g --executor-memory 4g src/spark_deduplication_vanilla.py
+spark-submit --driver-memory 4g --executor-memory 4g ../../test/spark_deduplication_test.py
 ```
 - spark_deduplication.py - Complete implementation for web-scale deduplication
 - common_crawl_explorer.py: PoC
@@ -51,7 +51,7 @@ spark-submit \
 ```
 Or run it on a single machine
 ```
-spark-submit --driver-memory 4g --executor-memory 4g src/spark_partition_aware_deduplicattion_v2.py
+spark-submit --driver-memory 4g --executor-memory 4g test/spark_deduplication_test.py
 ```
 
 Or run locally for testing
