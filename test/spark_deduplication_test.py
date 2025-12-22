@@ -27,7 +27,8 @@ def test_integration_commoncrawl_sample():
         # Option 1: Use Common Crawl WET format for actual text content
         # WET files contain extracted plain text from web pages
         # Use HTTP endpoint instead of S3 to avoid credential issues
-        wet_path = "https://data.commoncrawl.org/crawl-data/CC-MAIN-2024-22/segments/1715971057216.39/wet/CC-MAIN-20240517233122-20240518023122-00000.warc.wet.gz"
+        # wet_path = "https://data.commoncrawl.org/crawl-data/CC-MAIN-2024-22/segments/1715971057216.39/wet/CC-MAIN-20240517233122-20240518023122-00000.warc.wet.gz"
+        wet_path = "https://data.commoncrawl.org/crawl-data/CC-MAIN-2024-22/segments/1715971057216.39/wet/*.warc.wet.gz"
         
         print(f"Loading Common Crawl WET files from: {wet_path}")
         

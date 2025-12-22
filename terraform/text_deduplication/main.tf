@@ -476,7 +476,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
 
   # Core nodes - Spot instances for cost savings
   core_instance_group {
-    instance_type  = "r5.xlarge" # "r8g.xlarge"
+    instance_type  = "r5.2xlarge" # "r8g.xlarge"
     instance_count = 4
     name           = "Core"
 
