@@ -46,7 +46,9 @@ def create_spark_session_partition_aware(app_name: str = "PartitionAwareDedup") 
         .config("spark.ui.enabled", "true") \
         .config("spark.ui.port", "4040") \
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
+        .config("spark.hadoop.fs.s3.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
         .config("spark.hadoop.fs.s3a.aws.credentials.provider", "org.apache.hadoop.fs.s3a.AnonymousAWSCredentialsProvider") \
+        .config("spark.hadoop.fs.s3.aws.credentials.provider", "org.apache.hadoop.fs.s3a.AnonymousAWSCredentialsProvider") \
         .config("spark.hadoop.fs.s3a.endpoint", "s3.amazonaws.com") \
         .config("spark.hadoop.fs.s3a.signing-algorithm", "S3SignerType") \
         .config("spark.hadoop.fs.s3a.path.style.access", "true") \
@@ -55,7 +57,7 @@ def create_spark_session_partition_aware(app_name: str = "PartitionAwareDedup") 
         .config("spark.hadoop.fs.s3a.attempts.maximum", "3") \
         .config("spark.hadoop.fs.s3a.retry.interval", "1000") \
         .config("spark.sql.execution.arrow.pyspark.enabled", "false") \
-        .config("spark.jars.packages", "org.apache.hadoop:hadoop-aws:3.3.4") \
+        .config("spark.jars.packages", "org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262") \
         .getOrCreate()
 
     # Set log level to reduce verbosity
