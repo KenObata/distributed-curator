@@ -106,7 +106,8 @@ def test_integration_commoncrawl_sample():
         try:
             # Download WET file first to avoid Spark HTTP issues
             wet_df = read_wet_files_from_s3(spark, wet_s3_path)
-            wet_rdd = wet_df.show()
+            wet_df.show()
+            wet_rdd = wet_df.rdd.map(lambda row: row.value)
             
             
             # Parse WET format to extract URL and text content
