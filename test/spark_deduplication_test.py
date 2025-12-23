@@ -267,16 +267,9 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
             test_count = df_filtered.count()
             print(f"Test dataset size: {test_count:,} documents")
             
-            # Cleanup downloaded file
-            print("Cleaning up downloaded file...")
-            import shutil
-            shutil.rmtree(local_dir)
+            # No cleanup needed when reading directly from S3
             
         except Exception as e:
-            # Cleanup on error
-            if 'local_dir' in locals():
-                import shutil
-                shutil.rmtree(local_dir, ignore_errors=True)
             print("Common Crawl access requires AWS credentials or has connectivity issues.")
             raise Exception(f"Error reading WET files: {str(e)}")
         
