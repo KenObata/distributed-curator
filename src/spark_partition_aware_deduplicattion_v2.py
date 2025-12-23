@@ -84,10 +84,54 @@ def normalize_text_pandas_udf(texts: pd.Series) -> pd.Series:
     results = []
     for text in normalized_texts:
         if text and len(text) >= 9:
-            sig = compute_minhash_simple(text, 64)  # Fewer hashes
+            sig = compute_minhash_signature(text, 64, ngram=9, normalize=False)  # Already normalized
         else:
             sig = [0] * 64
         results.append(sig)
+    
+    return pd.Series(results)
+
+def compute_minhash_vectorized_batch(texts: pd.Series, num_hashes: int = 128, ngram: int = 9) -> pd.Series:
+    """
+    Highly optimized vectorized MinHash computation using pandas and numpy
+    """
+    results = []
+    
+    # Step 1: Vectorized text normalization using pandas string operations
+    normalized_texts = texts.str.lower()
+    
+    # Remove articles using vectorized regex
+    articles_pattern = r'\b(the|a|an|this|that|these|those)\b'
+    normalized_texts = normalized_texts.str.replace(articles_pattern, '', regex=True)
+    normalized_texts = normalized_texts.str.replace(r'\s+', ' ', regex=True)
+    normalized_texts = normalized_texts.str.strip()
+    
+    # Step 2: Batch process texts for MinHash computation
+    for text in normalized_texts:
+        if not text or len(text) < ngram:
+            results.append([0] * num_hashes)
+            continue
+        
+        # Generate shingles efficiently
+        shingles = [text[i:i+ngram] for i in range(len(text) - ngram + 1)]
+        unique_shingles = list(set(shingles))  # Remove duplicates
+        
+        if not unique_shingles:
+            results.append([0] * num_hashes)
+            continue
+        
+        # Vectorized MinHash computation using numpy
+        # Pre-allocate hash array for all shingles and hash functions
+        signature_matrix = np.zeros((len(unique_shingles), num_hashes), dtype=np.uint32)
+        
+        # Compute all hashes at once
+        for j, shingle in enumerate(unique_shingles):
+            for i in range(num_hashes):
+                signature_matrix[j, i] = mmh3.hash(shingle, seed=i, signed=False)
+        
+        # Vectorized minimum computation across all shingles
+        signature = np.min(signature_matrix, axis=0)
+        results.append(signature.tolist())
     
     return pd.Series(results)
 
@@ -208,10 +252,8 @@ def partition_aware_deduplicate(
 
     @pandas_udf(ArrayType(IntegerType()))
     def minhash_batch_udf(rows: pd.Series) -> pd.Series:
-        """Process entire batch using vectorized operations where possible"""
-        return rows.apply(
-            lambda t: compute_minhash_signature(t, num_hashes, ngram=9, normalize=True)
-        )
+        """Process entire batch using highly optimized vectorized operations"""
+        return compute_minhash_vectorized_batch(rows, num_hashes, ngram=9)
     
     # df_with_signatures = input_df.withColumn(
     #    "minhash_signature",
