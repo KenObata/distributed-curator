@@ -45,17 +45,51 @@ def normalize_text(text: str) -> str:
     text = text.lower()
     
     # Remove common articles and determiners that don't affect semantic meaning
-    articles = ['the', 'a', 'an', 'this', 'that', 'these', 'those']
+    articles = {'the', 'a', 'an', 'this', 'that', 'these', 'those'}
     
     # Split into words, remove articles, rejoin
-    words = text.split()
-    filtered_words = [word for word in words if word.strip('.,!?;:"()[]{}') not in articles]
+    filtered_words = []
+    words = text_lower.split()
+    for word in words:
+        # Strip punctuation inline
+        clean_word = word.strip('.,!?;:"()[]{}')
+        if clean_word and clean_word not in articles:
+            filtered_words.append(clean_word)
     
     # If we removed too many words, keep the original to avoid empty text
     if len(filtered_words) < len(words) * 0.3:  # Keep at least 30% of words
         return text
     
     return ' '.join(filtered_words)
+
+@pandas_udf(ArrayType(IntegerType()))
+def normalize_text_pandas_udf(texts: pd.Series) -> pd.Series:
+    """
+    Optimize by separating normalization from hashing.
+
+    Difference from normalize_text is that this function returns
+     pandas series unlike normalize_text()'s row by row string.
+
+    Note: currently, we can't use normalize function as udf, because it needs row by row process.
+    """
+    # Step 1: Normalize all texts first (vectorizable!)
+    normalized_texts = texts.str.lower()  # Pandas string methods are optimized
+    
+    # Remove articles using pandas vectorized operations
+    articles_pattern = r'\b(the|a|an|this|that|these|those)\b'
+    normalized_texts = normalized_texts.str.replace(articles_pattern, '', regex=True)
+    normalized_texts = normalized_texts.str.replace(r'\s+', ' ', regex=True)  # Clean spaces
+    
+    # Step 2: Now compute MinHash on normalized texts
+    results = []
+    for text in normalized_texts:
+        if text and len(text) >= 9:
+            sig = compute_minhash_simple(text, 64)  # Fewer hashes
+        else:
+            sig = [0] * 64
+        results.append(sig)
+    
+    return pd.Series(results)
 
 def compute_minhash_signature(text: str, num_hashes: int = 128, ngram: int = 9, normalize: bool = True) -> List[int]:
     """
@@ -91,7 +125,8 @@ def compute_minhash_signature(text: str, num_hashes: int = 128, ngram: int = 9, 
         return [0] * num_hashes
     
     # Compute MinHash signature
-    signature = [float('inf')] * num_hashes
+    # signature = [float('inf')] * num_hashes
+    signature = np.full(num_hashes, np.iinfo(np.uint32).max, dtype=np.uint32)
     
     for shingle in shingles:
         for i in range(num_hashes):
@@ -100,7 +135,8 @@ def compute_minhash_signature(text: str, num_hashes: int = 128, ngram: int = 9, 
             signature[i] = builtin_min(signature[i], hash_val)
     
     # Convert to integers
-    return [int(h) if h != float('inf') else 0 for h in signature]
+    # return [int(h) if h != float('inf') else 0 for h in signature]
+    return signature.tolist()
 
 def estimate_similarity(sig1: List[int], sig2: List[int]) -> float:
     """Estimate Jaccard similarity from MinHash signatures"""
