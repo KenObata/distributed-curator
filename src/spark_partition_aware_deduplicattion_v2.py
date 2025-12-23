@@ -42,7 +42,7 @@ def normalize_text(text: str) -> str:
     import re
     
     # Convert to lowercase
-    text = text.lower()
+    text_lower = text.lower()
     
     # Remove common articles and determiners that don't affect semantic meaning
     articles = {'the', 'a', 'an', 'this', 'that', 'these', 'those'}
