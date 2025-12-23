@@ -255,12 +255,6 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
             if filtered_count == 0:
                 raise Exception("No records remain after filtering")
             
-            print("Taking sample...")
-            if filtered_count > 1000000*10:
-                df_filtered = df_filtered.sample(0.001)  # Take 0.01% sample for stress test
-            
-            # Add some duplicate patterns for testing
-            print("Preparing test data with synthetic duplicates...")
             
             # Cache for performance
             df_filtered = df_filtered.cache()
