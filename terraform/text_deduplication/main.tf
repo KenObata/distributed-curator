@@ -426,8 +426,8 @@ resource "aws_s3_object" "dedup_script" {
 # Upload integration test script to S3
 resource "aws_s3_object" "integration_test_script" {
   bucket = aws_s3_bucket.scripts_bucket.id
-  key    = "scripts/spark_deduplicattion_test.py"
-  source = "${path.module}/${var.scripts_source_test_dir}/spark_deduplicattion_test.py"
+  key    = "scripts/spark_deduplication_test.py"
+  source = "${path.module}/${var.scripts_source_test_dir}/spark_deduplication_test.py"
   
   depends_on = [time_sleep.wait_for_bucket]
 }
