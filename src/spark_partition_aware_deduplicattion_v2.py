@@ -181,6 +181,58 @@ def compute_minhash_vectorized_batch(texts: pd.Series, num_hashes: int = 128, ng
     
     return pd.Series(results)
 
+def compute_minhash_vectorized_batch_only_hash_once(texts: pd.Series, num_hashes: int = 128, ngram: int = 9) -> pd.Series:
+    """
+    Highly optimized vectorized MinHash computation using pandas and numpy
+    Difference from compute_minhash_vectorized_batch is that this function
+    hashes the shingle only once and then for different seed i, use different permutation to generate different hash values.
+    """
+    results = []
+    
+    # Step 1: Vectorized text normalization using pandas string operations
+    normalized_texts = texts.str.lower()
+    
+    # Remove articles using vectorized regex
+    articles_pattern = r'\b(the|a|an|this|that|these|those)\b'
+    normalized_texts = normalized_texts.str.replace(articles_pattern, '', regex=True)
+    normalized_texts = normalized_texts.str.replace(r'\s+', ' ', regex=True)
+    normalized_texts = normalized_texts.str.strip()
+    
+    # Step 2: Process each text individually (fixed the Series slicing issue)
+    for text in normalized_texts:
+        if not text or len(text) < ngram:
+            results.append([0] * num_hashes)
+            continue
+        
+        # Generate shingles for this specific text string
+        shingles = [text[i:i+ngram] for i in range(len(text) - ngram + 1)]
+        if not shingles:
+            results.append([0] * num_hashes)
+            continue
+        
+        unique_shingles = list(set(shingles))
+
+        # KEY OPTIMIZATION: Hash each shingle ONCE
+        base_hashes = np.array([builtin_hash(s) & 0xFFFFFFFF for s in unique_shingles], dtype=np.uint32)
+        
+        # Pre-compute random permutations (or use a fixed seed for reproducibility)
+        np.random.seed(42)
+        a_values = np.random.randint(1, 2**32, size=num_hashes, dtype=np.uint64)  # Odd numbers
+        b_values = np.random.randint(0, 2**32, size=num_hashes, dtype=np.uint64)
+        
+        # Vectorized permutation and min calculation
+        # Broadcasting: (num_shingles, 1) x (num_hashes,) = (num_shingles, num_hashes)
+        base_hashes_expanded = base_hashes[:, np.newaxis]  # Shape: (num_shingles, 1)
+        
+        # Apply linear permutations: (a * hash + b) mod 2^32
+        permuted = ((a_values * base_hashes_expanded + b_values) & 0xFFFFFFFF).astype(np.uint32)
+        
+        # Get minimum across all shingles for each hash function
+        signature = np.min(permuted, axis=0)
+        results.append(signature.tolist())
+    
+    return pd.Series(results)
+
 def compute_minhash_signature(text: str, num_hashes: int = 128, ngram: int = 9, normalize: bool = True) -> List[int]:
     """
     Compute MinHash signature for text
@@ -298,7 +350,7 @@ def partition_aware_deduplicate(
     @pandas_udf(ArrayType(IntegerType()))
     def minhash_batch_udf(rows: pd.Series) -> pd.Series:
         """Process entire batch using highly optimized vectorized operations"""
-        return compute_minhash_vectorized_batch(rows, num_hashes, ngram=9)
+        return compute_minhash_vectorized_batch_only_hash_once(rows, num_hashes, ngram=9)
     
     # df_with_signatures = input_df.withColumn(
     #    "minhash_signature",

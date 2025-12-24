@@ -137,7 +137,6 @@ Step3: upload your requirements.txt to S3:
 
 terraform script auto upload files to S3, so below is only if you need to manually upload files.
 ```
-aws s3 cp requirements_emr.txt s3://text-deduplication-740959772378/scripts/
 aws s3 cp ../../test/spark_deduplication_test.py s3://text-deduplication-740959772378/scripts/
 aws s3 cp ../../test/iceberg_setup_test.py s3://text-deduplication-740959772378/scripts/
 ```
@@ -187,7 +186,7 @@ export YARN_CONF_DIR=/etc/hadoop/conf
 ```
 Step6: upload helper functions as zip
 ```
-cd src
+cd /llm_trainining/src
 zip -r dependencies.zip spark_utils.py spark_partition_aware_deduplicattion_v2.py
 aws s3 cp dependencies.zip s3://text-deduplication-740959772378/scripts/
 ```
