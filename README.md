@@ -73,10 +73,6 @@ Or run it on a single machine
 spark-submit --driver-memory 4g --executor-memory 4g test/spark_deduplication_test.py
 ```
 
-Or run locally for testing
-```
-python src/spark_partition_aware_deduplicattion_v2.py
-```
 
 # How to unit/integration test
 
@@ -153,20 +149,22 @@ aws s3 cp s3://text-deduplication-740959772378/scripts/requirements_emr.txt .
 sudo pip3 install --ignore-installed --no-cache-dir --no-deps -r requirements_emr.txt
 ```
 
-Or Even Simpler — Copy Directly
-```
-scp -i ./emr-dedupe-key.pem requirements.txt hadoop@<master-public-dns>:~/
-```
-
 
 Step4: Exit ssh, and on your macbook, install YARN(8088), Spark UI (4040)
 ```
 ssh -i ./emr-dedupe-key.pem -L 8888:localhost:8888 hadoop@<master>
 ssh -i ./emr-dedupe-key.pem \
   -L 8088:localhost:8088 \
+  -L 8042:localhost:8042 \
+  -L 19888:localhost:19888 \
+  -L 18080:localhost:18080 \
   -L 4040:<EMR driver (master node) hostname>:4040 \
   hadoop@<master-public-dns>
 ```
+
+where 
+- NodeManager: http://localhost:8042
+- Job History: http://localhost:19888
 
 how did we find YAN host name?
 
@@ -196,32 +194,43 @@ aws s3 cp dependencies.zip s3://text-deduplication-740959772378/scripts/
 
 Step 7: Run Your Benchmark
 From SSH session:
+ use zip file
+```
+spark-submit \
+  --master yarn \
+  --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
+  --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
+  --num-executors 4 \
+  --executor-cores 4 \
+  --executor-memory 14g \
+  --driver-memory 12g \
+  --conf spark.sql.shuffle.partitions=30 \
+  --conf spark.memory.offHeap.size=1g \
+  --conf spark.hadoop.fs.s3a.signing-algorithm="" \
+  --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
+  --deploy-mode client \
+  s3://text-deduplication-740959772378/scripts/spark_deduplication_test.py development
+```
+How to cleanup
+```
+terraform destroy
+```
+
+Step 8: If you use ICEBERG
 ```
 spark-submit \
   --master yarn \
   --executor-memory 16g \
   --driver-memory 4g \
   --deploy-mode client \
-   s3://text-deduplication-740959772378/scripts/iceberg_setup_test.py
+   s3://text-deduplication-740959772378/scripts/iceberg_setup_test.py development
 ```
 
-or use zip file
-```
-spark-submit \
-  --master yarn \
-  --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
-  --executor-memory 8g \
-  --driver-memory 4g \
-  --conf spark.memory.offHeap.size=1g \
-  --conf spark.hadoop.fs.s3a.signing-algorithm="" \
-  --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
-  --deploy-mode client \
-  s3://text-deduplication-740959772378/scripts/spark_deduplication_test.py
-```
-How to cleanup
-```
-terraform destroy
-```
+Step 9: How to monitor
+
+Check specific stages:
+http://localhost:4040/stages/stage/?id=12&attempt=0
+
 
 ## Terraform trouble shooting.
 

@@ -76,7 +76,6 @@ def create_spark_session_partition_aware_emr(app_name: str = "PartitionAwareDedu
         .config("spark.sql.adaptive.enabled", "true") \
         .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
         .config("spark.sql.adaptive.skewJoin.enabled", "true") \
-        .config("spark.sql.shuffle.partitions", "1000") \
         .config("spark.default.parallelism", "1000") \
         .config("spark.memory.offHeap.enabled", "true") \
         .config("spark.memory.offHeap.size", "2g") \

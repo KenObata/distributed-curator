@@ -426,8 +426,8 @@ resource "aws_s3_object" "dedup_script" {
 # Upload integration test script to S3
 resource "aws_s3_object" "integration_test_script" {
   bucket = aws_s3_bucket.scripts_bucket.id
-  key    = "scripts/spark_partition_aware_deduplicattion_v2_integration_test.py"
-  source = "${path.module}/${var.scripts_source_test_dir}/spark_partition_aware_deduplicattion_v2_integration_test.py"
+  key    = "scripts/spark_deduplicattion_test.py"
+  source = "${path.module}/${var.scripts_source_test_dir}/spark_deduplicattion_test.py"
   
   depends_on = [time_sleep.wait_for_bucket]
 }
@@ -511,14 +511,13 @@ resource "aws_emr_cluster" "dedup_cluster" {
     {
       Classification = "spark-defaults"
       Properties = {
-        "spark.sql.shuffle.partitions"     = "1000"
         "spark.default.parallelism"        = "1000"
         "spark.memory.fraction"            = "0.8"
         "spark.memory.storageFraction"     = "0.3"
         "spark.serializer"                 = "org.apache.spark.serializer.KryoSerializer"
         "spark.kryoserializer.buffer.max"  = "1024m"
-        "spark.driver.memory"              = "8g"
-        "spark.executor.memory"            = "24g"
+        "spark.driver.memory"              = "12g"
+        "spark.executor.memory"            = "12g"
         "spark.executor.cores"             = "4"
         "spark.dynamicAllocation.enabled"  = "false"
         "spark.sql.adaptive.enabled"       = "true"
@@ -654,9 +653,10 @@ resource "aws_iam_role_policy" "emr_glue_access" {
     ]
   })
 }
-# clean up
+# Glue catalog database with lifecycle management
 resource "aws_glue_catalog_database" "lineage" {
   name = "lineage"
   
   description = "Provenance tracking for LLM training data"
+  
 }
