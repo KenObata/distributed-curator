@@ -135,11 +135,6 @@ terraform output master_public_dns
 
 Step3: upload your requirements.txt to S3:
 
-terraform script auto upload files to S3, so below is only if you need to manually upload files.
-```
-aws s3 cp ../../test/spark_deduplication_test.py s3://your-scripts-bucket/scripts/
-aws s3 cp ../../test/iceberg_setup_test.py s3://your-scripts-bucket/scripts/
-```
 Then from SSH session on the master node:
 
 ```
@@ -226,7 +221,7 @@ spark-submit \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
   --deploy-mode client \
-  s3://your-scripts-bucket/scripts/spark_deduplication_test.py development
+  s3://your-scripts-bucket/scripts/spark_deduplication_test.py validation
 ```
 
 How to cleanup
