@@ -8,11 +8,11 @@ builtin_min = min
 builtin_max = max
 builtin_abs = builtins.abs
 
+from graphframes import GraphFrame
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 import mmh3
-import xxhash
 import numpy as np
 import pandas as pd
 from typing import List, Tuple, Dict, Iterator, Set
@@ -74,7 +74,6 @@ def generate_shingles_emr(text: str, ngram: int) -> List[str]:
 
 # Function pointer based on environment
 generate_shingles = generate_shingles_emr if is_emr() else generate_shingles_local
-logger.info(f"Using {'EMR NumPy' if is_emr() else 'Local built-in'} shingle generation")
 
 def normalize_text(text: str) -> str:
     """
@@ -294,6 +293,154 @@ def estimate_similarity(sig1: List[int], sig2: List[int]) -> float:
     
     return float(matches) / len(sig1)
 
+def get_doc_id_and_representative_doc_id_df_deduped(
+    spark: SparkSession,
+    similar_pairs_df: DataFrame, 
+    input_df: DataFrame, 
+    is_debug_mode: bool) -> DataFrame:
+    """
+    This function returns this dataframe:
+
+    doc_id_and_representative_doc_id_df_deduped records:
+    +------+---------------------+
+    |doc_id|representative_doc_id|
+    +------+---------------------+
+    |doc1  |doc1                 |
+    |doc4  |doc1                 |
+    |doc2  |doc1                 |
+    +------+---------------------+
+    """
+    # Get all edges
+    edges = similar_pairs_df.select(
+        col("doc1").alias("src"),
+        col("doc2").alias("dst")
+    )
+    logger.info("edges records:")
+    log_dataframe(edges, is_debug_mode)
+    
+    # Simple connected components using iterative approach
+    # Initialize each document with itself as representative
+    all_docs = input_df.select(col("doc_id")).distinct()
+    
+    # Get documents involved in duplicates
+    docs_with_duplicates = edges.select("src").union(edges.select("dst")).distinct()
+    logger.info("docs_with_duplicates:")
+    log_dataframe(docs_with_duplicates, is_debug_mode)
+
+    # Build groups
+    edges_group_by_src_df = edges.groupBy("src").agg(
+        collect_set("dst").alias("connected_docs")
+    )
+    logger.info("edges_group_by_src_df records:")
+    log_dataframe(edges_group_by_src_df, is_debug_mode)
+    
+    combine_src_and_connected_docs_df = edges_group_by_src_df.select(
+        col("src").alias("doc_id"),
+        array_union(array(col("src")), col("connected_docs")).alias("all_connected")
+    )
+    logger.info("combine_src_and_connected_docs_df records:")
+    log_dataframe(combine_src_and_connected_docs_df, is_debug_mode)
+
+
+    # Find representative (minimum doc_id in group)
+    doc_id_and_representative_doc_id_df = combine_src_and_connected_docs_df.select(
+        explode(col("all_connected")).alias("doc_id"),
+        array_min(col("all_connected")).alias("representative_id")
+    )
+
+    logger.info("doc_id_and_representative_doc_id_df records:")
+    log_dataframe(doc_id_and_representative_doc_id_df, is_debug_mode)
+
+    # doc_id_and_representative_doc_id_df still contains duplicates.
+    """
+    ex) 
+    combine_src_and_connected_docs_df records:
+    +------+------------------+
+    |doc_id|all_connected     |
+    +------+------------------+
+    |doc1  |[doc1, doc4, doc2]|
+    |doc2  |[doc2, doc4]      |
+    +------+------------------+
+
+    doc_id_and_representative_doc_id_df records:
+    +------+---------------------+
+    |doc_id|representative_doc_id|
+    +------+---------------------+
+    |doc1  |doc1                 |
+    |doc4  |doc1                 |
+    |doc2  |doc1                 |
+    |doc2  |doc2                 |
+    |doc4  |doc2                 |
+    +------+---------------------+
+
+    doc_id_and_representative_doc_id_df_deduped records:
+    +------+---------------------+
+    |doc_id|representative_doc_id|
+    +------+---------------------+
+    |doc1  |doc1                 |
+    |doc4  |doc1                 |
+    |doc2  |doc1                 |
+    +------+---------------------+
+
+    This is because we explode the all_connected array and then select the representative document id.
+    So we are missing deduping transient, ex) doc1-doc2-doc4 as one group.
+    So now we need to do this:
+    """
+    # Create temporary view for SQL query
+    doc_id_and_representative_doc_id_df.createOrReplaceTempView("doc_id_and_representative_doc_id_df")
+    
+    sql_command = """
+    SELECT doc_id, MIN(representative_id) as representative_id
+    FROM doc_id_and_representative_doc_id_df
+    GROUP BY doc_id
+    """
+    doc_id_and_representative_doc_id_df_deduped = spark.sql(sql_command)
+    logger.info("doc_id_and_representative_doc_id_df_deduped:")
+    log_dataframe(doc_id_and_representative_doc_id_df_deduped, is_debug_mode)
+
+    return doc_id_and_representative_doc_id_df_deduped
+
+def find_duplicate_groups_graphframes(similar_pairs_df, all_doc_ids_df):
+    """
+    Use GraphFrames connected components to find duplicate groups.
+    
+    Args:
+        similar_pairs_df: DataFrame with columns (doc1, doc2) representing similar pairs
+        all_doc_ids_df: DataFrame with column (doc_id) for all documents
+    
+    Returns:
+        DataFrame with (doc_id, component) where component is the representative doc
+    """
+    # Create vertices - all unique document IDs
+    vertices = all_doc_ids_df.select(col("doc_id").alias("id")).distinct()
+    
+    # Create edges - bidirectional for undirected graph
+    edges_forward = similar_pairs_df.select(
+        col("doc1").alias("src"),
+        col("doc2").alias("dst")
+    )
+    edges_backward = similar_pairs_df.select(
+        col("doc2").alias("src"),
+        col("doc1").alias("dst")
+    )
+    edges = edges_forward.union(edges_backward).distinct()
+    
+    # Create graph and run connected components
+    g = GraphFrame(vertices, edges)
+    
+    # Connected components requires checkpoint directory
+    spark = vertices.sparkSession
+    spark.sparkContext.setCheckpointDir("/tmp/graphframes-checkpoints")
+    
+    # Run the algorithm
+    components = g.connectedComponents()
+    
+    # Result has columns: id, component (component is the smallest id in the group)
+    return components.select(
+        col("id").alias("doc_id"),
+        col("component").alias("group_id")
+    )
+
 def partition_aware_deduplicate(
     spark: SparkSession,
     input_df: DataFrame,
@@ -331,7 +478,8 @@ def partition_aware_deduplicate(
           f"bands={num_bands}, partitions={num_partitions}")
     logger.info(f"Spark UI available at: {spark.sparkContext.uiWebUrl}")
     print(f"🚀 Spark UI: {spark.sparkContext.uiWebUrl}")  # Print to console for visibility
-    
+    logger.info(f"Using {'EMR NumPy' if is_emr() else 'Local built-in'} shingle generation")
+
     rows_per_band = num_hashes // num_bands
     
     # Step 1: Compute MinHash signatures
@@ -534,86 +682,14 @@ def partition_aware_deduplicate(
     logger.info(f"Found {similar_count} similar document pairs")
     
     # Step 5: Build connected components for duplicate groups
-    logger.info("Step 5: Building duplicate groups...")
-    
-    # Get all edges
-    edges = similar_pairs_df.select(
-        col("doc1").alias("src"),
-        col("doc2").alias("dst")
+    logger.info("Step 5: Build connected components. "
+                "For each distinct doc_id, it has representative doc_id")
+    doc_id_and_representative_doc_id_df_deduped = get_doc_id_and_representative_doc_id_df_deduped(
+        spark=spark,
+        similar_pairs_df=similar_pairs_df,
+        input_df=input_df,
+        is_debug_mode=is_debug_mode
     )
-    logger.info("edges records:")
-    log_dataframe(edges, is_debug_mode)
-    
-    # Simple connected components using iterative approach
-    # Initialize each document with itself as representative
-    all_docs = input_df.select(col("doc_id")).distinct()
-    
-    # Get documents involved in duplicates
-    docs_with_duplicates = edges.select("src").union(edges.select("dst")).distinct()
-    logger.info("docs_with_duplicates:")
-    log_dataframe(docs_with_duplicates, is_debug_mode)
-
-    # Build groups
-    edges_group_by_src_df = edges.groupBy("src").agg(
-        collect_set("dst").alias("connected_docs")
-    )
-    logger.info("edges_group_by_src_df records:")
-    log_dataframe(edges_group_by_src_df, is_debug_mode)
-    
-    combine_src_and_connected_docs_df = edges_group_by_src_df.select(
-        col("src").alias("doc_id"),
-        array_union(array(col("src")), col("connected_docs")).alias("all_connected")
-    )
-    logger.info("combine_src_and_connected_docs_df records:")
-    log_dataframe(combine_src_and_connected_docs_df, is_debug_mode)
-
-
-    # Find representative (minimum doc_id in group)
-    doc_id_and_representative_doc_id_df = combine_src_and_connected_docs_df.select(
-        explode(col("all_connected")).alias("doc_id"),
-        array_min(col("all_connected")).alias("representative_id")
-    )
-
-    logger.info("doc_id_and_representative_doc_id_df records:")
-    log_dataframe(doc_id_and_representative_doc_id_df, is_debug_mode)
-
-    # doc_id_and_representative_doc_id_df still contains duplicates.
-    """
-    ex) 
-    combine_src_and_connected_docs_df records:
-    +------+------------------+
-    |doc_id|all_connected     |
-    +------+------------------+
-    |doc1  |[doc1, doc4, doc2]|
-    |doc2  |[doc2, doc4]      |
-    +------+------------------+
-
-    doc_id_and_representative_doc_id_df records:
-    +------+---------------------+
-    |doc_id|representative_doc_id|
-    +------+---------------------+
-    |doc1  |doc1                 |
-    |doc4  |doc1                 |
-    |doc2  |doc1                 |
-    |doc2  |doc2                 |
-    |doc4  |doc2                 |
-    +------+---------------------+
-
-    This is because we explode the all_connected array and then select the representative document id.
-    So we are missing deduping transient, ex) doc1-doc2-doc4 as one group.
-    So now we need to do this:
-    """
-    # Create temporary view for SQL query
-    doc_id_and_representative_doc_id_df.createOrReplaceTempView("doc_id_and_representative_doc_id_df")
-    
-    sql_command = """
-    SELECT doc_id, MIN(representative_id) as representative_id
-    FROM doc_id_and_representative_doc_id_df
-    GROUP BY doc_id
-    """
-    doc_id_and_representative_doc_id_df_deduped = spark.sql(sql_command)
-    logger.info("doc_id_and_representative_doc_id_df_deduped:")
-    log_dataframe(doc_id_and_representative_doc_id_df_deduped, is_debug_mode)
     
     # Step 6: Join back with original data
     logger.info("Step 6: Marking duplicates...")
