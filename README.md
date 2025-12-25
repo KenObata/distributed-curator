@@ -210,6 +210,25 @@ spark-submit \
   --deploy-mode client \
   s3://text-deduplication-740959772378/scripts/spark_deduplication_test.py development
 ```
+
+For 100 of WET files, increase partition count
+```
+spark-submit \
+  --master yarn \
+  --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
+  --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
+  --num-executors 8 \
+  --executor-cores 4 \
+  --executor-memory 28g \
+  --driver-memory 12g \
+  --conf spark.sql.shuffle.partitions=2000 \
+  --conf spark.memory.offHeap.size=1g \
+  --conf spark.hadoop.fs.s3a.signing-algorithm="" \
+  --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
+  --deploy-mode client \
+  s3://text-deduplication-740959772378/scripts/spark_deduplication_test.py development
+```
+
 How to cleanup
 ```
 terraform destroy
