@@ -195,6 +195,7 @@ From SSH session:
 spark-submit \
   --master yarn \
   --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
+  --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
   --num-executors 4 \
   --executor-cores 4 \
@@ -213,6 +214,7 @@ For 100 of WET files, increase partition count
 spark-submit \
   --master yarn \
   --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
+  --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
   --num-executors 8 \
   --executor-cores 4 \
