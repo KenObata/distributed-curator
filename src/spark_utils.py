@@ -29,7 +29,7 @@ def create_deduplication_spark_session() -> SparkSession:
     
     return spark
 
-def create_spark_session_partition_aware(app_name: str = "PartitionAwareDedup") -> SparkSession:
+def create_spark_session_partition_aware(app_name: str = "PartitionAwareDedup", graphframes_jar_path: str = None) -> SparkSession:
     """Create optimized Spark session for large-scale deduplication"""
     
     import os
@@ -37,7 +37,7 @@ def create_spark_session_partition_aware(app_name: str = "PartitionAwareDedup") 
     # JARs are now installed in PySpark's jars directory - no need to specify paths
     
     # these are default config, so they can be overriden
-    spark = SparkSession.builder \
+    builder = SparkSession.builder \
         .appName(app_name) \
         .config("spark.sql.adaptive.enabled", "true") \
         .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
@@ -59,8 +59,16 @@ def create_spark_session_partition_aware(app_name: str = "PartitionAwareDedup") 
         .config("spark.hadoop.fs.s3a.connection.establish.timeout", "60000") \
         .config("spark.hadoop.fs.s3a.attempts.maximum", "3") \
         .config("spark.hadoop.fs.s3a.retry.interval", "1000") \
-        .config("spark.sql.execution.arrow.pyspark.enabled", "true") \
-        .getOrCreate()
+        .config("spark.sql.execution.arrow.pyspark.enabled", "true")
+    
+    # Add GraphFrames JAR if provided
+    if graphframes_jar_path and os.path.exists(graphframes_jar_path):
+        builder = builder.config("spark.jars", graphframes_jar_path) \
+                        .config("spark.driver.extraClassPath", graphframes_jar_path) \
+                        .config("spark.executor.extraClassPath", graphframes_jar_path)
+        print(f"✅ GraphFrames JAR configured: {graphframes_jar_path}")
+    
+    spark = builder.getOrCreate()
 
     # Set log level to reduce verbosity
     spark.sparkContext.setLogLevel("WARN")

@@ -437,7 +437,7 @@ def get_deduplicate_df_graphframes(spark: SparkSession, similar_pairs_df:DataFra
     components.createOrReplaceTempView("components")
     
     sql_command = """
-    SELECT component, MIN(doc_id) as representative_id
+    SELECT component, MIN(id) as representative_id
     FROM components
     GROUP BY component
     """
@@ -694,11 +694,11 @@ def partition_aware_deduplicate(
     logger.info("Step 5: Build connected components. "
                 "For each distinct doc_id, it has representative doc_id")
 
-    all_doc_ids_df = input_df.select(col("doc_id")).distinct()
+    vertices = input_df.select(col("doc_id").alias("id")).distinct()
     doc_id_and_representative_doc_id_df_deduped = get_deduplicate_df_graphframes(
         spark=spark,
         similar_pairs_df=similar_pairs_df,
-        vertices=all_doc_ids_df
+        vertices=vertices
     )
 
 

@@ -35,7 +35,9 @@ pip install -r requirements_emr.txt
 Note that development is an argument.
 Choose from development, validation, production_proof, scale_proof
 ```
-spark-submit --driver-memory 4g --executor-memory 4g --py-files ../../src/spark_partition_aware_deduplicattion_v2.py,../../src/spark_utils.py ../../test/spark_deduplication_test.py development
+spark-submit --driver-memory 4g --executor-memory 4g \
+--packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
+--py-files ../../src/spark_partition_aware_deduplicattion_v2.py,../../src/spark_utils.py ../../test/spark_deduplication_test.py development
 ```
 - spark_deduplication.py - Complete implementation for web-scale deduplication
 - common_crawl_explorer.py: PoC

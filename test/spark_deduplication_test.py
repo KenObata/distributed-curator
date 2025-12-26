@@ -240,7 +240,18 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
         spark = create_spark_session_partition_aware_emr("CommonCrawlStressTest")
     else:
         print("Running locally - using local Spark session with S3 support")
-        spark = create_spark_session_partition_aware("CommonCrawlStressTest")
+        # Try to find GraphFrames JAR locally
+        jar_path = os.path.join(os.getcwd(), "graphframes-0.8.3-spark3.5-s_2.12.jar")
+        if not os.path.exists(jar_path):
+            # Try relative path from test directory
+            jar_path = os.path.join(os.path.dirname(__file__), "../terraform/text_deduplication/graphframes-0.8.3-spark3.5-s_2.12.jar")
+        
+        if os.path.exists(jar_path):
+            print(f"Found GraphFrames JAR at: {jar_path}")
+            spark = create_spark_session_partition_aware("CommonCrawlStressTest", graphframes_jar_path=jar_path)
+        else:
+            print("GraphFrames JAR not found - using basic Spark session")
+            spark = create_spark_session_partition_aware("CommonCrawlStressTest")
     
     try:
         print("\n" + "="*80)
