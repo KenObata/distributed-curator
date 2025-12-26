@@ -429,7 +429,6 @@ def get_deduplicate_df_graphframes(spark: SparkSession, similar_pairs_df:DataFra
     # Connected components requires checkpoint directory
     spark.sparkContext.setCheckpointDir("/tmp/graphframes-checkpoints")
     
-    # Run the algorithm
     components = g.connectedComponents()
     # Result of components: (id, component) where component is a Long
 
