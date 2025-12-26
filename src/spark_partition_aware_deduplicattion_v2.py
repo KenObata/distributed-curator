@@ -400,7 +400,7 @@ def get_doc_id_and_representative_doc_id_df_deduped(
 
     return doc_id_and_representative_doc_id_df_deduped
 
-def find_duplicate_groups_graphframes(similar_pairs_df, all_doc_ids_df):
+def get_deduplicate_df_graphframes(similar_pairs_df:DataFrame, all_doc_ids_df:DataFrame) -> DataFrame:
     """
     Use GraphFrames connected components to find duplicate groups.
     
@@ -434,12 +434,14 @@ def find_duplicate_groups_graphframes(similar_pairs_df, all_doc_ids_df):
     
     # Run the algorithm
     components = g.connectedComponents()
-    
-    # Result has columns: id, component (component is the smallest id in the group)
-    return components.select(
-        col("id").alias("doc_id"),
-        col("component").alias("group_id")
+    # Result of components: (id, component) where component is a Long
+
+    deduped_doc_ids = components.groupBy("component").agg(
+        spark_min("id").alias("doc_id")
     )
+    
+    # Result has columns: doc_id, component (=representative_doc_id) (doc_id is the smallest id in the group)
+    return deduped_doc_ids
 
 def partition_aware_deduplicate(
     spark: SparkSession,
@@ -517,8 +519,8 @@ def partition_aware_deduplicate(
         minhash_batch_udf(col(text_column))
     ).cache()
     
-    total_docs = df_with_signatures.count()
-    logger.info(f"Processing {total_docs} documents...")
+    total_docs_count = df_with_signatures.count()
+    logger.info(f"Processing {total_docs_count} documents...")
     
     # Step 2: Compute partition assignments based on LSH bands
     logger.info("Step 2: Computing partition assignments (KEY INNOVATION)...")
@@ -690,7 +692,8 @@ def partition_aware_deduplicate(
         input_df=input_df,
         is_debug_mode=is_debug_mode
     )
-    
+
+
     # Step 6: Join back with original data
     logger.info("Step 6: Marking duplicates...")
     
@@ -706,20 +709,19 @@ def partition_aware_deduplicate(
         "is_duplicate",
         col("representative_id") != col("doc_id")
     )
-    
+
     # Compute statistics
-    total_docs = result.count()
-    duplicate_docs = result.filter(col("is_duplicate")).count()
-    unique_docs = total_docs - duplicate_docs
+    deduplicate_docs = result.filter(~col("is_duplicate"))
+    unique_docs_count = deduplicate_docs.count()
+    duplicate_docs_count = total_docs_count - unique_docs_count
     
     logger.info("\n" + "="*60)
     logger.info("PARTITION-AWARE DEDUPLICATION COMPLETE")
     logger.info("="*60)
-    logger.info(f"Total documents: {total_docs:,}")
-    logger.info(f"Duplicate documents: {duplicate_docs:,}")
-    logger.info(f"Unique documents: {unique_docs:,}")
-    logger.info(f"Deduplication rate: {duplicate_docs/total_docs*100:.2f}%")
-    logger.info(f"Speedup vs vanilla: ~10x for large datasets")
+    logger.info(f"Total documents: {total_docs_count:,}")
+    logger.info(f"Duplicate documents: {duplicate_docs_count:,}")
+    logger.info(f"Unique documents: {unique_docs_count:,}")
+    logger.info(f"Deduplication rate: {duplicate_docs_count/total_docs_count*100:.2f}%")
     logger.info("="*60)
     
     return result
