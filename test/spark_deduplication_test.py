@@ -118,7 +118,8 @@ def read_wet_files_from_s3(spark: SparkSession, wet_s3_path: str, max_files: int
                 raise Exception("No .warc.wet.gz files found")
             
             # Read the selected files
-            wet_df = spark.read.text(','.join(file_paths))
+            # Pass list of paths directly - Spark handles multiple S3 files efficiently
+            wet_df = spark.read.text(file_paths)
         
         return wet_df
     except Exception as e:

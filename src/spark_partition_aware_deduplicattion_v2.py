@@ -427,13 +427,14 @@ def get_deduplicate_df_graphframes(spark: SparkSession, similar_pairs_df:DataFra
     g = GraphFrame(vertices, edges)
     
     # Connected components requires checkpoint directory
-    # Use S3 path on EMR, local path for local development
+    # Use HDFS path on EMR for better performance, local path for local development
     if spark.conf.get("spark.master").startswith("yarn"):
-        # Running on EMR/YARN - use S3 (slower but persistent)
-        checkpoint_dir = "s3://text-deduplication-740959772378/tmp/graphframes-checkpoints"
+        # Running on EMR/YARN - use HDFS (faster for temporary checkpoints)
+        checkpoint_dir = "hdfs:///tmp/graphframes-checkpoints"
     else:
         # Running locally - use local filesystem
         checkpoint_dir = "/tmp/graphframes-checkpoints"
+    logger.info(f"checkpoint_dir for GraphFrame: {checkpoint_dir}")
     
     spark.sparkContext.setCheckpointDir(checkpoint_dir)
     
