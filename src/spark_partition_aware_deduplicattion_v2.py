@@ -448,7 +448,7 @@ def get_deduplicate_df_graphframes(spark: SparkSession, similar_pairs_df:DataFra
     )
     
     # Result has columns: doc_id, representative_id
-    return deduped_doc_ids
+    return doc_id_and_representative_doc_id_df_deduped
 
 def partition_aware_deduplicate(
     spark: SparkSession,
