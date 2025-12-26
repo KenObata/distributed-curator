@@ -296,10 +296,13 @@ def estimate_similarity(sig1: List[int], sig2: List[int]) -> float:
 def get_doc_id_and_representative_doc_id_df_deduped(
     spark: SparkSession,
     similar_pairs_df: DataFrame, 
-    input_df: DataFrame, 
+    all_doc_ids_df: DataFrame, 
     is_debug_mode: bool) -> DataFrame:
     """
     This function returns this dataframe:
+    Arg: 
+    - similar_pairs_df: only contains doc1 - doc2 pair with similarity >= input threshold.
+    - all_doc_ids_df: input_df.select(col("doc_id")).distinct()
 
     doc_id_and_representative_doc_id_df_deduped records:
     +------+---------------------+
@@ -318,9 +321,6 @@ def get_doc_id_and_representative_doc_id_df_deduped(
     logger.info("edges records:")
     log_dataframe(edges, is_debug_mode)
     
-    # Simple connected components using iterative approach
-    # Initialize each document with itself as representative
-    all_docs = input_df.select(col("doc_id")).distinct()
     
     # Get documents involved in duplicates
     docs_with_duplicates = edges.select("src").union(edges.select("dst")).distinct()
@@ -400,7 +400,7 @@ def get_doc_id_and_representative_doc_id_df_deduped(
 
     return doc_id_and_representative_doc_id_df_deduped
 
-def get_deduplicate_df_graphframes(similar_pairs_df:DataFrame, all_doc_ids_df:DataFrame) -> DataFrame:
+def get_deduplicate_df_graphframes(spark: SparkSession, similar_pairs_df:DataFrame, vertices:DataFrame) -> DataFrame:
     """
     Use GraphFrames connected components to find duplicate groups.
     
@@ -411,8 +411,6 @@ def get_deduplicate_df_graphframes(similar_pairs_df:DataFrame, all_doc_ids_df:Da
     Returns:
         DataFrame with (doc_id, component) where component is the representative doc
     """
-    # Create vertices - all unique document IDs
-    vertices = all_doc_ids_df.select(col("doc_id").alias("id")).distinct()
     
     # Create edges - bidirectional for undirected graph
     edges_forward = similar_pairs_df.select(
@@ -429,18 +427,27 @@ def get_deduplicate_df_graphframes(similar_pairs_df:DataFrame, all_doc_ids_df:Da
     g = GraphFrame(vertices, edges)
     
     # Connected components requires checkpoint directory
-    spark = vertices.sparkSession
     spark.sparkContext.setCheckpointDir("/tmp/graphframes-checkpoints")
     
     # Run the algorithm
     components = g.connectedComponents()
     # Result of components: (id, component) where component is a Long
 
-    deduped_doc_ids = components.groupBy("component").agg(
-        spark_min("id").alias("doc_id")
+    # Create temporary view for SQL query
+    components.createOrReplaceTempView("components")
+    
+    sql_command = """
+    SELECT component, MIN(doc_id) as representative_id
+    FROM components
+    GROUP BY component
+    """
+    component_and_representative_id_df_deduped = spark.sql(sql_command)
+    doc_id_and_representative_doc_id_df_deduped = components.join(component_and_representative_id_df_deduped, on="component").select(
+        col("id").alias("doc_id"),
+        col("representative_id")
     )
     
-    # Result has columns: doc_id, component (=representative_doc_id) (doc_id is the smallest id in the group)
+    # Result has columns: doc_id, representative_id
     return deduped_doc_ids
 
 def partition_aware_deduplicate(
@@ -686,11 +693,12 @@ def partition_aware_deduplicate(
     # Step 5: Build connected components for duplicate groups
     logger.info("Step 5: Build connected components. "
                 "For each distinct doc_id, it has representative doc_id")
-    doc_id_and_representative_doc_id_df_deduped = get_doc_id_and_representative_doc_id_df_deduped(
+
+    all_doc_ids_df = input_df.select(col("doc_id")).distinct()
+    doc_id_and_representative_doc_id_df_deduped = get_deduplicate_df_graphframes(
         spark=spark,
         similar_pairs_df=similar_pairs_df,
-        input_df=input_df,
-        is_debug_mode=is_debug_mode
+        vertices=all_doc_ids_df
     )
 
 
