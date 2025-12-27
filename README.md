@@ -147,13 +147,16 @@ sudo pip3 install --ignore-installed --no-cache-dir --no-deps -r requirements_em
 
 
 Step4: Exit ssh, and on your macbook, install YARN(8088), Spark UI (4040)
+
+Static port forwarding
 ```
-ssh -i ./your-emr-key.pem -L 8888:localhost:8888 hadoop@<master>
 ssh -i ./your-emr-key.pem \
   -L 8088:localhost:8088 \
+  -L 18080:localhost:18080 \
   -L 8042:localhost:8042 \
   -L 19888:localhost:19888 \
   -L 18080:localhost:18080 \
+  -L 20888:ip-172-31-38-47.ec2.internal:20888 \
   -L 4040:<EMR driver (master node) hostname>:4040 \
   hadoop@<master-public-dns>
 ```
@@ -161,6 +164,24 @@ ssh -i ./your-emr-key.pem \
 where 
 - NodeManager: http://localhost:8042
 - Job History: http://localhost:19888
+- History Server http://localhost:18080/
+- YAN Cluster mode's Spark UI
+    - How to view UI: http://localhost:20888/proxy/application_xxx/
+
+Dynamic port forwarding
+```
+ssh -i ./your-emr-key.pem \
+  -D 18080 \
+  hadoop@<master-public-dns>
+```
+
+where The -D flag only takes a port number, not a host:port mapping.
+
+after this, on your macbook, run
+```
+/Applications/Google\ Chrome.app//Contents/MacOS/Google\ Chrome --proxy-server="socks5://localhost:8080"
+```
+
 
 how did we find YAN host name?
 
@@ -205,7 +226,7 @@ spark-submit \
   --conf spark.memory.offHeap.size=1g \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
-  --deploy-mode client \
+  --deploy-mode cluster \
   s3://your-scripts-bucket/scripts/spark_deduplication_test.py development
 ```
 
@@ -250,6 +271,26 @@ Step 9: How to monitor
 Check specific stages:
 http://localhost:4040/stages/stage/?id=12&attempt=0
 
+## EMR ssh trouble shooting
+### How to check HDDS application logs
+```
+hdfs dfs -ls /var/log/spark/apps/
+```
+
+edit spark-history-server .sh file
+```
+sudo vim /etc/spark/conf/spark-env.sh
+```
+
+Note: you neeed this to increase log size:
+```
+export SPARK_DAEMON_MEMORY=4g
+```
+
+restart soak history
+```
+sudo systemctl restart spark-history-server
+```
 
 ## Terraform trouble shooting.
 
