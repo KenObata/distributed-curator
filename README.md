@@ -268,8 +268,12 @@ spark-submit \
 
 Step 9: How to monitor
 
-Check specific stages:
-http://localhost:4040/stages/stage/?id=12&attempt=0
+- Cluster Mode:
+  - History Server: http://localhost:18080/
+  - Runtime: see terminal message or {EC2 internal IP}:36907
+- Driver Logs
+  - ```yarn logs -applicationId {application_id} | grep -A5 -B5 "Step"```
+
 
 ## EMR ssh trouble shooting
 ### How to check HDDS application logs
