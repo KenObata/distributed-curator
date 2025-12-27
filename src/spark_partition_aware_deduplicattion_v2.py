@@ -12,6 +12,7 @@ from graphframes import GraphFrame
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
+from pyspark import StorageLevel
 import mmh3
 import numpy as np
 import pandas as pd
@@ -532,7 +533,7 @@ def partition_aware_deduplicate(
     df_with_signatures = input_df.withColumn(
         "minhash_signature",
         minhash_batch_udf(col(text_column))
-    ).cache()
+    ).persist(StorageLevel.MEMORY_AND_DISK)
     
     total_docs_count = df_with_signatures.count()
     logger.info(f"Processing {total_docs_count} documents...")
@@ -543,7 +544,7 @@ def partition_aware_deduplicate(
     def compute_partition_assignments(signature: List[int]) -> List[int]:
         """
         Determine which partitions this document needs to be sent to
-        based on its LSH bands. This ensures similar docs end up in same partition.
+        based on its LSH bands. Uses salting to reduce data skew.
         """
         if not signature or all(s == 0 for s in signature):
             return [0]  # Default partition
@@ -559,11 +560,23 @@ def partition_aware_deduplicate(
             
             # Hash the band to get partition assignment
             band_values = tuple(signature[start:end])
-            band_hash = builtin_hash(band_values)
             
-            # Map to partition - documents with same band hash go to same partition
-            partition_id = builtin_abs(band_hash) % num_partitions
-            partitions.add(partition_id)
+            # Primary hash for the band
+            primary_hash = builtin_hash((band_id, band_values))
+            
+            # Apply salting technique to distribute hot keys
+            # Use multiple salt values to spread single band across partitions
+            num_salts = 3  # Spread hot bands across 3 partitions
+            for salt in range(num_salts):
+                # Combine primary hash with salt and band_id for better distribution
+                salted_hash = builtin_hash((primary_hash, salt, band_id))
+                
+                # Use mixing function to improve hash distribution
+                mixed_hash = salted_hash ^ (salted_hash >> 16)
+                mixed_hash = mixed_hash ^ (band_id << 8)  # Include band position
+                
+                partition_id = builtin_abs(mixed_hash) % num_partitions
+                partitions.add(partition_id)
         
         return list(partitions)
     
@@ -599,9 +612,31 @@ def partition_aware_deduplicate(
         explode(col("target_partitions")).alias("partition_id")
     )
     
+    # Monitor partition skew before repartitioning
+    partition_distribution = df_exploded.groupBy("partition_id").count().collect()
+    partition_counts = [row['count'] for row in partition_distribution]
+    
+    max_partition_size = max(partition_counts)
+    min_partition_size = min(partition_counts) 
+    avg_partition_size = sum(partition_counts) / len(partition_counts)
+    skew_ratio = max_partition_size / avg_partition_size if avg_partition_size > 0 else 0
+    
+    logger.info(f"Partition skew analysis:")
+    logger.info(f"  Max partition size: {max_partition_size:,}")
+    logger.info(f"  Min partition size: {min_partition_size:,}")
+    logger.info(f"  Avg partition size: {avg_partition_size:.0f}")
+    logger.info(f"  Skew ratio (max/avg): {skew_ratio:.2f}")
+    logger.info(f"  Active partitions: {len(partition_counts)} / {num_partitions}")
+    
+    # Adaptive partitioning: Use more partitions if skew is high
+    effective_partitions = num_partitions
+    if skew_ratio > 5.0:  # High skew threshold
+        effective_partitions = min(num_partitions * 2, 4000)  # Cap at 4000
+        logger.info(f"High skew detected (ratio: {skew_ratio:.2f}), increasing partitions to {effective_partitions}")
+    
     # KEY INNOVATION: Repartition based on computed partition assignments
     # This ensures similar documents are in the same partition
-    df_partitioned = df_exploded.repartition(num_partitions, col("partition_id"))
+    df_partitioned = df_exploded.repartition(effective_partitions, col("partition_id"))
     
     # Step 4: Process each partition locally (no shuffle!)
     logger.info("Step 4: Local deduplication within partitions (NO SHUFFLE)...")
@@ -609,7 +644,7 @@ def partition_aware_deduplicate(
     def process_partition_locally(iterator: Iterator) -> Iterator:
         """
         Process all documents within a single partition locally.
-        This is where the magic happens - no network I/O needed!
+        Optimized for handling workload imbalance efficiently.
         """
         # Collect documents in this partition
         local_docs = []
@@ -622,6 +657,10 @@ def partition_aware_deduplicate(
             })
         
         if not local_docs:
+            return iter([])
+        
+        # Early exit for small partitions to reduce overhead
+        if len(local_docs) < 2:
             return iter([])
         
         # Build local LSH index for this partition
@@ -651,9 +690,23 @@ def partition_aware_deduplicate(
         seen_pairs = set()
         similar_pairs = []
         
-        for band_key, docs_in_band in band_index.items():
+        # Process bands in order of size (smallest first) to balance work
+        sorted_bands = sorted(band_index.items(), key=lambda x: len(x[1]))
+        
+        for band_key, docs_in_band in sorted_bands:
             if len(docs_in_band) < 2:
                 continue
+                
+            # Limit comparisons for very large bands to prevent extreme skew
+            max_comparisons = 10000  # Cap at 10K comparisons per band
+            total_comparisons = len(docs_in_band) * (len(docs_in_band) - 1) // 2
+            
+            if total_comparisons > max_comparisons:
+                # Sample documents randomly to stay within limit
+                import random
+                random.seed(42)  # Deterministic sampling
+                sample_size = int((2 * max_comparisons) ** 0.5)
+                docs_in_band = random.sample(docs_in_band, min(sample_size, len(docs_in_band)))
             
             # Compare all pairs in this band
             for i, doc1 in enumerate(docs_in_band):
@@ -693,7 +746,7 @@ def partition_aware_deduplicate(
     similar_pairs_df = spark.createDataFrame(similar_pairs_rdd, similar_pairs_schema)
     
     # Remove duplicate pairs that might appear in multiple partitions
-    similar_pairs_df = similar_pairs_df.dropDuplicates(["doc1", "doc2"])
+    similar_pairs_df = similar_pairs_df.dropDuplicates(["doc1", "doc2"]).persist(StorageLevel.MEMORY_AND_DISK)
     
     similar_count = similar_pairs_df.count()
     logger.info(f"Found {similar_count} similar document pairs")
@@ -702,12 +755,13 @@ def partition_aware_deduplicate(
     logger.info("Step 5: Build connected components. "
                 "For each distinct doc_id, it has representative doc_id")
 
-    vertices = input_df.select(col("doc_id").alias("id")).distinct()
+    vertices = input_df.select(col("doc_id").alias("id")).distinct().persist(StorageLevel.MEMORY_ONLY)
     doc_id_and_representative_doc_id_df_deduped = get_deduplicate_df_graphframes(
         spark=spark,
         similar_pairs_df=similar_pairs_df,
         vertices=vertices
-    )
+    ).persist(StorageLevel.MEMORY_AND_DISK)
+    logger.info("vertices cached. doc_id_and_representative_doc_id_df_deduped cached.")
 
 
     # Step 6: Join back with original data
@@ -739,5 +793,12 @@ def partition_aware_deduplicate(
     logger.info(f"Unique documents: {unique_docs_count:,}")
     logger.info(f"Deduplication rate: {duplicate_docs_count/total_docs_count*100:.2f}%")
     logger.info("="*60)
+    
+    # Clean up cached DataFrames to free memory
+    logger.info("Cleaning up cached DataFrames...")
+    df_with_signatures.unpersist()
+    similar_pairs_df.unpersist() 
+    vertices.unpersist()
+    doc_id_and_representative_doc_id_df_deduped.unpersist()
     
     return result
