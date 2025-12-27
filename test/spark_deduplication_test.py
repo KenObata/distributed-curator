@@ -330,6 +330,10 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
         start_time = time.time()
         print(f"Starting deduplication at: {time.strftime('%Y-%m-%d %H:%M:%S')}")
         
+        # Get partition count from Spark config (respects user's --conf spark.sql.shuffle.partitions)
+        shuffle_partitions = int(spark.conf.get("spark.sql.shuffle.partitions", "200"))
+        print(f"Using {shuffle_partitions} partitions from Spark config")
+        
         # Run partition-aware deduplication with optimized parameters for large dataset
         result = partition_aware_deduplicate(
             spark=spark,
@@ -338,7 +342,7 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
             similarity_threshold=0.9,  # Higher threshold for URL-based content
             num_hashes=64,             # Fewer hashes for speed
             num_bands=8,               # Fewer bands for speed  
-            num_partitions=200,         # More partitions for parallelism
+            num_partitions=shuffle_partitions,  # Use user's partition setting
             is_debug_mode=False
         )
         
@@ -346,7 +350,6 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
         end_time = time.time()
         elapsed = end_time - start_time
         
-        """
         # Performance metrics - collect efficiently to avoid OOM
         print("Collecting performance metrics...")
         
@@ -360,10 +363,48 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
         print(f"Unique docs calculated: {unique_docs:,}")
         
         print("\n" + "="*80)
-        """
         print("COMMON CRAWL STRESS TEST RESULTS")
         print("="*80)
         print(f"Processing time: {elapsed:.2f} seconds")
+        print(f"Documents processed: {total_docs:,}")
+        print(f"Duplicates found: {duplicate_docs:,}")
+        print(f"Unique documents: {unique_docs:,}")
+        print(f"Deduplication rate: {(duplicate_docs/total_docs*100):.2f}%")
+        print("="*80)
+        
+        # Write results to S3 for cluster mode compatibility
+        deploy_mode = spark.conf.get("spark.submit.deployMode", "cluster")
+        print(f"Deploy mode: {deploy_mode}")
+        
+        if deploy_mode == "cluster":
+            print("Cluster mode detected - saving results to S3...")
+            
+            result_summary = {
+                "benchmark_level": benchmark_level,
+                "processing_time_seconds": elapsed,
+                "total_documents": total_docs,
+                "duplicate_documents": duplicate_docs,
+                "unique_documents": unique_docs,
+                "deduplication_rate_percent": round(duplicate_docs/total_docs*100, 2),
+                "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
+                "config": {
+                    "similarity_threshold": 0.9,
+                    "num_hashes": 64,
+                    "num_bands": 8,
+                    "num_partitions": shuffle_partitions
+                }
+            }
+            
+            import json
+            result_json = json.dumps(result_summary, indent=2)
+            
+            # Save to S3 for retrieval after job completes
+            result_df = spark.createDataFrame([(result_json,)], ["result"])
+            result_df.write.mode("overwrite").text("s3://text-deduplication-740959772378/results/benchmark_results/")
+            print("Results saved to S3: s3://text-deduplication-740959772378/results/benchmark_results/")
+            
+        else:
+            print("Client mode - results displayed above")
 
         """
         print(f"Documents processed: {total_docs:,}")

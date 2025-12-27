@@ -224,9 +224,11 @@ spark-submit \
   --conf spark.memory.offHeap.size=1g \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
-  --deploy-mode client \
+  --deploy-mode cluster \
   s3://text-deduplication-740959772378/scripts/spark_deduplication_test.py validation
 ```
+
+where --deploy-mode cluster is to run the driver on EMR, not laptop.
 
 How to cleanup
 ```
