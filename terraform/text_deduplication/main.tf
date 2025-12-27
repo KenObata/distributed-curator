@@ -538,7 +538,10 @@ resource "aws_emr_cluster" "dedup_cluster" {
         "spark.sql.catalog.glue_catalog.warehouse": "s3://${aws_s3_bucket.data.bucket}/iceberg/",
         "spark.sql.catalog.glue_catalog.catalog-impl": "org.apache.iceberg.aws.glue.GlueCatalog",
         "spark.sql.catalog.glue_catalog.io-impl": "org.apache.iceberg.aws.s3.S3FileIO",
-        "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
+        "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+        "spark.eventLog.enabled": "true",
+        "spark.eventLog.dir": "hdfs:///var/log/spark/apps",
+        "spark.history.fs.logDirectory": "hdfs:///var/log/spark/apps"
       }
     },
     {
@@ -556,6 +559,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
           Classification = "export"
           Properties = {
             "PYSPARK_PYTHON" = "/usr/bin/python3"
+            "SPARK_DAEMON_MEMORY" = "4g"
           }
         }
       ]
