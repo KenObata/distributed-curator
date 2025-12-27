@@ -567,6 +567,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
           Classification = "export"
           Properties = {
             "PYSPARK_PYTHON" = "/usr/bin/python3"
+            "SPARK_DAEMON_MEMORY" = "4g"
           }
         }
       ]
