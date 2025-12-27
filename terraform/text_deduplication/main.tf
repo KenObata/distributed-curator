@@ -262,6 +262,18 @@ resource "aws_iam_role_policy" "emr_ec2_policy" {
         Resource = "*"
       },
       {
+        Sid    = "AllowCloudWatchLogs"
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:DescribeLogGroups",
+          "logs:DescribeLogStreams"
+        ]
+        Resource = "*"
+      },
+      {
         Sid    = "AllowDataBucketAccess"
         Effect = "Allow"
         Action = [
@@ -559,6 +571,12 @@ resource "aws_emr_cluster" "dedup_cluster" {
 
   log_uri = "s3://${aws_s3_bucket.emr_logs.id}/logs/"
 
+  # Enable CloudWatch logging
+  log_encryption_kms_key_id = null
+  
+  # Step concurrency (optional - allows multiple steps)
+  step_concurrency_level = 1
+  
   # Keep cluster running (set to true for step execution)
   keep_job_flow_alive_when_no_steps = true
 
