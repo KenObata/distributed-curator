@@ -89,6 +89,14 @@ resource "aws_security_group" "emr_master" { # master means spark driver
     cidr_blocks = ["0.0.0.0/0"]  # Restrict to your IP in production
   }
 
+  # Spark History Server
+  ingress {
+    from_port   = 18080
+    to_port     = 18080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]  # Restrict to your IP in production
+  }
+
   # Spark UI and YARN commented out because 
   # EMR doesn't allow security groups with public access to ports other than SSH (22).
   # Spark UI
@@ -538,7 +546,10 @@ resource "aws_emr_cluster" "dedup_cluster" {
         "spark.sql.catalog.glue_catalog.warehouse": "s3://${aws_s3_bucket.data.bucket}/iceberg/",
         "spark.sql.catalog.glue_catalog.catalog-impl": "org.apache.iceberg.aws.glue.GlueCatalog",
         "spark.sql.catalog.glue_catalog.io-impl": "org.apache.iceberg.aws.s3.S3FileIO",
-        "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
+        "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+        "spark.eventLog.enabled": "true",
+        "spark.eventLog.dir": "hdfs:///var/log/spark/apps",
+        "spark.history.fs.logDirectory": "hdfs:///var/log/spark/apps"
       }
     },
     {
@@ -613,6 +624,11 @@ output "spark_ui_url" {
 output "yarn_ui_url" {
   description = "YARN ResourceManager UI URL"
   value       = "http://${aws_emr_cluster.dedup_cluster.master_public_dns}:8088"
+}
+
+output "spark_history_server_url" {
+  description = "Spark History Server URL (directly accessible with security group)"
+  value       = "http://${aws_emr_cluster.dedup_cluster.master_public_dns}:18080"
 }
 
 output "ssh_command" {
