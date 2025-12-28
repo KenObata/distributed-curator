@@ -271,17 +271,6 @@ def partition_aware_deduplicate(
         """Process entire batch using highly optimized vectorized operations"""
         return compute_minhash_vectorized_batch_only_hash_once(rows, num_hashes, ngram=9)
     
-    # df_with_signatures = input_df.withColumn(
-    #    "minhash_signature",
-    #    minhash_udf(col(text_column))
-    # ).cache()  # Cache as we'll use multiple times
-
-    # df_with_signatures = spark.createDataFrame(
-    #    input_df.rdd.mapPartitions(
-    #        lambda rows: minhash_batch_udf(rows)
-    #    ),
-    #    schema
-    #).cache()
 
     df_with_signatures = input_df.withColumn(
         "minhash_signature",
