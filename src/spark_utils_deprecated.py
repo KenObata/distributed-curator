@@ -67,6 +67,91 @@ def compute_minhash_vectorized_batch(texts: pd.Series, num_hashes: int = 128, ng
     
     return pd.Series(results)
 
+@pandas_udf(ArrayType(IntegerType()))
+def normalize_text_pandas_udf(texts: pd.Series) -> pd.Series:
+    """
+    Optimize by separating normalization from hashing.
+
+    Difference from normalize_text is that this function returns
+     pandas series unlike normalize_text()'s row by row string.
+
+    Note: currently, we can't use normalize function as udf, because it needs row by row process.
+    """
+    # Step 1: Normalize all texts first (vectorizable!)
+    normalized_texts = texts.str.lower()  # Pandas string methods are optimized
+    
+    # Remove articles using pandas vectorized operations
+    articles_pattern = r'\b(the|a|an|this|that|these|those)\b'
+    normalized_texts = normalized_texts.str.replace(articles_pattern, '', regex=True)
+    normalized_texts = normalized_texts.str.replace(r'\s+', ' ', regex=True)  # Clean spaces
+    
+    # Step 2: Now compute MinHash on normalized texts
+    results = []
+    for text in normalized_texts:
+        if text and len(text) >= 9:
+            sig = compute_minhash_signature(text, 64, ngram=9, normalize=False)  # Already normalized
+        else:
+            sig = [0] * 64
+        results.append(sig)
+    
+    return pd.Series(results)
+
+def compute_minhash_signature(text: str, num_hashes: int = 128, ngram: int = 9, normalize: bool = True) -> List[int]:
+    """
+    Compute MinHash signature for text with hash mixing optimization
+    
+    Args:
+        text: Input text
+        num_hashes: Number of hash functions
+        ngram: Shingle size
+        normalize: Whether to normalize text first (removes articles, etc.)
+    
+    Returns:
+        MinHash signature
+    """
+    if not text:
+        return [0] * num_hashes
+        
+    # Optionally normalize text to handle article differences
+    if normalize:
+        text = normalize_text(text)
+    
+    if len(text) < ngram:
+        return [0] * num_hashes
+    
+    # PRE-COMPUTE SEEDS ONCE (cached as function attribute for performance)
+    if not hasattr(compute_minhash_signature, '_seeds_cache'):
+        import random
+        random.seed(42)  # Deterministic for reproducibility
+        # Generate enough seeds for the maximum expected num_hashes
+        compute_minhash_signature._seeds_cache = [
+            random.randint(1, 0xFFFFFFFF) for _ in range(1024)  # Pre-generate 1024 seeds
+        ]
+    
+    hash_seeds = compute_minhash_signature._seeds_cache[:num_hashes]
+    
+    # Create k-shingles using efficient string slicing
+    text_lower = text.lower() if not normalize else text  # Already lowercased in normalize
+    
+    # Use environment-specific shingle generation optimization
+    shingles = set(generate_shingles(text_lower, ngram))
+    
+    if not shingles:
+        return [0] * num_hashes
+    
+    # Compute MinHash signature with hash mixing optimization
+    signature = np.full(num_hashes, np.iinfo(np.uint32).max, dtype=np.uint32)
+    
+    for shingle in shingles:
+        # OPTIMIZATION: Hash once, then mix with seeds (eliminates string concatenation)
+        base_hash = builtin_hash(shingle) & 0xFFFFFFFF
+        for i in range(num_hashes):
+            # Hash mixing instead of string concatenation: 2-3x faster
+            hash_val = (base_hash ^ hash_seeds[i]) & 0xFFFFFFFF
+            signature[i] = builtin_min(signature[i], hash_val)
+    
+    return signature.tolist()
+
 def get_doc_id_and_representative_doc_id_df_deduped(
     spark: SparkSession,
     similar_pairs_df: DataFrame, 
