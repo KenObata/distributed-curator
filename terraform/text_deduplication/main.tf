@@ -89,13 +89,15 @@ resource "aws_security_group" "emr_master" { # master means spark driver
     cidr_blocks = ["0.0.0.0/0"]  # Restrict to your IP in production
   }
 
-  # Spark History Server
-  ingress {
-    from_port   = 18080
-    to_port     = 18080
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]  # Restrict to your IP in production
-  }
+  # Spark History Server - commented out due to EMR security restrictions
+  # EMR only allows port 22 to have public access (0.0.0.0/0)
+  # Use SSH tunneling to access Spark History Server
+  #ingress {
+  #  from_port   = 18080
+  #  to_port     = 18080
+  #  protocol    = "tcp"
+  #  cidr_blocks = ["0.0.0.0/0"]
+  #}
 
   # Spark UI and YARN commented out because 
   # EMR doesn't allow security groups with public access to ports other than SSH (22).
@@ -627,9 +629,9 @@ output "yarn_ui_url" {
   value       = "http://${aws_emr_cluster.dedup_cluster.master_public_dns}:8088"
 }
 
-output "spark_history_server_url" {
-  description = "Spark History Server URL (directly accessible with security group)"
-  value       = "http://${aws_emr_cluster.dedup_cluster.master_public_dns}:18080"
+output "spark_history_server_tunnel_command" {
+  description = "SSH tunnel command to access Spark History Server (EMR security restriction)"
+  value       = "ssh -i ${path.module}/${var.key_name}.pem -L 18080:${aws_emr_cluster.dedup_cluster.master_public_dns}:18080 hadoop@${aws_emr_cluster.dedup_cluster.master_public_dns}"
 }
 
 output "ssh_command" {
