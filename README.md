@@ -292,6 +292,17 @@ restart soak history
 sudo systemctl restart spark-history-server
 ```
 
+## pyspark common errors
+
+- [NOT_COLUMN_OR_STR] Argument `col` should be a Column or str, got list.
+  -  The error was caused by PySpark function overrides:
+  - from pyspark.sql.functions import * overwrote Python's built-in
+  max(), min(), sum() functions
+  - When calling max(partition_counts) with a Python list, PySpark's
+  max() expected a Column object
+  - This caused the misleading [NOT_COLUMN_OR_STR] error message
+      - Fixed function override conflicts - Used builtin_max(),
+      builtin_min(), builtin_sum() instead of overridden function
 ## Terraform trouble shooting.
 
 ### terraform destroy

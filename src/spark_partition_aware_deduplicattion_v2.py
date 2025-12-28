@@ -604,9 +604,9 @@ def partition_aware_deduplicate(
     partition_distribution = df_exploded.groupBy("partition_id").count().collect()
     partition_counts = [row['count'] for row in partition_distribution]
 
-    max_partition_size = max(partition_counts)
-    min_partition_size = min(partition_counts) 
-    avg_partition_size = sum(partition_counts) / len(partition_counts)
+    max_partition_size = builtin_max(partition_counts)
+    min_partition_size = builtin_min(partition_counts) 
+    avg_partition_size = builtin_sum(partition_counts) / len(partition_counts)
     skew_ratio = max_partition_size / avg_partition_size if avg_partition_size > 0 else 0
 
     logger.info(f"Partition skew analysis:")
