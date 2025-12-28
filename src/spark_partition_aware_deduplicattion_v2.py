@@ -81,7 +81,7 @@ generate_shingles = generate_shingles_emr if is_emr() else generate_shingles_loc
 # NOTE: compute_minhash_vectorized_batch() moved to spark_utils_deprecated.py (2025-12-28)
 # Current implementation uses compute_minhash_vectorized_batch_only_hash_once() which is more optimized
 
-def compute_minhash_vectorized_batch_only_hash_once(texts: pd.Series, num_hashes: int = 128, ngram: int = 9) -> pd.Series:
+def compute_minhash_vectorized_batch_only_hash_once(texts: pd.Series, num_hashes: int = 128, ngram: int = 9, remove_articles: bool = False) -> pd.Series:
     """
     Highly optimized vectorized MinHash computation using pandas and numpy
     Difference from compute_minhash_vectorized_batch is that this function
@@ -93,10 +93,11 @@ def compute_minhash_vectorized_batch_only_hash_once(texts: pd.Series, num_hashes
     normalized_texts = texts.str.lower()
     
     # Remove articles using vectorized regex
-    articles_pattern = r'\b(the|a|an|this|that|these|those)\b'
-    normalized_texts = normalized_texts.str.replace(articles_pattern, '', regex=True)
-    normalized_texts = normalized_texts.str.replace(r'\s+', ' ', regex=True)
-    normalized_texts = normalized_texts.str.strip()
+    if remove_articles:
+        articles_pattern = r'\b(the|a|an|this|that|these|those)\b'
+        normalized_texts = normalized_texts.str.replace(articles_pattern, '', regex=True)
+        normalized_texts = normalized_texts.str.replace(r'\s+', ' ', regex=True)
+        normalized_texts = normalized_texts.str.strip()
     
     # Step 2: Process each text individually (fixed the Series slicing issue)
     for text in normalized_texts:
@@ -220,7 +221,8 @@ def partition_aware_deduplicate(
     num_hashes: int = 128,
     num_bands: int = 16,
     num_partitions: int = 1000,
-    is_debug_mode = False
+    is_debug_mode = False,
+    remove_articles = False,
 ) -> DataFrame:
     """
     Partition-aware deduplication that scales to 1TB+

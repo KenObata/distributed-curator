@@ -351,3 +351,23 @@ these two docs are considered to be near duplicate.
   For example, doc1-doc2 are dup, doc2-doc6 are also dup. Will doc 6 also deduped?
   - Yes, that's because similar docs based on MIN shingles falls under the same  partitions. So one run of dedupe SQL is sufficient. 
   In other words, we don't need to run iterative SQL to detect and dedupe duplicates.
+- [Empty Spaces in Shingles] does it skip empty string?
+  - Shingles do include spaces. They're not skipped.
+  - Spaces help accuracy because they capture word boundaries.
+
+- [Character-level vs Word-level Tokenization] it seems don't care about length of a word. For examples, if ngram=3, then if a word is "hello", shingles are = ['hel',''ell,'llo']. Why is this approach better than tokenizing word by word? Is it still accurate because we run these minhash shingles 64 ~ 128 times ?
+  - At initial glance, tokenization seems more accurate, but actually, Character n-grams are better. Because of a few reasons:
+    - 1) Typo Resistance: typo such as "helo" vs "hello" share the same shingles.
+    - 2) Near-Duplicate Detection. Out goal is ""Near"" duplicates. So if we go with tokenization approach, past tense and present tense are categorized as different word. But in ""Near"" duplication, we want to categorize them near duplicates.
+- Do you do text normalization? 
+  - we apply Lowercase.
+  - we do NOT apply Remove articles by default. We provide this as parameter. Remove articles gives minimum impact and it can even fause false positives.
+    - ex) 
+    Without normalization - correctly different
+    "The Who is a band"
+    "Who is a band member"
+
+    With article removal - incorrectly similar!
+    "Who is band"
+    "Who is band member"
+    - impact of removing articles only reduce duplicates by 0.01 %
