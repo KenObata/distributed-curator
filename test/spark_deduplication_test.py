@@ -6,8 +6,6 @@ import numpy as np
 import time
 try:
     from spark_partition_aware_deduplicattion_v2 import (
-        compute_minhash_signature,
-        estimate_similarity,
         partition_aware_deduplicate
     )
 except ImportError:
@@ -15,8 +13,6 @@ except ImportError:
     import os
     sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
     from spark_partition_aware_deduplicattion_v2 import (
-        compute_minhash_signature,
-        estimate_similarity,
         partition_aware_deduplicate
     )
 from spark_utils import create_spark_session_partition_aware_emr, create_spark_session_partition_aware

@@ -147,7 +147,10 @@ sudo pip3 install --ignore-installed --no-cache-dir --no-deps -r requirements_em
 
 
 Step4: Exit ssh, and on your macbook, install YARN(8088), Spark UI (4040)
-
+Find YAN host name - run
+```
+hostname -f
+```
 Static port forwarding
 ```
 ssh -i ./your-emr-key.pem \
@@ -183,12 +186,6 @@ after this, on your macbook, run
 ```
 
 
-how did we find YAN host name?
-
-run
-```
-hostname -f
-```
 
 or
 
@@ -271,6 +268,10 @@ Step 9: How to monitor
 Check specific stages:
 http://localhost:4040/stages/stage/?id=12&attempt=0
 
+check application logs
+```
+yarn logs -applicationId
+```
 ## EMR ssh trouble shooting
 ### How to check HDDS application logs
 ```

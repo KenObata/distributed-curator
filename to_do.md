@@ -73,3 +73,9 @@ plot_results(results)
     and spark-submit
     --executor-cores 4 \
     --num-executors 16 \
+    ☐ Implement hash mixing optimization to 
+      eliminate string concatenation in MinHash
+    ☐ Implement incremental union-find for
+      faster group building
+    ☐ Increase similarity threshold to reduce
+      false positives
