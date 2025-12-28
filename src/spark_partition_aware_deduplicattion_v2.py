@@ -76,38 +76,6 @@ def generate_shingles_emr(text: str, ngram: int) -> List[str]:
 # Function pointer based on environment
 generate_shingles = generate_shingles_emr if is_emr() else generate_shingles_local
 
-def normalize_text(text: str) -> str:
-    """
-    Normalize text to reduce impact of minor differences like articles
-    
-    Args:
-        text: Input text to normalize
-        
-    Returns:
-        Normalized text
-    """
-    import re
-    
-    # Convert to lowercase
-    text_lower = text.lower()
-    
-    # Remove common articles and determiners that don't affect semantic meaning
-    articles = {'the', 'a', 'an', 'this', 'that', 'these', 'those'}
-    
-    # Split into words, remove articles, rejoin
-    filtered_words = []
-    words = text_lower.split()
-    for word in words:
-        # Strip punctuation inline
-        clean_word = word.strip('.,!?;:"()[]{}')
-        if clean_word and clean_word not in articles:
-            filtered_words.append(clean_word)
-    
-    # If we removed too many words, keep the original to avoid empty text
-    if len(filtered_words) < len(words) * 0.3:  # Keep at least 30% of words
-        return text
-    
-    return ' '.join(filtered_words)
 
 
 # NOTE: compute_minhash_vectorized_batch() moved to spark_utils_deprecated.py (2025-12-28)
