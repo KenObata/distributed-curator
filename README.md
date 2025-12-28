@@ -226,7 +226,7 @@ spark-submit \
   --conf spark.memory.offHeap.size=1g \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
-  --deploy-mode cluster \
+  --deploy-mode client \
   s3://text-deduplication-740959772378/scripts/spark_deduplication_test.py development
 ```
 

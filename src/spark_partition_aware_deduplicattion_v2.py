@@ -12,6 +12,7 @@ from graphframes import GraphFrame
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
+from pyspark import StorageLevel
 import mmh3
 import numpy as np
 import pandas as pd
@@ -575,7 +576,7 @@ def partition_aware_deduplicate(
     df_with_partitions = df_with_signatures.withColumn(
         "target_partitions",
         partition_assignment_udf(col("minhash_signature"))
-    )
+    ).cache()
     
     # Show partition distribution for monitoring
     partition_stats = df_with_partitions.select(
@@ -597,7 +598,23 @@ def partition_aware_deduplicate(
         col(text_column),
         col("minhash_signature"),
         explode(col("target_partitions")).alias("partition_id")
-    )
+    ).cache()
+
+    # Monitor partition skew before repartitioning
+    partition_distribution = df_exploded.groupBy("partition_id").count().collect()
+    partition_counts = [row['count'] for row in partition_distribution]
+
+    max_partition_size = max(partition_counts)
+    min_partition_size = min(partition_counts) 
+    avg_partition_size = sum(partition_counts) / len(partition_counts)
+    skew_ratio = max_partition_size / avg_partition_size if avg_partition_size > 0 else 0
+
+    logger.info(f"Partition skew analysis:")
+    logger.info(f"  Max partition size: {max_partition_size:,}")
+    logger.info(f"  Min partition size: {min_partition_size:,}")
+    logger.info(f"  Avg partition size: {avg_partition_size:.0f}")
+    logger.info(f"  Skew ratio (max/avg): {skew_ratio:.2f}")
+    logger.info(f"  Active partitions: {len(partition_counts)} / {num_partitions}")
     
     # KEY INNOVATION: Repartition based on computed partition assignments
     # This ensures similar documents are in the same partition
@@ -693,7 +710,7 @@ def partition_aware_deduplicate(
     similar_pairs_df = spark.createDataFrame(similar_pairs_rdd, similar_pairs_schema)
     
     # Remove duplicate pairs that might appear in multiple partitions
-    similar_pairs_df = similar_pairs_df.dropDuplicates(["doc1", "doc2"])
+    similar_pairs_df = similar_pairs_df.dropDuplicates(["doc1", "doc2"]).persist(StorageLevel.MEMORY_AND_DISK)
     
     similar_count = similar_pairs_df.count()
     logger.info(f"Found {similar_count} similar document pairs")
@@ -702,12 +719,13 @@ def partition_aware_deduplicate(
     logger.info("Step 5: Build connected components. "
                 "For each distinct doc_id, it has representative doc_id")
 
-    vertices = input_df.select(col("doc_id").alias("id")).distinct()
+    vertices = input_df.select(col("doc_id").alias("id")).distinct().persist(StorageLevel.MEMORY_ONLY)
     doc_id_and_representative_doc_id_df_deduped = get_deduplicate_df_graphframes(
         spark=spark,
         similar_pairs_df=similar_pairs_df,
         vertices=vertices
-    )
+    ).persist(StorageLevel.MEMORY_AND_DISK)
+    logger.info("vertices cached. doc_id_and_representative_doc_id_df_deduped cached.")
 
 
     # Step 6: Join back with original data
@@ -739,5 +757,14 @@ def partition_aware_deduplicate(
     logger.info(f"Unique documents: {unique_docs_count:,}")
     logger.info(f"Deduplication rate: {duplicate_docs_count/total_docs_count*100:.2f}%")
     logger.info("="*60)
+
+    # Clean up cached DataFrames to free memory
+    logger.info("Cleaning up cached DataFrames...")
+    df_with_signatures.unpersist()
+    df_with_partitions.unpersist()
+    df_exploded.unpersist()
+    similar_pairs_df.unpersist()
+    vertices.unpersist()
+    doc_id_and_representative_doc_id_df_deduped.unpersist()
     
     return result
