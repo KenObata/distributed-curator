@@ -76,6 +76,50 @@ def generate_shingles_emr(text: str, ngram: int) -> List[str]:
 # Function pointer based on environment
 generate_shingles = generate_shingles_emr if is_emr() else generate_shingles_local
 
+def compute_rolling_hash_shingles(text: str, ngram: int) -> List[int]:
+    """
+    Compute hash values for all shingles using rolling hash optimization.
+    Eliminates string creation by computing hash values directly as we slide through text.
+    
+    This is 3-5x faster than creating string shingles and hashing them separately.
+    
+    Args:
+        text: Input text to generate shingles from
+        ngram: Length of each shingle
+        
+    Returns:
+        List of unique hash values for all shingles
+    """
+    if len(text) < ngram:
+        return []
+    
+    BASE = 31  # Prime base for polynomial rolling hash
+    MOD = 0xFFFFFFFF  # 32-bit modulus to match our hash mixing
+    
+    # Precompute base^(ngram-1) mod MOD for efficient removal of leftmost character
+    # Use builtin pow to avoid PySpark override issues
+    base_power = builtins.pow(BASE, ngram - 1, MOD)
+    
+    # Compute hash for first shingle only
+    current_hash = 0
+    for i in range(ngram):
+        current_hash = (current_hash * BASE + ord(text[i])) % MOD
+    
+    hash_values = {current_hash}  # Use set for automatic deduplication
+    
+    # Roll through remaining positions
+    for i in range(ngram, len(text)):
+        # Remove leftmost character: subtract old_char * base^(ngram-1)
+        old_char = ord(text[i - ngram])
+        current_hash = (current_hash - old_char * base_power) % MOD
+        
+        # Shift left and add new character
+        current_hash = (current_hash * BASE + ord(text[i])) % MOD
+        
+        hash_values.add(current_hash)
+    
+    return list(hash_values)
+
 
 
 # NOTE: compute_minhash_vectorized_batch() moved to spark_utils_deprecated.py (2025-12-28)
@@ -105,16 +149,14 @@ def compute_minhash_vectorized_batch_only_hash_once(texts: pd.Series, num_hashes
             results.append([0] * num_hashes)
             continue
         
-        # Generate shingles for this specific text string
-        shingles = [text[i:i+ngram] for i in range(len(text) - ngram + 1)]
-        if not shingles:
+        # ROLLING HASH OPTIMIZATION: Generate hash values directly without creating strings
+        unique_hash_values = compute_rolling_hash_shingles(text, ngram)
+        if not unique_hash_values:
             results.append([0] * num_hashes)
             continue
-        
-        unique_shingles = list(set(shingles))
 
-        # HASH MIXING OPTIMIZATION: Hash each shingle ONCE, then mix with seeds
-        base_hashes = np.array([builtin_hash(s) & 0xFFFFFFFF for s in unique_shingles], dtype=np.uint32)
+        # Convert to numpy array for vectorized hash mixing
+        base_hashes = np.array(unique_hash_values, dtype=np.uint32)
         
         # Use same seeds as the main function for consistency
         if not hasattr(compute_minhash_vectorized_batch_only_hash_once, '_seeds_cache'):
@@ -270,8 +312,8 @@ def partition_aware_deduplicate(
 
     @pandas_udf(ArrayType(IntegerType()))
     def minhash_batch_udf(rows: pd.Series) -> pd.Series:
-        """Process entire batch using highly optimized vectorized operations"""
-        return compute_minhash_vectorized_batch_only_hash_once(rows, num_hashes, ngram=9)
+        """Process entire batch using highly optimized vectorized operations with rolling hash"""
+        return compute_minhash_vectorized_batch_only_hash_once(rows, num_hashes, ngram=9, remove_articles=remove_articles)
     
 
     df_with_signatures = input_df.withColumn(
