@@ -105,13 +105,11 @@ def compute_minhash_vectorized_batch_only_hash_once(texts: pd.Series, num_hashes
             results.append([0] * num_hashes)
             continue
         
-        # Generate shingles for this specific text string
-        shingles = [text[i:i+ngram] for i in range(len(text) - ngram + 1)]
-        if not shingles:
+        # Generate unique shingles for this specific text string (memory-optimized)
+        unique_shingles = list({text[i:i+ngram] for i in range(len(text) - ngram + 1)})
+        if not unique_shingles:
             results.append([0] * num_hashes)
             continue
-        
-        unique_shingles = list(set(shingles))
 
         # HASH MIXING OPTIMIZATION: Hash each shingle ONCE, then mix with seeds
         base_hashes = np.array([builtin_hash(s) & 0xFFFFFFFF for s in unique_shingles], dtype=np.uint32)
