@@ -75,6 +75,12 @@ plot_results(results)
     --num-executors 16 \
     ☐ Implement hash mixing optimization to 
       eliminate string concatenation in MinHash
+    - cache edge df (won't do)
+    - Eliminate distinct
+    - Use more efficient GraphFrames settings (won't do)
+        # Add before connectedComponents()
+        spark.conf.set("spark.graphx.pregel.checkpointInterval", "10")
+        components = g.connectedComponents(algorithm="graphx")  
     ☐ Implement incremental union-find for
       faster group building
     ☐ Increase similarity threshold to reduce

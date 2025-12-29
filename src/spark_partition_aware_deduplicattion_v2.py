@@ -175,7 +175,7 @@ def get_deduplicate_df_graphframes(spark: SparkSession, similar_pairs_df:DataFra
         col("doc1").alias("dst")
     )
     # No need of .distinct becase pair_id = tuple(sorted([doc1['doc_id'], doc2['doc_id']]))  # Always (smaller, larger)
-    edges = edges_forward.union(edges_backward) # .cache()
+    edges = edges_forward.union(edges_backward)
     
     # Create graph and run connected components
     g = GraphFrame(vertices, edges)
@@ -191,7 +191,6 @@ def get_deduplicate_df_graphframes(spark: SparkSession, similar_pairs_df:DataFra
     logger.info(f"checkpoint_dir for GraphFrame: {checkpoint_dir}")
     
     spark.sparkContext.setCheckpointDir(checkpoint_dir)
-    
     components = g.connectedComponents()
     # Result of components: (id, component) where component is a Long
 
