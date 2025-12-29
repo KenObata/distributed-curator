@@ -318,7 +318,7 @@ def partition_aware_deduplicate(
     df_with_partitions = df_with_signatures.withColumn(
         "target_partitions",
         partition_assignment_udf(col("minhash_signature"))
-    ).cache()
+    )
     
     # Show partition distribution for monitoring
     partition_stats = df_with_partitions.select(
@@ -340,7 +340,7 @@ def partition_aware_deduplicate(
         col(text_column),
         col("minhash_signature"),
         explode(col("target_partitions")).alias("partition_id")
-    ).cache()
+    )
 
     # Monitor partition skew before repartitioning
     partition_distribution = df_exploded.groupBy("partition_id").count().collect()
@@ -503,8 +503,6 @@ def partition_aware_deduplicate(
     # Clean up cached DataFrames to free memory
     logger.info("Cleaning up cached DataFrames...")
     df_with_signatures.unpersist()
-    df_with_partitions.unpersist()
-    df_exploded.unpersist()
     similar_pairs_df.unpersist()
     vertices.unpersist()
     doc_id_and_representative_doc_id_df_deduped.unpersist()
