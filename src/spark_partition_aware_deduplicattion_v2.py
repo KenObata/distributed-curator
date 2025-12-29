@@ -174,7 +174,8 @@ def get_deduplicate_df_graphframes(spark: SparkSession, similar_pairs_df:DataFra
         col("doc2").alias("src"),
         col("doc1").alias("dst")
     )
-    edges = edges_forward.union(edges_backward).distinct()
+    # No need of .distinct becase pair_id = tuple(sorted([doc1['doc_id'], doc2['doc_id']]))  # Always (smaller, larger)
+    edges = edges_forward.union(edges_backward) # .cache()
     
     # Create graph and run connected components
     g = GraphFrame(vertices, edges)
@@ -418,6 +419,10 @@ def partition_aware_deduplicate(
             for i, doc1 in enumerate(docs_in_band):
                 for doc2 in docs_in_band[i+1:]:
                     # Create canonical pair ID
+                    """
+                    Sort ensures there is no dups in similar_pairs with this case (doc1,doc2) and (doc2, doc1).
+                    This case never happens.
+                    """
                     pair_id = tuple(sorted([doc1['doc_id'], doc2['doc_id']]))
                     
                     if pair_id in seen_pairs:
