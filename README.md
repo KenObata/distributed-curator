@@ -272,6 +272,13 @@ check application logs
 ```
 yarn logs -applicationId
 ```
+
+How to kill yarn application
+
+```
+yarn application -kill {you application_id}
+```
+
 ## EMR ssh trouble shooting
 ### How to check HDDS application logs
 ```
