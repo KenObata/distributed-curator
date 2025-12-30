@@ -482,43 +482,82 @@ resource "aws_emr_cluster" "dedup_cluster" {
   }
 
   # Primary (Master) node - On-Demand
-  master_instance_group {
-    instance_type  = "r5.xlarge" # "r8g.xlarge"
-    instance_count = 1
-    name           = "Primary"
-
-    ebs_config {
-      size                 = 100
-      type                 = "gp3"
-      iops                 = 3000
-      throughput           = 125
-      volumes_per_instance = 1
+  master_instance_fleet {
+    name = "Primary"
+    
+    target_on_demand_capacity = 1  # On-demand for stability
+    target_spot_capacity      = 0  # No spot for master
+    
+    instance_type_configs {
+      instance_type     = "r5.xlarge"
+      weighted_capacity = 1
+      
+      ebs_config {
+        size                 = 100
+        type                 = "gp3"
+        iops                 = 3000
+        volumes_per_instance = 1
+      }
     }
   }
 
-  # Core nodes - Spot instances for cost savings
-  core_instance_group {
-    instance_type  = "r5.2xlarge" # "r8g.xlarge"
-    instance_count = 4
-    name           = "Core"
-
-    # bid_price = "0.10"  # Spot price (slightly above current $0.088)
-
-    ebs_config {
-      size                 = 100
-      type                 = "gp3"
-      iops                 = 3000
-      throughput           = 125
-      volumes_per_instance = 1
+  # Core nodes - Mixed spot/on-demand for reliability
+  core_instance_fleet {
+    name = "Core"
+    
+    target_on_demand_capacity = 8  # 8 weighted units on-demand
+    target_spot_capacity      = 8  # 8 weighted units spot
+    
+    # Primary choice - r5.2xlarge
+    instance_type_configs {
+      instance_type     = "r5.2xlarge"
+      weighted_capacity = 1
+      
+      bid_price_as_percentage_of_on_demand_price = 90  # Higher bid for better r5.2xlarge availability
+      
+      ebs_config {
+        size                 = 100
+        type                 = "gp3"
+        iops                 = 3000
+        volumes_per_instance = 1
+      }
+      
+      ebs_config {
+        size                 = 150
+        type                 = "gp3"
+        iops                 = 3000
+        volumes_per_instance = 1
+      }
     }
-
-    # Additional EBS volume for shuffle/spill
-    ebs_config {
-      size                 = 150
-      type                 = "gp3"
-      iops                 = 3000
-      throughput           = 125
-      volumes_per_instance = 1
+    
+    # Fallback choice - r5.xlarge (need 4 to match 2 r5.2xlarge in capacity)
+    instance_type_configs {
+      instance_type     = "r5.xlarge"
+      weighted_capacity = 1  # 1x r5.xlarge = 1x weighted unit (need 16 instances for 64 cores)
+      
+      bid_price_as_percentage_of_on_demand_price = 90
+      
+      ebs_config {
+        size                 = 100
+        type                 = "gp3"
+        iops                 = 3000
+        volumes_per_instance = 1
+      }
+    }
+    
+    # Additional fallback - r4.2xlarge
+    instance_type_configs {
+      instance_type     = "r4.2xlarge"
+      weighted_capacity = 1
+      
+      bid_price_as_percentage_of_on_demand_price = 90
+      
+      ebs_config {
+        size                 = 100
+        type                 = "gp3"
+        iops                 = 3000
+        volumes_per_instance = 1
+      }
     }
   }
 
@@ -533,7 +572,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
     {
       Classification = "spark-defaults"
       Properties = {
-        "spark.default.parallelism"        = "1000"
+        "spark.default.parallelism"        = "2000"
         "spark.memory.fraction"            = "0.8"
         "spark.memory.storageFraction"     = "0.3"
         "spark.serializer"                 = "org.apache.spark.serializer.KryoSerializer"
