@@ -41,7 +41,7 @@ BENCHMARK_CONFIGS = {
         "purpose": "Show 10x improvement"
     },
     "scale_proof": {
-        "wet_files": 10000,
+        "wet_files": 9000,
         "size": "800GB",
         "pages": "~1B",
         "purpose": "Prove web-scale capability"

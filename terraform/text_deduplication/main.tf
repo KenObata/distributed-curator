@@ -464,6 +464,28 @@ resource "aws_s3_object" "iceberg_setup_test_script" {
 }
 
 # EMR Cluster
+variable "instance_strategy" {
+  description = "Instance strategy: 'spot' for mixed spot/on-demand, 'on-demand' for all on-demand"
+  type        = string
+  default     = "spot"
+  
+  validation {
+    condition     = contains(["spot", "on-demand"], var.instance_strategy)
+    error_message = "Instance strategy must be either 'spot' or 'on-demand'."
+  }
+}
+
+variable "bid_strategy" {
+  description = "Bid strategy: 'default' for optimized pricing, 'peak-event' for maximum availability during high-demand periods"
+  type        = string
+  default     = "default"
+  
+  validation {
+    condition     = contains(["default", "peak-event"], var.bid_strategy)
+    error_message = "Bid strategy must be either 'default' or 'peak-event'."
+  }
+}
+
 resource "aws_emr_cluster" "dedup_cluster" {
   name          = var.cluster_name
   release_label = "emr-7.12.0"
@@ -505,15 +527,15 @@ resource "aws_emr_cluster" "dedup_cluster" {
   core_instance_fleet {
     name = "Core"
     
-    target_on_demand_capacity = 8  # 8 weighted units on-demand
-    target_spot_capacity      = 8  # 8 weighted units spot
+    target_on_demand_capacity = var.instance_strategy == "on-demand" ? 32 : 8   # Reduced on-demand for better cost
+    target_spot_capacity      = var.instance_strategy == "on-demand" ? 0 : 24   # Increased spot for cost savings
     
-    # Primary choice - r5.2xlarge
+    # Primary choice - r5a.xlarge (AMD - better spot availability)
     instance_type_configs {
-      instance_type     = "r5.2xlarge"
+      instance_type     = "r5a.xlarge"
       weighted_capacity = 1
       
-      bid_price_as_percentage_of_on_demand_price = 90  # Higher bid for better r5.2xlarge availability
+      bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80  # Peak events need 100%
       
       ebs_config {
         size                 = 100
@@ -521,21 +543,58 @@ resource "aws_emr_cluster" "dedup_cluster" {
         iops                 = 3000
         volumes_per_instance = 1
       }
+    }
+    
+    # Fallback choice - r6g.xlarge (ARM Graviton2 - excellent spot availability)
+    instance_type_configs {
+      instance_type     = "r6g.xlarge"
+      weighted_capacity = 1
+      
+      bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 75  # Peak events need 100%
       
       ebs_config {
-        size                 = 150
+        size                 = 100
         type                 = "gp3"
         iops                 = 3000
         volumes_per_instance = 1
       }
     }
     
-    # Fallback choice - r5.xlarge (need 4 to match 2 r5.2xlarge in capacity)
+    # Additional high-scoring instance types for better spot placement
+    instance_type_configs {
+      instance_type     = "r6i.xlarge"
+      weighted_capacity = 1
+      
+      bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80  # Peak events need 100%
+      
+      ebs_config {
+        size                 = 100
+        type                 = "gp3"
+        iops                 = 3000
+        volumes_per_instance = 1
+      }
+    }
+    
+    instance_type_configs {
+      instance_type     = "r7g.xlarge"
+      weighted_capacity = 1
+      
+      bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 75  # Peak events need 100%
+      
+      ebs_config {
+        size                 = 100
+        type                 = "gp3"
+        iops                 = 3000
+        volumes_per_instance = 1
+      }
+    }
+    
+    # Additional option - r5.xlarge (Intel 5th gen - proven available)
     instance_type_configs {
       instance_type     = "r5.xlarge"
-      weighted_capacity = 1  # 1x r5.xlarge = 1x weighted unit (need 16 instances for 64 cores)
+      weighted_capacity = 1
       
-      bid_price_as_percentage_of_on_demand_price = 90
+      bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 85  # Peak events need 100%
       
       ebs_config {
         size                 = 100
@@ -545,20 +604,6 @@ resource "aws_emr_cluster" "dedup_cluster" {
       }
     }
     
-    # Additional fallback - r4.2xlarge
-    instance_type_configs {
-      instance_type     = "r4.2xlarge"
-      weighted_capacity = 1
-      
-      bid_price_as_percentage_of_on_demand_price = 90
-      
-      ebs_config {
-        size                 = 100
-        type                 = "gp3"
-        iops                 = 3000
-        volumes_per_instance = 1
-      }
-    }
   }
 
   bootstrap_action {
