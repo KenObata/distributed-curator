@@ -107,8 +107,14 @@ one-off command
 terraform init
 ```
 Step1:  Get Cluster DNS
+Start with spot instances for cheaper cost.
 ```
-terraform apply 
+terraform apply -var="instance_strategy=spot"
+```
+
+If above plan fails, then do on-demand.
+```
+terraform apply -var="instance_strategy=on-demand"
 ```
 
 Note - you need to create your own terraform.tfvars file looks like this:
@@ -247,6 +253,49 @@ spark-submit \
 ```
 
 where --deploy-mode cluster is to run the driver on EMR, not laptop.
+
+For 1000 of WET files, increase partition count
+```
+spark-submit \
+  --master yarn \
+  --py-files s3://your-scripts-bucket/scripts/dependencies.zip \
+  --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
+  --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
+  --num-executors 32 \
+  --executor-cores 4 \
+  --executor-memory 26g \
+  --driver-memory 16g \
+  --conf spark.sql.shuffle.partitions=3000 \
+  --conf spark.memory.offHeap.size=1g \
+  --conf spark.hadoop.fs.s3a.signing-algorithm="" \
+  --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
+  --deploy-mode cluster \
+  s3://your-scripts-bucket/scripts/spark_deduplication_test.py production_proof
+```
+
+For 9000 WET files, 
+```
+spark-submit \
+  --master yarn \
+  --py-files s3://your-scripts-bucket/scripts/dependencies.zip \
+  --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
+  --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
+  --num-executors 36 \
+  --executor-cores 8 \
+  --executor-memory 60g \
+  --driver-memory 32g \
+  --conf spark.sql.shuffle.partitions=10000 \
+  --conf spark.default.parallelism=10000 \
+  --conf spark.memory.offHeap.size=4g \
+  --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
+  --conf spark.kryoserializer.buffer.max=2048m \
+  --conf spark.hadoop.fs.s3a.signing-algorithm="" \
+  --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.Defau
+ltAWSCredentialsProviderChain \
+  --deploy-mode cluster \
+  s3://your-scripts-bucket/scripts/spark_deduplication_test.py
+scale_proof
+```
 
 How to cleanup
 ```
