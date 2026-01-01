@@ -487,22 +487,27 @@ variable "bid_strategy" {
 }
 
 variable "wet_file_scale" {
-  description = "WET file processing scale: '1k' for 1,000 files, '9k' for 9,000 files, '90k' for 90,000 files"
+  description = "WET file processing scale: '100' for 100 files, '1k' for 1,000 files, '9k' for 9,000 files, '90k' for 90,000 files"
   type        = string
   default     = "1k"
   
   validation {
-    condition     = contains(["1k", "9k", "90k"], var.wet_file_scale)
-    error_message = "WET file scale must be '1k', '9k', or '90k'."
+    condition     = contains(["100", "1k", "9k", "90k"], var.wet_file_scale)
+    error_message = "WET file scale must be '100', '1k', '9k', or '90k'."
   }
 }
 
 # Scale-specific configurations
 locals {
   scale_configs = {
+    "100" = {
+      instance_type    = "r5.2xlarge"
+      on_demand_spot   = { on_demand = 2, spot = 2 }
+      on_demand_only   = { on_demand = 4, spot = 0 }
+    }
     "1k" = {
       instance_type    = "r5.xlarge"
-      on_demand_spot   = { on_demand = 32, spot = 32 }
+      on_demand_spot   = { on_demand = 16, spot = 16 }
       on_demand_only   = { on_demand = 32, spot = 0 }
     }
     "9k" = {
@@ -580,9 +585,9 @@ resource "aws_emr_cluster" "dedup_cluster" {
       }
     }
     
-    # Conditional fallbacks based on scale
+    # Conditional fallbacks based on scale  
     dynamic "instance_type_configs" {
-      for_each = var.wet_file_scale == "1k" ? [1] : []
+      for_each = contains(["100", "1k"], var.wet_file_scale) ? [1] : []
       content {
         instance_type     = "r6g.xlarge"
         weighted_capacity = 1
@@ -599,7 +604,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
     }
     
     dynamic "instance_type_configs" {
-      for_each = var.wet_file_scale == "1k" ? [1] : []
+      for_each = contains(["100", "1k"], var.wet_file_scale) ? [1] : []
       content {
         instance_type     = "r6i.xlarge"
         weighted_capacity = 1
@@ -616,7 +621,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
     }
     
     dynamic "instance_type_configs" {
-      for_each = var.wet_file_scale == "1k" ? [1] : []
+      for_each = contains(["100", "1k"], var.wet_file_scale) ? [1] : []
       content {
         instance_type     = "r7g.xlarge"
         weighted_capacity = 1
@@ -633,7 +638,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
     }
     
     dynamic "instance_type_configs" {
-      for_each = var.wet_file_scale == "1k" ? [1] : []
+      for_each = contains(["100", "1k"], var.wet_file_scale) ? [1] : []
       content {
         instance_type     = "r5.xlarge"
         weighted_capacity = 1
