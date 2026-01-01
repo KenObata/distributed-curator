@@ -486,6 +486,41 @@ variable "bid_strategy" {
   }
 }
 
+variable "wet_file_scale" {
+  description = "WET file processing scale: '1k' for 1,000 files, '9k' for 9,000 files, '90k' for 90,000 files"
+  type        = string
+  default     = "1k"
+  
+  validation {
+    condition     = contains(["1k", "9k", "90k"], var.wet_file_scale)
+    error_message = "WET file scale must be '1k', '9k', or '90k'."
+  }
+}
+
+# Scale-specific configurations
+locals {
+  scale_configs = {
+    "1k" = {
+      instance_type    = "r5.xlarge"
+      on_demand_spot   = { on_demand = 32, spot = 32 }
+      on_demand_only   = { on_demand = 32, spot = 0 }
+    }
+    "9k" = {
+      instance_type    = "r5.12xlarge"
+      on_demand_spot   = { on_demand = 3, spot = 3 }
+      on_demand_only   = { on_demand = 6, spot = 0 }
+    }
+    "90k" = {
+      instance_type    = "r5.12xlarge"
+      on_demand_spot   = { on_demand = 14, spot = 13 }
+      on_demand_only   = { on_demand = 27, spot = 0 }
+    }
+  }
+  
+  selected_config = local.scale_configs[var.wet_file_scale]
+  capacity_config = var.instance_strategy == "on-demand" ? local.selected_config.on_demand_only : local.selected_config.on_demand_spot
+}
+
 resource "aws_emr_cluster" "dedup_cluster" {
   name          = var.cluster_name
   release_label = "emr-7.12.0"
@@ -527,12 +562,12 @@ resource "aws_emr_cluster" "dedup_cluster" {
   core_instance_fleet {
     name = "Core"
     
-    target_on_demand_capacity = var.instance_strategy == "on-demand" ? 32 : 8   # Reduced on-demand for better cost
-    target_spot_capacity      = var.instance_strategy == "on-demand" ? 0 : 24   # Increased spot for cost savings
+    target_on_demand_capacity = local.capacity_config.on_demand
+    target_spot_capacity      = local.capacity_config.spot
     
-    # Primary choice - r5a.xlarge (AMD - better spot availability)
+    # Primary choice - dynamically selected based on scale
     instance_type_configs {
-      instance_type     = "r5a.xlarge"
+      instance_type     = local.selected_config.instance_type
       weighted_capacity = 1
       
       bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80  # Peak events need 100%
@@ -545,62 +580,90 @@ resource "aws_emr_cluster" "dedup_cluster" {
       }
     }
     
-    # Fallback choice - r6g.xlarge (ARM Graviton2 - excellent spot availability)
-    instance_type_configs {
-      instance_type     = "r6g.xlarge"
-      weighted_capacity = 1
-      
-      bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 75  # Peak events need 100%
-      
-      ebs_config {
-        size                 = 100
-        type                 = "gp3"
-        iops                 = 3000
-        volumes_per_instance = 1
+    # Conditional fallbacks based on scale
+    dynamic "instance_type_configs" {
+      for_each = var.wet_file_scale == "1k" ? [1] : []
+      content {
+        instance_type     = "r6g.xlarge"
+        weighted_capacity = 1
+        
+        bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 75
+        
+        ebs_config {
+          size                 = 100
+          type                 = "gp3"
+          iops                 = 3000
+          volumes_per_instance = 1
+        }
       }
     }
     
-    # Additional high-scoring instance types for better spot placement
-    instance_type_configs {
-      instance_type     = "r6i.xlarge"
-      weighted_capacity = 1
-      
-      bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80  # Peak events need 100%
-      
-      ebs_config {
-        size                 = 100
-        type                 = "gp3"
-        iops                 = 3000
-        volumes_per_instance = 1
+    dynamic "instance_type_configs" {
+      for_each = var.wet_file_scale == "1k" ? [1] : []
+      content {
+        instance_type     = "r6i.xlarge"
+        weighted_capacity = 1
+        
+        bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
+        
+        ebs_config {
+          size                 = 100
+          type                 = "gp3"
+          iops                 = 3000
+          volumes_per_instance = 1
+        }
       }
     }
     
-    instance_type_configs {
-      instance_type     = "r7g.xlarge"
-      weighted_capacity = 1
-      
-      bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 75  # Peak events need 100%
-      
-      ebs_config {
-        size                 = 100
-        type                 = "gp3"
-        iops                 = 3000
-        volumes_per_instance = 1
+    dynamic "instance_type_configs" {
+      for_each = var.wet_file_scale == "1k" ? [1] : []
+      content {
+        instance_type     = "r7g.xlarge"
+        weighted_capacity = 1
+        
+        bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 75
+        
+        ebs_config {
+          size                 = 100
+          type                 = "gp3"
+          iops                 = 3000
+          volumes_per_instance = 1
+        }
       }
     }
     
-    # Additional option - r5.xlarge (Intel 5th gen - proven available)
-    instance_type_configs {
-      instance_type     = "r5.xlarge"
-      weighted_capacity = 1
-      
-      bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 85  # Peak events need 100%
-      
-      ebs_config {
-        size                 = 100
-        type                 = "gp3"
-        iops                 = 3000
-        volumes_per_instance = 1
+    dynamic "instance_type_configs" {
+      for_each = var.wet_file_scale == "1k" ? [1] : []
+      content {
+        instance_type     = "r5.xlarge"
+        weighted_capacity = 1
+        
+        bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 85
+        
+        ebs_config {
+          size                 = 100
+          type                 = "gp3"
+          iops                 = 3000
+          volumes_per_instance = 1
+        }
+      }
+    }
+    
+    # For 9k/90k scales, add r5.12xlarge fallbacks
+    dynamic "instance_type_configs" {
+      for_each = contains(["9k", "90k"], var.wet_file_scale) ? [1] : []
+      content {
+        instance_type     = "r5a.12xlarge"  # AMD alternative
+        weighted_capacity = 1
+        
+        bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
+        
+        ebs_config {
+          size                 = 100
+          type                 = "gp3"
+          iops                 = 3000
+          volumes_per_instance = 1
+        }
       }
     }
     
