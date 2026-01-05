@@ -376,10 +376,22 @@ Get the list of log file for RM (resource manager)
 ls /var/log/hadoop-yarn/
 ```
 
-Check driver side logs
+Check resource maneger logs for disk space issue during shuffle.
 ```
 sudo grep -A5 -B5 "application_1767582478981_0002" /var/log/hadoop-yarn/hadoop-yarn-resourcemanager-ip-172-31-46-228.ec2.internal.log.2026-01-05-05
 ```
+
+How to check driver log. Note: resource manager != driver.
+```
+yarn logs -applicationId <app_id> 
+```
+gives you both driver and executor logs
+
+so if we want only driver log,
+```
+yarn logs -applicationId <app_id> -am 1
+```
+where am means application manager and number means attempt.
 
 ## pyspark common errors
 
