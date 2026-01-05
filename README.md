@@ -107,14 +107,22 @@ one-off command
 terraform init
 ```
 Step1:  Get Cluster DNS
+
+Please add scaling variable, -var="wet_file_scale=90k" either 1k, 9k, or 90k.
+
 Start with spot instances for cheaper cost.
 ```
-terraform apply -var="instance_strategy=spot"
+terraform apply -var="wet_file_scale=1k" -var="instance_strategy=spot"
+```
+
+If above plan fails, then pay higher bidding.
+```
+terraform apply -var="wet_file_scale=1k" -var="instance_strategy=spot" -var="bid_strategy=peak-event"
 ```
 
 If above plan fails, then do on-demand.
 ```
-terraform apply -var="instance_strategy=on-demand"
+terraform apply -var="instance_strategy=on-demand" -var="wet_file_scale=1k"
 ```
 
 Note - you need to create your own terraform.tfvars file looks like this:
@@ -263,10 +271,11 @@ spark-submit \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
   --num-executors 32 \
   --executor-cores 4 \
-  --executor-memory 26g \
-  --driver-memory 16g \
+  --executor-memory 28g \
+  --driver-memory 24g \
   --conf spark.sql.shuffle.partitions=3000 \
   --conf spark.memory.offHeap.size=1g \
+  --conf spark.yarn.maxAppAttempts=1
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
   --deploy-mode cluster \
@@ -297,7 +306,15 @@ ltAWSCredentialsProviderChain \
 scale_proof
 ```
 
-How to cleanup
+How to cleanup:
+before running terraform destroy, save your spark UI result.
+```
+aws s3 cp /var/log/spark/apps/application_* s3://text-deduplication-740959772378//application_*
+```
+then exit and in your macbook terminal run:
+```
+aws s3 cp s3://text-deduplication-740959772378/application_* ~/Downloads/application_*
+```
 ```
 terraform destroy
 ```
@@ -316,6 +333,11 @@ Step 9: How to monitor
 
 Check specific stages:
 http://localhost:4040/stages/stage/?id=12&attempt=0
+
+check all applicaiton IDs:
+```
+yarn application -list -appStates ALL
+```
 
 check application logs
 ```
@@ -349,7 +371,34 @@ restart soak history
 sudo systemctl restart spark-history-server
 ```
 
+Get the list of log file for RM (resource manager)
+```
+ls /var/log/hadoop-yarn/
+```
+
+Check driver side logs
+```
+sudo grep -A5 -B5 "application_1767582478981_0002" /var/log/hadoop-yarn/hadoop-yarn-resourcemanager-ip-172-31-46-228.ec2.internal.log.2026-01-05-05
+```
+
 ## pyspark common errors
+
+- suddenly application shutdown manager was called.
+  - check ```df -h``` to make sure you have enough disk space
+  - check ```yarn node -list -all``` to make sure nodes are healthy
+  ex)
+WARNING: YARN_CONF_DIR has been replaced by HADOOP_CONF_DIR. Using value of YARN_CONF_DIR.
+2026-01-05 06:13:11,814 INFO client.DefaultNoHARMFailoverProxyProvider: Connecting to ResourceManager at ip-172-31-46-228.ec2.internal/172.31.46.228:8032
+2026-01-05 06:13:11,969 INFO client.AHSProxy: Connecting to Application History server at ip-172-31-46-228.ec2.internal/172.31.46.228:10200
+Total Nodes:4
+         Node-Id             Node-State Node-Http-Address       Number-of-Running-Containers
+ip-172-31-37-80.ec2.internal:8041               RUNNING ip-172-31-37-80.ec2.internal:8042                                  0
+ip-172-31-37-254.ec2.internal:8041              RUNNING ip-172-31-37-254.ec2.internal:8042                                 0
+ip-172-31-42-11.ec2.internal:8041               RUNNING ip-172-31-42-11.ec2.internal:8042                                  0
+ip-172-31-47-158.ec2.internal:8041              RUNNING ip-172-31-47-158.ec2.internal:8042                                 0
+[hadoop@ip-172-31-46-228 ~]$ 
+  - check ```sudo grep -A5 -B5 "UNHEALTHY" /var/log/hadoop-yarn/hadoop-yarn-resourcemanager-ip-172-31-46-228.ec2.internal.log.2026-01-05-05``` 
+  to search resource manager <> driver's issue with your keyword.
 
 - [NOT_COLUMN_OR_STR] Argument `col` should be a Column or str, got list.
   -  The error was caused by PySpark function overrides:

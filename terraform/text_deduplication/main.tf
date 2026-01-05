@@ -506,9 +506,9 @@ locals {
       on_demand_only   = { on_demand = 4, spot = 0 }
     }
     "1k" = {
-      instance_type    = "r5.xlarge"
-      on_demand_spot   = { on_demand = 16, spot = 16 }
-      on_demand_only   = { on_demand = 32, spot = 0 }
+      instance_type    = "r5.4xlarge"
+      on_demand_spot   = { on_demand = 8, spot = 8 }
+      on_demand_only   = { on_demand = 16, spot = 0 }
     }
     "9k" = {
       instance_type    = "r5.12xlarge"
@@ -573,7 +573,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
     # Primary choice - dynamically selected based on scale
     instance_type_configs {
       instance_type     = local.selected_config.instance_type
-      weighted_capacity = 1
+      weighted_capacity = var.wet_file_scale == "1k" ? 2 : 1  # 1k scale needs weight 2 for proper instance count
       
       bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80  # Peak events need 100%
       
@@ -585,29 +585,12 @@ resource "aws_emr_cluster" "dedup_cluster" {
       }
     }
     
-    # Conditional fallbacks based on scale  
+    # Fallbacks for 1k scale - maintain 128 cores with proper weighted capacity
     dynamic "instance_type_configs" {
-      for_each = contains(["100", "1k"], var.wet_file_scale) ? [1] : []
+      for_each = var.wet_file_scale == "1k" ? [1] : []
       content {
-        instance_type     = "r6g.xlarge"
-        weighted_capacity = 1
-        
-        bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 75
-        
-        ebs_config {
-          size                 = 100
-          type                 = "gp3"
-          iops                 = 3000
-          volumes_per_instance = 1
-        }
-      }
-    }
-    
-    dynamic "instance_type_configs" {
-      for_each = contains(["100", "1k"], var.wet_file_scale) ? [1] : []
-      content {
-        instance_type     = "r6i.xlarge"
-        weighted_capacity = 1
+        instance_type     = "r5d.2xlarge"
+        weighted_capacity = 1  # Target 16, gives 16 instances × 8 cores = 128 cores
         
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
         
@@ -621,12 +604,30 @@ resource "aws_emr_cluster" "dedup_cluster" {
     }
     
     dynamic "instance_type_configs" {
-      for_each = contains(["100", "1k"], var.wet_file_scale) ? [1] : []
+      for_each = var.wet_file_scale == "1k" ? [1] : []
       content {
-        instance_type     = "r7g.xlarge"
-        weighted_capacity = 1
+        instance_type     = "r5ad.4xlarge"
+        weighted_capacity = 2  # Target 16÷2 = 8 instances × 16 cores = 128 cores
         
-        bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 75
+        bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
+        
+        ebs_config {
+          size                 = 100
+          type                 = "gp3"
+          iops                 = 3000
+          volumes_per_instance = 1
+        }
+      }
+    }
+    
+    # Larger instance fallbacks - fewer instances for same 128 cores
+    dynamic "instance_type_configs" {
+      for_each = var.wet_file_scale == "1k" ? [1] : []
+      content {
+        instance_type     = "r5d.8xlarge"
+        weighted_capacity = 4  # Target 16÷4 = 4 instances × 32 cores = 128 cores
+        
+        bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
         
         ebs_config {
           size                 = 100
@@ -638,12 +639,48 @@ resource "aws_emr_cluster" "dedup_cluster" {
     }
     
     dynamic "instance_type_configs" {
-      for_each = contains(["100", "1k"], var.wet_file_scale) ? [1] : []
+      for_each = var.wet_file_scale == "1k" ? [1] : []
       content {
-        instance_type     = "r5.xlarge"
-        weighted_capacity = 1
+        instance_type     = "r6id.8xlarge"  # Same as r6i + 1x 1900GB NVMe SSD
+        weighted_capacity = 4  # Target 16÷4 = 4 instances × 32 cores = 128 cores
+        
+        bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 75
+        
+        # Small EBS for OS/logs - shuffle data goes to NVMe (/mnt, /mnt1) instead of EBS automatically
+        ebs_config {
+          size                 = 100
+          type                 = "gp3"
+          iops                 = 3000
+          volumes_per_instance = 1
+        }
+      }
+    }
+    
+    # Fallbacks for 100 scale only
+    dynamic "instance_type_configs" {
+      for_each = var.wet_file_scale == "100" ? [1] : []
+      content {
+        instance_type     = "r5d.xlarge"
+        weighted_capacity = 2  # 2x r5.xlarge = 1x r5.2xlarge capacity
         
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 85
+        
+        ebs_config {
+          size                 = 100
+          type                 = "gp3"
+          iops                 = 3000
+          volumes_per_instance = 1
+        }
+      }
+    }
+    
+    dynamic "instance_type_configs" {
+      for_each = var.wet_file_scale == "100" ? [1] : []
+      content {
+        instance_type     = "r6gd.2xlarge"
+        weighted_capacity = 1  # ARM alternative to r5.2xlarge
+        
+        bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 75
         
         ebs_config {
           size                 = 100
@@ -658,7 +695,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
     dynamic "instance_type_configs" {
       for_each = contains(["9k", "90k"], var.wet_file_scale) ? [1] : []
       content {
-        instance_type     = "r5a.12xlarge"  # AMD alternative
+        instance_type     = "r5ad.12xlarge"  # AMD alternative
         weighted_capacity = 1
         
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
