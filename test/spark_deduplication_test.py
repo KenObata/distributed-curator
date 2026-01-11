@@ -50,6 +50,11 @@ BENCHMARK_CONFIGS = {
     }
 }
 
+def init() -> None:
+    print("\n" + "="*80)
+    print("COMMON CRAWL STRESS TEST - PARTITION-AWARE DEDUPLICATION")
+    print("="*80)
+
 def read_common_crawl_http_file(spark: SparkSession, wet_s3_path: str) -> RDD:
     import urllib.request
     import tempfile
@@ -265,6 +270,7 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
     Args:
         benchmark_level: One of 'development', 'validation', 'production_proof', 'scale_proof'
     """
+    init()
     # Get benchmark configuration
     if benchmark_level not in BENCHMARK_CONFIGS:
         raise ValueError(f"Invalid benchmark_level. Choose from: {list(BENCHMARK_CONFIGS.keys())}")
@@ -303,15 +309,6 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
         print(f"No cached input files found for {benchmark_level}")
     
         try:
-            print("\n" + "="*80)
-            print("COMMON CRAWL STRESS TEST - PARTITION-AWARE DEDUPLICATION")
-            print("="*80)
-            
-            # Option 1: Use Common Crawl WET format for actual text content
-            # WET files contain extracted plain text from web pages
-            # Use HTTP endpoint instead of S3 to avoid credential issues
-            # wet_path = "https://data.commoncrawl.org/crawl-data/CC-MAIN-2024-22/segments/1715971057216.39/wet/CC-MAIN-20240517233122-20240518023122-00000.warc.wet.gz"
-            # wet_rdd = read_common_crawl_http_file(spark, wet_s3_path)
 
             wet_s3_path = "s3://commoncrawl/crawl-data/CC-MAIN-2024-22/segments/1715971057216.39/wet/"
             print(f"Loading Common Crawl WET files from: {wet_s3_path}")
@@ -335,13 +332,6 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
                 print("Parsing WET format...")
                 parsed_rdd = wet_rdd.glom().flatMap(parse_wet_record_v2)
                 
-                # Check if parsing produced any results
-                # parsed_count = parsed_rdd.count()
-                # print(f"Parsed {parsed_count} records from WET file")
-                
-                # if parsed_count == 0:
-                #    raise Exception("WET file parsing produced no records")
-                
                 # Convert to DataFrame and take sample
                 from pyspark.sql.types import StructType, StructField, StringType
                 schema = StructType([
@@ -356,15 +346,6 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
                 print("Applying filters...")
                 df_filtered = df_parsed.filter(col("text").isNotNull() & (length(col("text")) > 100))
                 upload_cralw_file_to_s3(df_filtered, benchmark_level)
-                # filtered_count = df_filtered.count()
-                # print(f"After filtering: {filtered_count} records")
-                
-                # if filtered_count == 0:
-                #    raise Exception("No records remain after filtering")
-                
-                
-                
-                # No cleanup needed when reading directly from S3
             
         except Exception as e:
             print("Common Crawl access requires AWS credentials or has connectivity issues.")
@@ -455,33 +436,10 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
         else:
             print("Client mode - results displayed above")
 
-        """
-        print(f"Documents processed: {total_docs:,}")
-        print(f"Duplicates found: {duplicate_docs:,}")
-        print(f"Unique documents: {unique_docs:,}")
-        print(f"Deduplication rate: {(duplicate_docs/total_docs*100):.2f}%")
-        print(f"Throughput: {total_docs/elapsed:.0f} docs/second")
-        """
         print("="*80)
-        
-        """
-        # Skip sample display to avoid memory issues with large text content
-        print("\nSkipping sample display to avoid memory issues with large dataset")
-        print("Use smaller dataset or increase JVM heap size to see samples")
-        
-        # Performance assertions
-        assert elapsed < 300, f"Processing took too long: {elapsed:.2f}s (should be < 5min)"
-        assert total_docs > 0, "No documents processed"
-        assert unique_docs <= total_docs, "More unique docs than total docs"
-        """
         
     except Exception as e:
         print(f"\nError during Common Crawl test: {str(e)}")
-        print("This might be due to:")
-        print("1. AWS credentials not configured")
-        print("2. Network connectivity issues") 
-        print("3. Common Crawl bucket rate limiting")
-        print("\nFalling back to synthetic large dataset test...")
         
     finally:
         spark.stop()
