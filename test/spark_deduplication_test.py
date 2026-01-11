@@ -21,6 +21,8 @@ import boto3
 
 s3 = boto3.client('s3')
 
+S3_BUCKET_TEST_INPUT = "text-dedupe-benchmark"
+
 BENCHMARK_CONFIGS = {
     "development": {
         "wet_files": 1,
@@ -210,6 +212,51 @@ def parse_wet_record_v1(lines) -> List[Tuple[str, str]]:
     
     return records
 
+def does_cralw_file_exists(benchmark_level: str) -> bool:
+    """
+    Check if cached input files exist in personal S3 bucket for the target benchmark level
+    Args:
+        benchmark_level: One of 'development', 'validation', 'production_proof', 'scale_proof'
+    Returns:
+        True if cached input files exist for this benchmark level, False otherwise
+    """
+    if benchmark_level not in BENCHMARK_CONFIGS:
+        ValueError(f"Invalid benchmark_level: {benchmark_level}")
+    
+    try:
+        # Check for cached input files in personal bucket
+        # Cache structure: s3://text-dedupe-benchmark/{benchmark_level}/
+        print(f"Checking for cached input files for {benchmark_level} in {S3_BUCKET_TEST_INPUT}...")
+        
+        response = s3.list_objects_v2(
+            Bucket=S3_BUCKET_TEST_INPUT, 
+            Prefix=benchmark_level
+        )
+        
+        if 'Contents' not in response:
+            print(f"✗ No cached files found at s3://{S3_BUCKET_TEST_INPUT}/{benchmark_level}")
+            return False
+        
+        return True
+            
+    except Exception as e:
+        print(f"Error checking cached input files: {str(e)}")
+        print("This might be due to:")
+        print("- AWS credentials not configured")
+        print("- S3 bucket access issues")
+        print("- Network connectivity issues")
+        return False
+ 
+def upload_cralw_file_to_s3(df_filtered: DataFrame, benchmark_level: str):
+    """
+    Upload crawl file to S3
+    Args:
+        benchmark_level: One of 'development', 'validation', 'production_proof', 'scale_proof'
+    """
+    
+    df_filtered.write.parquet(f"s3a://{S3_BUCKET_TEST_INPUT}/{benchmark_level}/",mode="overwrite")
+    print(f"Uploaded crawl file to S3: s3://{S3_BUCKET_TEST_INPUT}/{benchmark_level}/")
+
 def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
     """
     Stress test with Common Crawl data from AWS S3
@@ -249,6 +296,11 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
         else:
             print("GraphFrames JAR not found - using basic Spark session")
             spark = create_spark_session_partition_aware("CommonCrawlStressTest")
+    
+    if does_cralw_file_exists(benchmark_level):
+        df_filtered = spark.read.load(f"s3://{S3_BUCKET_TEST_INPUT}/{benchmark_level}/")
+    else:
+        print(f"No cached input files found for {benchmark_level}")
     
     try:
         print("\n" + "="*80)
@@ -303,7 +355,7 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
             
             print("Applying filters...")
             df_filtered = df_parsed.filter(col("text").isNotNull() & (length(col("text")) > 100))
-            
+            upload_cralw_file_to_s3(df_filtered, benchmark_level)
             # filtered_count = df_filtered.count()
             # print(f"After filtering: {filtered_count} records")
             
@@ -311,10 +363,6 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
             #    raise Exception("No records remain after filtering")
             
             
-            # Cache for performance
-            df_filtered = df_filtered.cache()
-            test_count = df_filtered.count()
-            print(f"Test dataset size: {test_count:,} documents")
             
             # No cleanup needed when reading directly from S3
             
@@ -322,6 +370,11 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
             print("Common Crawl access requires AWS credentials or has connectivity issues.")
             raise Exception(f"Error reading WET files: {str(e)}")
         
+        # Cache for performance
+        df_filtered = df_filtered.cache()
+        test_count = df_filtered.count()
+        print(f"Test dataset size: {test_count:,} documents")
+
         # Performance monitoring
         start_time = time.time()
         print(f"Starting deduplication at: {time.strftime('%Y-%m-%d %H:%M:%S')}")
