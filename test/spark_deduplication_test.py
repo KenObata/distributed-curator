@@ -221,7 +221,7 @@ def does_cralw_file_exists(benchmark_level: str) -> bool:
         True if cached input files exist for this benchmark level, False otherwise
     """
     if benchmark_level not in BENCHMARK_CONFIGS:
-        ValueError(f"Invalid benchmark_level: {benchmark_level}")
+        raise ValueError(f"Invalid benchmark_level: {benchmark_level}")
     
     try:
         # Check for cached input files in personal bucket
@@ -254,7 +254,7 @@ def upload_cralw_file_to_s3(df_filtered: DataFrame, benchmark_level: str):
         benchmark_level: One of 'development', 'validation', 'production_proof', 'scale_proof'
     """
     
-    df_filtered.write.parquet(f"s3a://{S3_BUCKET_TEST_INPUT}/{benchmark_level}/",mode="overwrite")
+    df_filtered.write.parquet(f"s3://{S3_BUCKET_TEST_INPUT}/{benchmark_level}/",mode="overwrite")
     print(f"Uploaded crawl file to S3: s3://{S3_BUCKET_TEST_INPUT}/{benchmark_level}/")
 
 def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
@@ -302,69 +302,69 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
     else:
         print(f"No cached input files found for {benchmark_level}")
     
-    try:
-        print("\n" + "="*80)
-        print("COMMON CRAWL STRESS TEST - PARTITION-AWARE DEDUPLICATION")
-        print("="*80)
-        
-        # Option 1: Use Common Crawl WET format for actual text content
-        # WET files contain extracted plain text from web pages
-        # Use HTTP endpoint instead of S3 to avoid credential issues
-        # wet_path = "https://data.commoncrawl.org/crawl-data/CC-MAIN-2024-22/segments/1715971057216.39/wet/CC-MAIN-20240517233122-20240518023122-00000.warc.wet.gz"
-        # wet_rdd = read_common_crawl_http_file(spark, wet_s3_path)
-
-        wet_s3_path = "s3://commoncrawl/crawl-data/CC-MAIN-2024-22/segments/1715971057216.39/wet/"
-        print(f"Loading Common Crawl WET files from: {wet_s3_path}")
-        
-        # For WET files, we need to read them as text files and parse the format
-        # WET format contains:
-        # - WARC-Type: conversion
-        # - WARC-Target-URI: <url>
-        # - Content-Length: <length>
-        # - <blank line>
-        # - <extracted text content>
-        
         try:
-            # Download WET file first to avoid Spark HTTP issues
-            wet_df = read_wet_files_from_s3(spark, wet_s3_path, max_files)
-            wet_df.show()
-            wet_rdd = wet_df.rdd.map(lambda row: row.value)
+            print("\n" + "="*80)
+            print("COMMON CRAWL STRESS TEST - PARTITION-AWARE DEDUPLICATION")
+            print("="*80)
             
+            # Option 1: Use Common Crawl WET format for actual text content
+            # WET files contain extracted plain text from web pages
+            # Use HTTP endpoint instead of S3 to avoid credential issues
+            # wet_path = "https://data.commoncrawl.org/crawl-data/CC-MAIN-2024-22/segments/1715971057216.39/wet/CC-MAIN-20240517233122-20240518023122-00000.warc.wet.gz"
+            # wet_rdd = read_common_crawl_http_file(spark, wet_s3_path)
+
+            wet_s3_path = "s3://commoncrawl/crawl-data/CC-MAIN-2024-22/segments/1715971057216.39/wet/"
+            print(f"Loading Common Crawl WET files from: {wet_s3_path}")
             
-            # Process in partitions and parse WET format
-            print("Parsing WET format...")
-            parsed_rdd = wet_rdd.glom().flatMap(parse_wet_record_v2)
+            # For WET files, we need to read them as text files and parse the format
+            # WET format contains:
+            # - WARC-Type: conversion
+            # - WARC-Target-URI: <url>
+            # - Content-Length: <length>
+            # - <blank line>
+            # - <extracted text content>
             
-            # Check if parsing produced any results
-            # parsed_count = parsed_rdd.count()
-            # print(f"Parsed {parsed_count} records from WET file")
-            
-            # if parsed_count == 0:
-            #    raise Exception("WET file parsing produced no records")
-            
-            # Convert to DataFrame and take sample
-            from pyspark.sql.types import StructType, StructField, StringType
-            schema = StructType([
-                StructField("doc_id", StringType(), True),
-                StructField("text", StringType(), True)
-            ])
-            
-            print("Creating DataFrame from parsed records...")
-            df_parsed = spark.createDataFrame(parsed_rdd, schema)
-            df_parsed.show()
-            
-            print("Applying filters...")
-            df_filtered = df_parsed.filter(col("text").isNotNull() & (length(col("text")) > 100))
-            upload_cralw_file_to_s3(df_filtered, benchmark_level)
-            # filtered_count = df_filtered.count()
-            # print(f"After filtering: {filtered_count} records")
-            
-            # if filtered_count == 0:
-            #    raise Exception("No records remain after filtering")
-            
-            
-            
-            # No cleanup needed when reading directly from S3
+            try:
+                # Download WET file first to avoid Spark HTTP issues
+                wet_df = read_wet_files_from_s3(spark, wet_s3_path, max_files)
+                wet_df.show()
+                wet_rdd = wet_df.rdd.map(lambda row: row.value)
+                
+                
+                # Process in partitions and parse WET format
+                print("Parsing WET format...")
+                parsed_rdd = wet_rdd.glom().flatMap(parse_wet_record_v2)
+                
+                # Check if parsing produced any results
+                # parsed_count = parsed_rdd.count()
+                # print(f"Parsed {parsed_count} records from WET file")
+                
+                # if parsed_count == 0:
+                #    raise Exception("WET file parsing produced no records")
+                
+                # Convert to DataFrame and take sample
+                from pyspark.sql.types import StructType, StructField, StringType
+                schema = StructType([
+                    StructField("doc_id", StringType(), True),
+                    StructField("text", StringType(), True)
+                ])
+                
+                print("Creating DataFrame from parsed records...")
+                df_parsed = spark.createDataFrame(parsed_rdd, schema)
+                df_parsed.show()
+                
+                print("Applying filters...")
+                df_filtered = df_parsed.filter(col("text").isNotNull() & (length(col("text")) > 100))
+                upload_cralw_file_to_s3(df_filtered, benchmark_level)
+                # filtered_count = df_filtered.count()
+                # print(f"After filtering: {filtered_count} records")
+                
+                # if filtered_count == 0:
+                #    raise Exception("No records remain after filtering")
+                
+                
+                
+                # No cleanup needed when reading directly from S3
             
         except Exception as e:
             print("Common Crawl access requires AWS credentials or has connectivity issues.")
