@@ -103,3 +103,27 @@ def log_dataframe(df: DataFrame, is_debug_mode: bool = False):
             logger.info(f"  {row}")
     else:
         logger.info(f"Documents involved in duplicates: {df.count()}")
+
+
+def upload_df_to_s3(df: DataFrame, s3_path: str, file_name: str) -> None:
+    """
+    Upload DataFrame to S3
+    Args:
+        df: DataFrame to upload
+        s3_path: S3 path to upload to
+        file_name: File name to upload
+    """
+    try:
+          # Ensure proper path formatting
+          if not s3_path.endswith('/'):
+              s3_path += '/'
+
+          full_s3_path = s3_path + file_name
+
+          # Upload with error handling
+          df.write.mode("overwrite").parquet(full_s3_path)
+          print(f"✅ Uploaded DataFrame to S3: {full_s3_path}")
+
+      except Exception as e:
+          print(f"❌ Failed to upload DataFrame to S3: {str(e)}")
+          raise e

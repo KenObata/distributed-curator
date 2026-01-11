@@ -15,7 +15,9 @@ except ImportError:
     from spark_partition_aware_deduplicattion_v2 import (
         partition_aware_deduplicate
     )
-from spark_utils import create_spark_session_partition_aware_emr, create_spark_session_partition_aware
+from spark_utils import (create_spark_session_partition_aware_emr, 
+create_spark_session_partition_aware,
+upload_df_to_s3)
 import os
 import boto3
 
@@ -252,15 +254,6 @@ def does_cralw_file_exists(benchmark_level: str) -> bool:
         print("- Network connectivity issues")
         return False
  
-def upload_cralw_file_to_s3(df_filtered: DataFrame, benchmark_level: str):
-    """
-    Upload crawl file to S3
-    Args:
-        benchmark_level: One of 'development', 'validation', 'production_proof', 'scale_proof'
-    """
-    
-    df_filtered.write.parquet(f"s3://{S3_BUCKET_TEST_INPUT}/{benchmark_level}/",mode="overwrite")
-    print(f"Uploaded crawl file to S3: s3://{S3_BUCKET_TEST_INPUT}/{benchmark_level}/")
 
 def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
     """
@@ -278,6 +271,8 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
     config = BENCHMARK_CONFIGS[benchmark_level]
     max_files = config["wet_files"]
     
+    s3_path = f"s3://{S3_BUCKET_TEST_INPUT}/{benchmark_level}/"
+
     print(f"Benchmark Level: {benchmark_level}")
     print(f"Max WET files: {max_files} ({config['size']}, {config['pages']} pages)")
     print(f"Purpose: {config['purpose']}")
@@ -345,11 +340,11 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
                 
                 print("Applying filters...")
                 df_filtered = df_parsed.filter(col("text").isNotNull() & (length(col("text")) > 100))
-                upload_cralw_file_to_s3(df_filtered, benchmark_level)
+                upload_df_to_s3(df_filtered, s3_path=s3_path, file_name="common_crawl_df_filtered.parquet")
             
-        except Exception as e:
-            print("Common Crawl access requires AWS credentials or has connectivity issues.")
-            raise Exception(f"Error reading WET files: {str(e)}")
+            except Exception as e:
+                print("Common Crawl access requires AWS credentials or has connectivity issues.")
+                raise Exception(f"Error reading WET files: {str(e)}")
         
         # Cache for performance
         df_filtered = df_filtered.cache()
@@ -360,9 +355,12 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
         start_time = time.time()
         print(f"Starting deduplication at: {time.strftime('%Y-%m-%d %H:%M:%S')}")
         
-        # Get partition count from Spark config (respects user's --conf spark.sql.shuffle.partitions)
-        shuffle_partitions = int(spark.conf.get("spark.sql.shuffle.partitions", "200"))
-        print(f"Using {shuffle_partitions} partitions from Spark config")
+        # Calculate executor count for partition sizing
+        # Get total cores from executors (excluding driver)
+        executor_instances = int(spark.conf.get("spark.executor.instances", "8"))
+        executor_cores = int(spark.conf.get("spark.executor.cores", "4"))
+        total_executor_cores = executor_instances * executor_cores
+        print(f"Using {total_executor_cores} partitions")
         
         # Run partition-aware deduplication with optimized parameters for large dataset
         result = partition_aware_deduplicate(
@@ -372,8 +370,9 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
             similarity_threshold=0.9,  # Higher threshold for URL-based content
             num_hashes=64,             # Fewer hashes for speed
             num_bands=8,               # Fewer bands for speed  
-            num_partitions=shuffle_partitions,  # Use user's partition setting
-            is_debug_mode=False
+            num_partitions=total_executor_cores,  # Use executor-based partition count
+            is_debug_mode=False,
+            s3_path=s3_path
         )
         
         # Collect results
@@ -421,7 +420,7 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
                     "similarity_threshold": 0.9,
                     "num_hashes": 64,
                     "num_bands": 8,
-                    "num_partitions": shuffle_partitions
+                    "num_partitions": num_partitions
                 }
             }
             

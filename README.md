@@ -274,17 +274,20 @@ spark-submit \
   --executor-memory 16g \
   --driver-memory 24g \
   --conf spark.sql.shuffle.partitions=450 \
-  --conf spark.shuffle.service.enabled=true \
   --conf spark.network.timeout=800s \
   --conf spark.shuffle.io.connectionTimeout=600s \
   --conf spark.executor.extraJavaOptions="-XX:+UseG1GC -XX:MaxGCPauseMillis=200" \
   --conf spark.memory.offHeap.size=1g \
   --conf spark.yarn.maxAppAttempts=1 \
+  --conf spark.shuffle.service.enabled=false \
+  --conf spark.dynamicAllocation.enabled=true \
+  --conf spark.dynamicAllocation.shuffleTracking.enabled=true \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
   --deploy-mode cluster \
   s3://your-scripts-bucket/scripts/spark_deduplication_test.py production_proof
 ```
+Note that spark.dynamicAllocation.shuffleTracking.enabled=true is temporary.
 
 For 9000 WET files, 
 ```
