@@ -275,7 +275,7 @@ spark-submit \
   --driver-memory 24g \
   --conf spark.sql.shuffle.partitions=3000 \
   --conf spark.memory.offHeap.size=1g \
-  --conf spark.yarn.maxAppAttempts=1
+  --conf spark.yarn.maxAppAttempts=1 \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
   --deploy-mode cluster \
@@ -296,6 +296,7 @@ spark-submit \
   --conf spark.sql.shuffle.partitions=10000 \
   --conf spark.default.parallelism=10000 \
   --conf spark.memory.offHeap.size=4g \
+  --conf spark.yarn.maxAppAttempts=1 \
   --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
   --conf spark.kryoserializer.buffer.max=2048m \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
