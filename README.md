@@ -271,9 +271,13 @@ spark-submit \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
   --num-executors 32 \
   --executor-cores 4 \
-  --executor-memory 28g \
+  --executor-memory 16g \
   --driver-memory 24g \
-  --conf spark.sql.shuffle.partitions=3000 \
+  --conf spark.sql.shuffle.partitions=450 \
+  --conf spark.shuffle.service.enabled=true \
+  --conf spark.network.timeout=800s \
+  --conf spark.shuffle.io.connectionTimeout=600s \
+  --conf spark.executor.extraJavaOptions="-XX:+UseG1GC -XX:MaxGCPauseMillis=200" \
   --conf spark.memory.offHeap.size=1g \
   --conf spark.yarn.maxAppAttempts=1 \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
@@ -294,6 +298,7 @@ spark-submit \
   --executor-memory 60g \
   --driver-memory 32g \
   --conf spark.sql.shuffle.partitions=10000 \
+  --conf spark.shuffle.service.enabled=true \
   --conf spark.default.parallelism=10000 \
   --conf spark.memory.offHeap.size=4g \
   --conf spark.yarn.maxAppAttempts=1 \
@@ -330,7 +335,17 @@ spark-submit \
    s3://text-deduplication-740959772378/scripts/iceberg_setup_test.py development
 ```
 
-Step 9: How to monitor
+Step9: How to save your sark history UI
+
+```
+hdfs dfs -cat /var/log/spark/apps/application_1768106632592_0001_1 > ~/application_1768106632592_0001_1
+aws s3 cp application_1768106632592_0001_1 s3://text-deduplication-740959772378/
+```
+then in you macbook,
+```
+aws s3 cp s3://text-deduplication-740959772378/application_1768106632592_0001_1 ~/Downloads
+```
+Step 10: How to monitor
 
 Check specific stages:
 http://localhost:4040/stages/stage/?id=12&attempt=0
