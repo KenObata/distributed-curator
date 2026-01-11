@@ -506,17 +506,17 @@ locals {
       on_demand_only   = { on_demand = 4, spot = 0 }
     }
     "1k" = {
-      instance_type    = "r5.4xlarge"
+      instance_type    = "r5d.4xlarge"
       on_demand_spot   = { on_demand = 8, spot = 8 }
       on_demand_only   = { on_demand = 16, spot = 0 }
     }
     "9k" = {
-      instance_type    = "r5.12xlarge"
+      instance_type    = "r5d.12xlarge"
       on_demand_spot   = { on_demand = 3, spot = 3 }
       on_demand_only   = { on_demand = 6, spot = 0 }
     }
     "90k" = {
-      instance_type    = "r5.12xlarge"
+      instance_type    = "r5d.12xlarge"
       on_demand_spot   = { on_demand = 14, spot = 13 }
       on_demand_only   = { on_demand = 27, spot = 0 }
     }
