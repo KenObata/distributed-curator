@@ -511,9 +511,9 @@ locals {
       on_demand_only   = { on_demand = 16, spot = 0 }
     }
     "9k" = {
-      instance_type    = "r5d.12xlarge"
-      on_demand_spot   = { on_demand = 3, spot = 3 }
-      on_demand_only   = { on_demand = 6, spot = 0 }
+      instance_type    = "c6id.12xlarge"
+      on_demand_spot   = { on_demand = 12, spot = 12 }
+      on_demand_only   = { on_demand = 24, spot = 0 }
     }
     "90k" = {
       instance_type    = "r5d.12xlarge"
@@ -748,6 +748,8 @@ resource "aws_emr_cluster" "dedup_cluster" {
       Properties = {
         "yarn.nodemanager.vmem-check-enabled" = "false"
         "yarn.nodemanager.pmem-check-enabled" = "false"
+        "yarn.nodemanager.aux-services" = "mapreduce_shuffle,spark_shuffle"
+        "yarn.nodemanager.aux-services.spark_shuffle.class" = "org.apache.spark.network.yarn.YarnShuffleService"
       }
     },
     {

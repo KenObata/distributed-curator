@@ -220,6 +220,7 @@ def partition_aware_deduplicate(
     num_bands: int = 16,
     num_partitions: int = 1000,
     is_debug_mode = False,
+    s3_path: str = None,
     remove_articles = False,
 ) -> DataFrame:
     """
@@ -259,12 +260,6 @@ def partition_aware_deduplicate(
     # Get partition count from Spark config
     num_shuffle_partitions = int(spark.conf.get("spark.sql.shuffle.partitions", "1000"))
     input_df = input_df.repartition(num_shuffle_partitions)
-    
-    # Create MinHash UDF
-    #minhash_udf = udf(
-    #    lambda text: compute_minhash_signature(text=text, num_hashes=num_hashes, ngram=9, normalize=True),
-    #    ArrayType(IntegerType())
-    #)
 
     @pandas_udf(ArrayType(IntegerType()))
     def minhash_batch_udf(rows: pd.Series) -> pd.Series:
@@ -319,7 +314,9 @@ def partition_aware_deduplicate(
         "target_partitions",
         partition_assignment_udf(col("minhash_signature"))
     )
-    
+
+    if is_debug_mode and s3_path:
+        upload_df_to_s3(df=df_with_partitions, s3_path=s3_path, file_name="df_with_partitions.parquet")
     # Show partition distribution for monitoring
     partition_stats = df_with_partitions.select(
         size(col("target_partitions")).alias("num_partitions_per_doc")
