@@ -73,7 +73,7 @@ plot_results(results)
     and spark-submit
     --executor-cores 4 \
     --num-executors 16 \
-    ☐ Implement hash mixing optimization to 
+    - Implement hash mixing optimization to 
       eliminate string concatenation in MinHash
     - cache edge df (won't do)
     - Eliminate distinct
@@ -81,6 +81,8 @@ plot_results(results)
         # Add before connectedComponents()
         spark.conf.set("spark.graphx.pregel.checkpointInterval", "10")
         components = g.connectedComponents(algorithm="graphx")  
+    - Implement caching mechanism
+    ☐ Test 1000 WET files with caching and num_partition= core_count    
     ☐ Implement incremental union-find for
       faster group building
     ☐ Increase similarity threshold to reduce
