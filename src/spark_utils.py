@@ -84,6 +84,7 @@ def create_spark_session_partition_aware_emr(app_name: str = "PartitionAwareDedu
         .config("spark.sql.adaptive.enabled", "true") \
         .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
         .config("spark.sql.adaptive.skewJoin.enabled", "true") \
+        .config("spark.sql.adaptive.advisoryPartitionSizeInBytes", "134217728") \
         .config("spark.default.parallelism", "1000") \
         .config("spark.memory.offHeap.enabled", "true") \
         .config("spark.memory.offHeap.size", "2g") \
@@ -104,8 +105,72 @@ def log_dataframe(df: DataFrame, is_debug_mode: bool = False):
     else:
         logger.info(f"Documents involved in duplicates: {df.count()}")
 
+def _split_bucket_name_n_s3_prefix(full_s3_path: str) -> tuple[str, str]:
+    """
+    From full s3 path, return bucket name and prefix parts separately
+    Args:
+        full_s3_path: Full S3 path like "s3://bucket-name/development/df_name/" or "bucket-name/development/df_name/"
+    Returns:
+        s3_path without bucket name
+        ex) "development/df_name/"
+    Examples:
+        "s3://my-bucket/development/data/" -> ["my-bucket", "development/data/"]
+        "my-bucket/development/data/" -> ["my-bucket", "development/data/"]
+        "my-bucket/development/data" -> ["my-bucket", "development/data/"]
+    """
+    # Remove s3:// prefix if present
+    if full_s3_path.startswith("s3://"):
+        full_s3_path = full_s3_path[5:]
+    
+    # Split into parts
+    parts = full_s3_path.split("/", 1)
+    
+    if len(parts) == 1:
+        raise valueError("Only bucket name provided")
+    
+    s3_bucket_name = parts[0]
+    prefix = parts[1]
+    
+    return s3_bucket_name, prefix
 
-def upload_df_to_s3(df: DataFrame, s3_path: str, file_name: str) -> None:
+def does_file_exists(s3_path: str) -> bool:
+    """
+    Check if cached input files exist in personal S3 bucket for the target benchmark level
+    Args:
+        s3_path: ex) {s3_bucket_name}/development/{df_name}/
+    Returns:
+        True if cached input files exist for this benchmark level, False otherwise
+    """
+    try:
+        import boto3
+        s3 = boto3.client('s3')
+        
+        s3_bucket_name, prefix = _split_bucket_name_n_s3_prefix(full_s3_path=s3_path)
+        print(f"Checking for cached input files at s3://{s3_bucket_name}/{prefix}")
+        
+        response = s3.list_objects_v2(
+            Bucket=s3_bucket_name, 
+            Prefix=prefix
+        )
+        
+        if 'Contents' not in response:
+            print(f"✗ No cached files found at s3://{s3_bucket_name}/{prefix}")
+            return False
+        
+        # Check if we have actual parquet files (not just _SUCCESS)
+        parquet_files = [obj for obj in response['Contents'] if obj['Key'].endswith('.parquet')]
+        if not parquet_files:
+            print(f"✗ No parquet files found at s3://{s3_bucket_name}/{prefix}")
+            return False
+            
+        print(f"✅ Found {len(parquet_files)} parquet files in cache")
+        return True
+            
+    except Exception as e:
+        print(f"Error checking cached input files: {str(e)}")
+        return False
+
+def upload_df_to_s3(df: DataFrame, s3_path: str) -> None:
     """
     Upload DataFrame to S3
     Args:
@@ -118,12 +183,37 @@ def upload_df_to_s3(df: DataFrame, s3_path: str, file_name: str) -> None:
         if not s3_path.endswith('/'):
             s3_path += '/'
 
-        full_s3_path = s3_path + file_name
-
         # Upload with error handling
-        df.write.mode("overwrite").parquet(full_s3_path)
-        print(f"✅ Uploaded DataFrame to S3: {full_s3_path}")
+        df.write.mode("overwrite").parquet(s3_path)
+        print(f"✅ Uploaded DataFrame to S3: {s3_path}")
 
     except Exception as e:
         print(f"❌ Failed to upload DataFrame to S3: {str(e)}")
+        raise e
+
+def read_parquet_from_s3(s3_path: str, spark: SparkSession, schema: StructType = None) -> DataFrame:
+    """
+    Read Parquet file/directory from S3
+    Args:
+        s3_path: S3 path to read from (should end with /)
+        spark: SparkSession
+        schema: Optional schema to avoid inference issues
+    """
+    try:
+        # Ensure proper path formatting
+        if not s3_path.endswith('/'):
+            s3_path += '/'
+        
+        if schema:
+            df_filtered = spark.read.schema(schema).parquet(s3_path)
+        else:
+            df_filtered = spark.read.parquet(s3_path)
+            
+        print(f"✅ Loaded cached data from S3: {s3_path}")
+        return df_filtered
+
+    except Exception as e:
+        print(f"❌ Failed to load cached data from {s3_path}: {str(e)}")
+        print("Falling back to downloading from Common Crawl...")
+        # Fall back to Common Crawl download
         raise e
