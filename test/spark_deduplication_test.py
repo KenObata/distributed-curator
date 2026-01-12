@@ -269,10 +269,7 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
     
     s3_path = f"s3://{S3_BUCKET_TEST_INPUT}/{benchmark_level}/common_crawl_df_filtered"
 
-    print(f"Benchmark Level: {benchmark_level}")
-    print(f"Max WET files: {max_files} ({config['size']}, {config['pages']} pages)")
-    print(f"Purpose: {config['purpose']}")
-    
+    print(f"Benchmark Level: {benchmark_level}")    
     # Detect environment and choose appropriate Spark session
     is_emr = os.path.exists('/emr') or 'EMR' in os.environ.get('SPARK_HOME', '') or os.environ.get('AWS_EMR_CLUSTER_ID')
     
