@@ -28,27 +28,23 @@ S3_BUCKET_TEST_INPUT = "text-dedupe-benchmark"
 BENCHMARK_CONFIGS = {
     "development": {
         "wet_files": 1,
-        "size": "80MB",
-        "pages": "~100K",
-        "purpose": "Debug and optimize"
+        "sampling_rate": 0.1,
+        "size": "9gb"
     },
     "validation": {
         "wet_files": 100,
-        "size": "8GB", 
-        "pages": "~10M",
-        "purpose": "Compare with MLlib"
+        "sampling_rate": 0.001,
+        "size": "90gb"
     },
     "production_proof": {
         "wet_files": 1000,
-        "size": "80GB",
-        "pages": "~100M",
-        "purpose": "Show 10x improvement"
+        "sampling_rate": 0.0001,
+        "size": "900gb"
     },
     "scale_proof": {
         "wet_files": 9000,
-        "size": "800GB",
-        "pages": "~1B",
-        "purpose": "Prove web-scale capability"
+        "sampling_rate": 0.00001,
+        "size": "9000gb"
     }
 }
 
@@ -298,7 +294,8 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
             print("GraphFrames JAR not found - using basic Spark session")
             spark = create_spark_session_partition_aware("CommonCrawlStressTest")
     
-    if does_file_exists(s3_path=s3_path):
+    has_common_crawl_df_filtered = does_file_exists(s3_path=s3_path)
+    if has_common_crawl_df_filtered:
         df_filtered = read_parquet_from_s3(s3_path=s3_path, spark=spark)
     else:
         print(f"No cached input files found for {benchmark_level}")
@@ -337,7 +334,6 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
             
             print("Applying filters...")
             df_filtered = df_parsed.filter(col("text").isNotNull() & (length(col("text")) > 100))
-            upload_df_to_s3(df_filtered, s3_path)
             
         except Exception as e:
             print("Common Crawl access requires AWS credentials or has connectivity issues.")
@@ -347,6 +343,8 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
     df_filtered = df_filtered.cache()
     test_count = df_filtered.count()
     print(f"Test dataset size: {test_count:,} documents")
+    if not has_common_crawl_df_filtered:
+        upload_df_to_s3(df=df_filtered, s3_path=s3_path, row_count=test_count)
 
     # Performance monitoring
     start_time = time.time()

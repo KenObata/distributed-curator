@@ -317,7 +317,7 @@ def partition_aware_deduplicate(
         )
 
         if is_debug_mode:
-            upload_df_to_s3(df=df_with_partitions, s3_path=df_with_partitions_s3_path)
+            upload_df_to_s3(df=df_with_partitions, s3_path=df_with_partitions_s3_path, row_count=total_docs_count)
     else:
         # Define schema for df_with_partitions to avoid inference issues
         df_with_partitions_schema = StructType([
@@ -332,6 +332,10 @@ def partition_aware_deduplicate(
             spark=spark, 
             schema=df_with_partitions_schema
         )
+        
+        # Set total_docs_count for cached data path
+        total_docs_count = df_with_partitions.count()
+        logger.info(f"Loaded {total_docs_count} documents from cache...")
 
     
     # Show partition distribution for monitoring

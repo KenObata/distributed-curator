@@ -157,20 +157,50 @@ def does_file_exists(s3_path: str) -> bool:
             print(f"✗ No cached files found at s3://{s3_bucket_name}/{prefix}")
             return False
         
-        # Check if we have actual parquet files (not just _SUCCESS)
-        parquet_files = [obj for obj in response['Contents'] if obj['Key'].endswith('.parquet')]
+        # Check for _SUCCESS marker (indicates complete Spark write)
+        success_files = [obj for obj in response['Contents'] if obj['Key'].endswith('_SUCCESS')]
+        if not success_files:
+            print(f"✗ No _SUCCESS marker found - incomplete write at s3://{s3_bucket_name}/{prefix}")
+            return False
+        
+        # Check if we have actual parquet files
+        parquet_files = [obj for obj in response['Contents'] if obj['Key'].endswith('.parquet') and '_temporary' not in obj['Key']]
         if not parquet_files:
-            print(f"✗ No parquet files found at s3://{s3_bucket_name}/{prefix}")
+            print(f"✗ No valid parquet files found at s3://{s3_bucket_name}/{prefix}")
             return False
             
-        print(f"✅ Found {len(parquet_files)} parquet files in cache")
+        print(f"✅ Found {len(parquet_files)} parquet files and _SUCCESS marker in cache")
         return True
             
     except Exception as e:
         print(f"Error checking cached input files: {str(e)}")
         return False
 
-def upload_df_to_s3(df: DataFrame, s3_path: str) -> None:
+def get_samping_size(benchmark_level: str) -> float:
+    if benchmark_level not in BENCHMARK_CONFIGS:
+        raise ValueError(f"{benchmark_level} does not exist in benchmark_level.")
+
+    return BENCHMARK_CONFIGS[benchmark_level][sampling_rate]
+
+def get_dataframe_size_mb_estimate(row_count:int) -> float:
+    """Fast approximation using only row count for Common Crawl text data"""
+    # Conservative estimate for web text data based on Common Crawl characteristics
+    avg_bytes_per_row = 2000  # Typical web page text size
+    
+    total_size_bytes = row_count * avg_bytes_per_row
+    return total_size_bytes / (1024 * 1024)
+
+def calculate_optimal_partitions(df: DataFrame, row_count:int, target_file_size_mb: int = 256) -> int:
+    """Calculate partition count for target file size using lightweight row count estimation"""
+    
+    # Use lightweight row count approach for good speed/accuracy balance
+    estimated_total_mb = get_dataframe_size_mb_estimate(df)
+    
+    optimal_partitions = max(1, int(estimated_total_mb / target_file_size_mb))
+    print(f"Row count estimation: {estimated_total_mb:.0f}MB -> {optimal_partitions} partitions")
+    return optimal_partitions
+
+def upload_df_to_s3(df: DataFrame, s3_path: str, row_count:int) -> None:
     """
     Upload DataFrame to S3
     Args:
@@ -183,8 +213,10 @@ def upload_df_to_s3(df: DataFrame, s3_path: str) -> None:
         if not s3_path.endswith('/'):
             s3_path += '/'
 
+        coalesce_count = calculate_optimal_partitions(df=df, row_count=row_count, target_file_size_mb=256)
+
         # Upload with error handling
-        df.write.mode("overwrite").parquet(s3_path)
+        df.coalesce(coalesce_count).write.mode("overwrite").parquet(s3_path)
         print(f"✅ Uploaded DataFrame to S3: {s3_path}")
 
     except Exception as e:
