@@ -67,8 +67,8 @@ spark-submit \
   --driver-memory 8g \
   --executor-memory 16g \
   --num-executors 10 \
-  --conf spark.sql.shuffle.partitions=1000 \
-  spark_partition_aware_deduplicattion_v2.py.py
+  --conf spark.sql.shuffle.partitions=450 \
+  spark_partition_aware_deduplicattion_v2.py.py development
 ```
 Or run it on a single machine
 ```

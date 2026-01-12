@@ -302,9 +302,8 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
         df_filtered = spark.read.load(f"s3://{S3_BUCKET_TEST_INPUT}/{benchmark_level}/")
     else:
         print(f"No cached input files found for {benchmark_level}")
-    
+        
         try:
-
             wet_s3_path = "s3://commoncrawl/crawl-data/CC-MAIN-2024-22/segments/1715971057216.39/wet/"
             print(f"Loading Common Crawl WET files from: {wet_s3_path}")
             
@@ -316,132 +315,125 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
             # - <blank line>
             # - <extracted text content>
             
-            try:
-                # Download WET file first to avoid Spark HTTP issues
-                wet_df = read_wet_files_from_s3(spark, wet_s3_path, max_files)
-                wet_df.show()
-                wet_rdd = wet_df.rdd.map(lambda row: row.value)
-                
-                
-                # Process in partitions and parse WET format
-                print("Parsing WET format...")
-                parsed_rdd = wet_rdd.glom().flatMap(parse_wet_record_v2)
-                
-                # Convert to DataFrame and take sample
-                from pyspark.sql.types import StructType, StructField, StringType
-                schema = StructType([
-                    StructField("doc_id", StringType(), True),
-                    StructField("text", StringType(), True)
-                ])
-                
-                print("Creating DataFrame from parsed records...")
-                df_parsed = spark.createDataFrame(parsed_rdd, schema)
-                df_parsed.show()
-                
-                print("Applying filters...")
-                df_filtered = df_parsed.filter(col("text").isNotNull() & (length(col("text")) > 100))
-                upload_df_to_s3(df_filtered, s3_path=s3_path, file_name="common_crawl_df_filtered.parquet")
+            # Download WET file first to avoid Spark HTTP issues
+            wet_df = read_wet_files_from_s3(spark, wet_s3_path, max_files)
+            wet_df.show()
+            wet_rdd = wet_df.rdd.map(lambda row: row.value)
             
-            except Exception as e:
-                print("Common Crawl access requires AWS credentials or has connectivity issues.")
-                raise Exception(f"Error reading WET files: {str(e)}")
-        
-        # Cache for performance
-        df_filtered = df_filtered.cache()
-        test_count = df_filtered.count()
-        print(f"Test dataset size: {test_count:,} documents")
+            # Process in partitions and parse WET format
+            print("Parsing WET format...")
+            parsed_rdd = wet_rdd.glom().flatMap(parse_wet_record_v2)
+            
+            # Convert to DataFrame and take sample
+            from pyspark.sql.types import StructType, StructField, StringType
+            schema = StructType([
+                StructField("doc_id", StringType(), True),
+                StructField("text", StringType(), True)
+            ])
+            
+            print("Creating DataFrame from parsed records...")
+            df_parsed = spark.createDataFrame(parsed_rdd, schema)
+            df_parsed.show()
+            
+            print("Applying filters...")
+            df_filtered = df_parsed.filter(col("text").isNotNull() & (length(col("text")) > 100))
+            upload_df_to_s3(df_filtered, s3_path=s3_path, file_name="common_crawl_df_filtered.parquet")
+            
+        except Exception as e:
+            print("Common Crawl access requires AWS credentials or has connectivity issues.")
+            raise Exception(f"Error reading WET files: {str(e)}")
+    
+    # Cache for performance - runs regardless of branch above
+    df_filtered = df_filtered.cache()
+    test_count = df_filtered.count()
+    print(f"Test dataset size: {test_count:,} documents")
 
-        # Performance monitoring
-        start_time = time.time()
-        print(f"Starting deduplication at: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    # Performance monitoring
+    start_time = time.time()
+    print(f"Starting deduplication at: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # Calculate executor count for partition sizing
+    # Get total cores from executors (excluding driver)
+    executor_instances = int(spark.conf.get("spark.executor.instances", "8"))
+    executor_cores = int(spark.conf.get("spark.executor.cores", "4"))
+    total_executor_cores = executor_instances * executor_cores
+    print(f"Using {total_executor_cores} partitions")
         
-        # Calculate executor count for partition sizing
-        # Get total cores from executors (excluding driver)
-        executor_instances = int(spark.conf.get("spark.executor.instances", "8"))
-        executor_cores = int(spark.conf.get("spark.executor.cores", "4"))
-        total_executor_cores = executor_instances * executor_cores
-        print(f"Using {total_executor_cores} partitions")
-        
-        # Run partition-aware deduplication with optimized parameters for large dataset
-        result = partition_aware_deduplicate(
-            spark=spark,
-            input_df=df_filtered,
-            text_column="text",
-            similarity_threshold=0.9,  # Higher threshold for URL-based content
-            num_hashes=64,             # Fewer hashes for speed
+    # Run partition-aware deduplication with optimized parameters for large dataset
+    result = partition_aware_deduplicate(
+        spark=spark,
+        input_df=df_filtered,
+        text_column="text",
+        similarity_threshold=0.9,  # Higher threshold for URL-based content
+        num_hashes=64,             # Fewer hashes for speed
             num_bands=8,               # Fewer bands for speed  
             num_partitions=total_executor_cores,  # Use executor-based partition count
             is_debug_mode=False,
             s3_path=s3_path
-        )
+    )
         
-        # Collect results
-        end_time = time.time()
-        elapsed = end_time - start_time
+    # Collect results
+    end_time = time.time()
+    elapsed = end_time - start_time
+    
+    # Performance metrics - collect efficiently to avoid OOM
+    print("Collecting performance metrics...")
+    
+    total_docs = result.count()
+    print(f"Total docs counted: {total_docs:,}")
+    
+    duplicate_docs = result.filter(col("is_duplicate")).count()
+    print(f"Duplicate docs counted: {duplicate_docs:,}")
+    
+    unique_docs = total_docs - duplicate_docs
+    print(f"Unique docs calculated: {unique_docs:,}")
+    
+    print("\n" + "="*80)
+    print("COMMON CRAWL STRESS TEST RESULTS")
+    print("="*80)
+    print(f"Processing time: {elapsed:.2f} seconds")
+    print(f"Documents processed: {total_docs:,}")
+    print(f"Duplicates found: {duplicate_docs:,}")
+    print(f"Unique documents: {unique_docs:,}")
+    print(f"Deduplication rate: {(duplicate_docs/total_docs*100):.2f}%")
+    print("="*80)
+    
+    # Write results to S3 for cluster mode compatibility
+    deploy_mode = spark.conf.get("spark.submit.deployMode", "cluster")
+    print(f"Deploy mode: {deploy_mode}")
+    
+    if deploy_mode == "cluster":
+        print("Cluster mode detected - saving results to S3...")
         
-        # Performance metrics - collect efficiently to avoid OOM
-        print("Collecting performance metrics...")
-        
-        total_docs = result.count()
-        print(f"Total docs counted: {total_docs:,}")
-        
-        duplicate_docs = result.filter(col("is_duplicate")).count()
-        print(f"Duplicate docs counted: {duplicate_docs:,}")
-        
-        unique_docs = total_docs - duplicate_docs
-        print(f"Unique docs calculated: {unique_docs:,}")
-        
-        print("\n" + "="*80)
-        print("COMMON CRAWL STRESS TEST RESULTS")
-        print("="*80)
-        print(f"Processing time: {elapsed:.2f} seconds")
-        print(f"Documents processed: {total_docs:,}")
-        print(f"Duplicates found: {duplicate_docs:,}")
-        print(f"Unique documents: {unique_docs:,}")
-        print(f"Deduplication rate: {(duplicate_docs/total_docs*100):.2f}%")
-        print("="*80)
-        
-        # Write results to S3 for cluster mode compatibility
-        deploy_mode = spark.conf.get("spark.submit.deployMode", "cluster")
-        print(f"Deploy mode: {deploy_mode}")
-        
-        if deploy_mode == "cluster":
-            print("Cluster mode detected - saving results to S3...")
-            
-            result_summary = {
-                "benchmark_level": benchmark_level,
-                "processing_time_seconds": elapsed,
-                "total_documents": total_docs,
-                "duplicate_documents": duplicate_docs,
-                "unique_documents": unique_docs,
-                "deduplication_rate_percent": round(duplicate_docs/total_docs*100, 2),
-                "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
-                "config": {
-                    "similarity_threshold": 0.9,
-                    "num_hashes": 64,
-                    "num_bands": 8,
-                    "num_partitions": num_partitions
-                }
+        result_summary = {
+            "benchmark_level": benchmark_level,
+            "processing_time_seconds": elapsed,
+            "total_documents": total_docs,
+            "duplicate_documents": duplicate_docs,
+            "unique_documents": unique_docs,
+            "deduplication_rate_percent": round(duplicate_docs/total_docs*100, 2),
+            "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
+            "config": {
+                "similarity_threshold": 0.9,
+                "num_hashes": 64,
+                "num_bands": 8,
+                "num_partitions": num_partitions
             }
-            
-            import json
-            result_json = json.dumps(result_summary, indent=2)
-            
-            # Save to S3 for retrieval after job completes
-            result_df = spark.createDataFrame([(result_json,)], ["result"])
-            result_df.write.mode("overwrite").text("s3://your-scripts-bucket/results/benchmark_results/")
-            print("Results saved to S3: s3://your-scripts-bucket/results/benchmark_results/")
-            
-        else:
-            print("Client mode - results displayed above")
+        }
+        
+        import json
+        result_json = json.dumps(result_summary, indent=2)
+        
+        # Save to S3 for retrieval after job completes
+        result_df = spark.createDataFrame([(result_json,)], ["result"])
+        result_df.write.mode("overwrite").text("s3://your-scripts-bucket/results/benchmark_results/")
+        print("Results saved to S3: s3://your-scripts-bucket/results/benchmark_results/")
+        
+    else:
+        print("Client mode - results displayed above")
 
-        print("="*80)
-        
-    except Exception as e:
-        print(f"\nError during Common Crawl test: {str(e)}")
-        
-    finally:
-        spark.stop()
+    print("="*80)
+    spark.stop()
 
 if __name__ == "__main__":
     import sys
