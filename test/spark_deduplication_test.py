@@ -17,7 +17,7 @@ except ImportError:
     )
 from spark_utils import (create_spark_session_partition_aware_emr, 
 create_spark_session_partition_aware,
-upload_df_to_s3)
+upload_df_to_s3, does_file_exists, read_parquet_from_s3)
 import os
 import boto3
 
@@ -271,7 +271,7 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
     config = BENCHMARK_CONFIGS[benchmark_level]
     max_files = config["wet_files"]
     
-    s3_path = f"s3://{S3_BUCKET_TEST_INPUT}/{benchmark_level}/"
+    s3_path = f"s3://{S3_BUCKET_TEST_INPUT}/{benchmark_level}/common_crawl_df_filtered"
 
     print(f"Benchmark Level: {benchmark_level}")
     print(f"Max WET files: {max_files} ({config['size']}, {config['pages']} pages)")
@@ -298,8 +298,8 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
             print("GraphFrames JAR not found - using basic Spark session")
             spark = create_spark_session_partition_aware("CommonCrawlStressTest")
     
-    if does_cralw_file_exists(benchmark_level):
-        df_filtered = spark.read.load(f"s3://{S3_BUCKET_TEST_INPUT}/{benchmark_level}/")
+    if does_file_exists(s3_path=s3_path):
+        df_filtered = read_parquet_from_s3(s3_path=s3_path, spark=spark)
     else:
         print(f"No cached input files found for {benchmark_level}")
         
@@ -337,7 +337,7 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
             
             print("Applying filters...")
             df_filtered = df_parsed.filter(col("text").isNotNull() & (length(col("text")) > 100))
-            upload_df_to_s3(df_filtered, s3_path=s3_path, file_name="common_crawl_df_filtered.parquet")
+            upload_df_to_s3(df_filtered, s3_path)
             
         except Exception as e:
             print("Common Crawl access requires AWS credentials or has connectivity issues.")
@@ -359,6 +359,7 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
     total_executor_cores = executor_instances * executor_cores
     print(f"Using {total_executor_cores} partitions")
         
+    df_with_partitions_s3_path = f"s3://{S3_BUCKET_TEST_INPUT}/{benchmark_level}/df_with_partitions"
     # Run partition-aware deduplication with optimized parameters for large dataset
     result = partition_aware_deduplicate(
         spark=spark,
@@ -366,10 +367,10 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
         text_column="text",
         similarity_threshold=0.9,  # Higher threshold for URL-based content
         num_hashes=64,             # Fewer hashes for speed
-            num_bands=8,               # Fewer bands for speed  
-            num_partitions=total_executor_cores,  # Use executor-based partition count
-            is_debug_mode=True,
-            s3_path=s3_path
+        num_bands=8,               # Fewer bands for speed  
+        num_partitions=total_executor_cores,  # Use executor-based partition count
+        is_debug_mode=True,
+        df_with_partitions_s3_path=df_with_partitions_s3_path
     )
         
     # Collect results

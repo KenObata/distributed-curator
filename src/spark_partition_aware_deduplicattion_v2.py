@@ -24,9 +24,9 @@ import json
 import logging
 import os
 try:
-    from .spark_utils import log_dataframe
+    from .spark_utils import (does_file_exists, upload_df_to_s3, read_parquet_from_s3)
 except:
-    from spark_utils import log_dataframe
+    from spark_utils import (does_file_exists, upload_df_to_s3, read_parquet_from_s3)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -220,7 +220,7 @@ def partition_aware_deduplicate(
     num_bands: int = 16,
     num_partitions: int = 1000,
     is_debug_mode = False,
-    s3_path: str = None,
+    df_with_partitions_s3_path: str = None,
     remove_articles = False,
 ) -> DataFrame:
     """
@@ -257,66 +257,83 @@ def partition_aware_deduplicate(
     # Step 1: Compute MinHash signatures
     logger.info("Step 1: Computing MinHash signatures...")
     
-    # Get partition count from Spark config
-    num_shuffle_partitions = int(spark.conf.get("spark.sql.shuffle.partitions", "1000"))
-    input_df = input_df.repartition(num_shuffle_partitions)
+    if df_with_partitions_s3_path and not does_file_exists(df_with_partitions_s3_path):
+        # Get partition count from Spark config
+        num_shuffle_partitions = int(spark.conf.get("spark.sql.shuffle.partitions", "1000"))
+        input_df = input_df.repartition(num_shuffle_partitions)
 
-    @pandas_udf(ArrayType(IntegerType()))
-    def minhash_batch_udf(rows: pd.Series) -> pd.Series:
-        """Process entire batch using highly optimized vectorized operations"""
-        return compute_minhash_vectorized_batch_only_hash_once(rows, num_hashes, ngram=9)
-    
+        @pandas_udf(ArrayType(IntegerType()))
+        def minhash_batch_udf(rows: pd.Series) -> pd.Series:
+            """Process entire batch using highly optimized vectorized operations"""
+            return compute_minhash_vectorized_batch_only_hash_once(rows, num_hashes, ngram=9)
+        
 
-    df_with_signatures = input_df.withColumn(
-        "minhash_signature",
-        minhash_batch_udf(col(text_column))
-    ).cache()
-    
-    total_docs_count = df_with_signatures.count()
-    logger.info(f"Processing {total_docs_count} documents...")
-    
-    # Step 2: Compute partition assignments based on LSH bands
-    logger.info("Step 2: Computing partition assignments (KEY INNOVATION)...")
-    
-    def compute_partition_assignments(signature: List[int]) -> List[int]:
-        """
-        Determine which partitions this document needs to be sent to
-        based on its LSH bands. This ensures similar docs end up in same partition.
-        """
-        if not signature or all(s == 0 for s in signature):
-            return [0]  # Default partition
+        df_with_signatures = input_df.withColumn(
+            "minhash_signature",
+            minhash_batch_udf(col(text_column))
+        ).cache()
         
-        partitions = set()
+        total_docs_count = df_with_signatures.count()
+        logger.info(f"Processing {total_docs_count} documents...")
         
-        for band_id in range(num_bands):
-            start = band_id * rows_per_band
-            end = builtin_min(start + rows_per_band, len(signature))
-            
-            if start >= len(signature):
-                break
-            
-            # Hash the band to get partition assignment
-            band_values = tuple(signature[start:end])
-            band_hash = builtin_hash(band_values)
-            
-            # Map to partition - documents with same band hash go to same partition
-            partition_id = builtin_abs(band_hash) % num_partitions
-            partitions.add(partition_id)
+        # Step 2: Compute partition assignments based on LSH bands
+        logger.info("Step 2: Computing partition assignments (KEY INNOVATION)...")
         
-        return list(partitions)
-    
-    partition_assignment_udf = udf(
-        compute_partition_assignments,
-        ArrayType(IntegerType())
-    )
-    
-    df_with_partitions = df_with_signatures.withColumn(
-        "target_partitions",
-        partition_assignment_udf(col("minhash_signature"))
-    )
+        def compute_partition_assignments(signature: List[int]) -> List[int]:
+            """
+            Determine which partitions this document needs to be sent to
+            based on its LSH bands. This ensures similar docs end up in same partition.
+            """
+            if not signature or all(s == 0 for s in signature):
+                return [0]  # Default partition
+            
+            partitions = set()
+            
+            for band_id in range(num_bands):
+                start = band_id * rows_per_band
+                end = builtin_min(start + rows_per_band, len(signature))
+                
+                if start >= len(signature):
+                    break
+                
+                # Hash the band to get partition assignment
+                band_values = tuple(signature[start:end])
+                band_hash = builtin_hash(band_values)
+                
+                # Map to partition - documents with same band hash go to same partition
+                partition_id = builtin_abs(band_hash) % num_partitions
+                partitions.add(partition_id)
+            
+            return list(partitions)
+        
+        partition_assignment_udf = udf(
+            compute_partition_assignments,
+            ArrayType(IntegerType())
+        )
+        
+        df_with_partitions = df_with_signatures.withColumn(
+            "target_partitions",
+            partition_assignment_udf(col("minhash_signature"))
+        )
 
-    if is_debug_mode and s3_path:
-        upload_df_to_s3(df=df_with_partitions, s3_path=s3_path, file_name="df_with_partitions.parquet")
+        if is_debug_mode:
+            upload_df_to_s3(df=df_with_partitions, s3_path=df_with_partitions_s3_path)
+    else:
+        # Define schema for df_with_partitions to avoid inference issues
+        df_with_partitions_schema = StructType([
+            StructField("doc_id", StringType(), True),
+            StructField(text_column, StringType(), True),
+            StructField("minhash_signature", ArrayType(IntegerType()), True),
+            StructField("target_partitions", ArrayType(IntegerType()), True)
+        ])
+        
+        df_with_partitions = read_parquet_from_s3(
+            s3_path=df_with_partitions_s3_path, 
+            spark=spark, 
+            schema=df_with_partitions_schema
+        )
+
+    
     # Show partition distribution for monitoring
     partition_stats = df_with_partitions.select(
         size(col("target_partitions")).alias("num_partitions_per_doc")
