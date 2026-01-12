@@ -114,15 +114,15 @@ def upload_df_to_s3(df: DataFrame, s3_path: str, file_name: str) -> None:
         file_name: File name to upload
     """
     try:
-          # Ensure proper path formatting
-          if not s3_path.endswith('/'):
-              s3_path += '/'
+        # Ensure proper path formatting
+        if not s3_path.endswith('/'):
+            s3_path += '/'
 
-          full_s3_path = s3_path + file_name
+        full_s3_path = s3_path + file_name
 
-          # Upload with error handling
-          df.write.mode("overwrite").parquet(full_s3_path)
-          print(f"✅ Uploaded DataFrame to S3: {full_s3_path}")
+        # Upload with error handling
+        df.write.mode("overwrite").parquet(full_s3_path)
+        print(f"✅ Uploaded DataFrame to S3: {full_s3_path}")
 
     except Exception as e:
         print(f"❌ Failed to upload DataFrame to S3: {str(e)}")

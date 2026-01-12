@@ -368,7 +368,7 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
         num_hashes=64,             # Fewer hashes for speed
             num_bands=8,               # Fewer bands for speed  
             num_partitions=total_executor_cores,  # Use executor-based partition count
-            is_debug_mode=False,
+            is_debug_mode=True,
             s3_path=s3_path
     )
         
