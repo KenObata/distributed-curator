@@ -1,3 +1,10 @@
+import builtins
+builtin_hash = hash
+builtin_sum = sum
+builtin_min = min
+builtin_max = max
+builtin_abs = builtins.abs
+
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
@@ -194,9 +201,9 @@ def calculate_optimal_partitions(df: DataFrame, row_count:int, target_file_size_
     """Calculate partition count for target file size using lightweight row count estimation"""
     
     # Use lightweight row count approach for good speed/accuracy balance
-    estimated_total_mb = get_dataframe_size_mb_estimate(df)
+    estimated_total_mb = get_dataframe_size_mb_estimate(row_count)
     
-    optimal_partitions = max(1, int(estimated_total_mb / target_file_size_mb))
+    optimal_partitions = builtin_max(1, int(estimated_total_mb / target_file_size_mb))
     print(f"Row count estimation: {estimated_total_mb:.0f}MB -> {optimal_partitions} partitions")
     return optimal_partitions
 
