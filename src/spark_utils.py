@@ -124,6 +124,6 @@ def upload_df_to_s3(df: DataFrame, s3_path: str, file_name: str) -> None:
           df.write.mode("overwrite").parquet(full_s3_path)
           print(f"✅ Uploaded DataFrame to S3: {full_s3_path}")
 
-      except Exception as e:
-          print(f"❌ Failed to upload DataFrame to S3: {str(e)}")
-          raise e
+    except Exception as e:
+        print(f"❌ Failed to upload DataFrame to S3: {str(e)}")
+        raise e
