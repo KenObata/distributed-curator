@@ -524,7 +524,9 @@ def partition_aware_deduplicate(
 
     # Clean up cached DataFrames to free memory
     logger.info("Cleaning up cached DataFrames...")
-    df_with_signatures.unpersist()
+    # Only unpersist df_with_signatures if it was created (not from cache)
+    if 'df_with_signatures' in locals():
+        df_with_signatures.unpersist()
     similar_pairs_df.unpersist()
     vertices.unpersist()
     doc_id_and_representative_doc_id_df_deduped.unpersist()
