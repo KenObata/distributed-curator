@@ -355,7 +355,7 @@ def partition_aware_deduplicate(
     
     df_exploded = df_with_partitions.select(
         col("doc_id"),
-        col(text_column),
+        # col(text_column),  # Removed - not needed for similarity, reduces shuffle size
         col("minhash_signature"),
         explode(col("target_partitions")).alias("partition_id")
     )
@@ -393,7 +393,7 @@ def partition_aware_deduplicate(
         for row in iterator:
             local_docs.append({
                 'doc_id': row['doc_id'],
-                'text': row[text_column],
+                # 'text': row[text_column],  # Removed to reduce Python memory usage
                 'signature': row['minhash_signature'],
                 'partition_id': row['partition_id']
             })
