@@ -349,10 +349,8 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
     
     # Calculate executor count for partition sizing
     # Get total cores from executors (excluding driver)
-    executor_instances = int(spark.conf.get("spark.executor.instances", "8"))
-    executor_cores = int(spark.conf.get("spark.executor.cores", "4"))
-    total_executor_cores = executor_instances * executor_cores
-    print(f"Using {total_executor_cores} partitions")
+    shuffle_partition_count = int(spark.conf.get("spark.sql.shuffle.partitions"))
+    print(f"Using {shuffle_partition_count} partitions")
         
     df_with_partitions_s3_path = f"s3://{S3_BUCKET_TEST_INPUT}/{benchmark_level}/df_with_partitions"
     # Run partition-aware deduplication with optimized parameters for large dataset
@@ -363,7 +361,7 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
         similarity_threshold=0.9,  # Higher threshold for URL-based content
         num_hashes=64,             # Fewer hashes for speed
         num_bands=8,               # Fewer bands for speed  
-        num_partitions=total_executor_cores,  # Use executor-based partition count
+        num_partitions=shuffle_partition_count,  # Use executor-based partition count
         is_debug_mode=True,
         df_with_partitions_s3_path=df_with_partitions_s3_path
     )
