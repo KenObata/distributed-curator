@@ -269,25 +269,34 @@ spark-submit \
   --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
   --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
-  --num-executors 32 \
+  --num-executors 28 \
   --executor-cores 4 \
   --executor-memory 16g \
   --driver-memory 24g \
-  --conf spark.sql.shuffle.partitions=450 \
+  --conf spark.sql.shuffle.partitions=1000 \
   --conf spark.network.timeout=800s \
   --conf spark.shuffle.io.connectionTimeout=600s \
   --conf spark.executor.extraJavaOptions="-XX:+UseG1GC -XX:MaxGCPauseMillis=200" \
   --conf spark.memory.offHeap.size=1g \
   --conf spark.yarn.maxAppAttempts=1 \
-  --conf spark.shuffle.service.enabled=false \
-  --conf spark.dynamicAllocation.enabled=true \
-  --conf spark.dynamicAllocation.shuffleTracking.enabled=true \
+  --conf spark.shuffle.service.enabled=true \
+  --conf spark.dynamicAllocation.enabled=false \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
+  --conf spark.executor.memoryOverhead=6g \
   --deploy-mode cluster \
   s3://text-deduplication-740959772378/scripts/spark_deduplication_test.py production_proof
 ```
-Note that spark.dynamicAllocation.shuffleTracking.enabled=true is temporary.
+Why spark.dynamicAllocation.shuffleTracking.enabled=false 
+and spark.shuffle.service.enabled=true
+we want to store to external shuffle storage even if an executor ded as a result of dynamic allocation.
+
+I removed these for now due to too aggresive timeout:
+```
+--conf spark.shuffle.registration.timeout=120s \
+--conf spark.shuffle.io.maxRetries=6 \
+--conf spark.shuffle.io.retryWait=30s \
+```
 
 For 9000 WET files, 
 ```
@@ -315,6 +324,22 @@ ltAWSCredentialsProviderChain \
 scale_proof
 ```
 
+How to save your executor log file.
+```
+yarn logs -applicationId application_1769374401406_0003 > /tmp/application_1769374401406_0003.txt
+
+aws s3 cp /tmp/application_1769374401406_0003.txt s3://text-deduplication-740959772378/log/
+```
+
+How to find driver log
+```
+yarn logs -applicationId application_1769374401406_0006 -log_files stdout 2>/dev/null 
+```
+
+then in your local,
+```
+aws s3 cp s3://text-deduplication-740959772378/log/application_1769374401406_0003.txt .
+```
 How to cleanup:
 before running terraform destroy, save your spark UI result.
 ```
