@@ -314,15 +314,20 @@ def partition_aware_deduplicate(
         df_with_partitions = df_with_signatures.withColumn(
             "target_partitions",
             partition_assignment_udf(col("minhash_signature"))
+        ).select(
+            # Drop text column - not needed for deduplication, reduces cache size and memory
+            col("doc_id"),
+            col("minhash_signature"),
+            col("target_partitions")
         )
 
         if is_debug_mode:
             upload_df_to_s3(df=df_with_partitions, s3_path=df_with_partitions_s3_path, row_count=total_docs_count)
     else:
         # Define schema for df_with_partitions to avoid inference issues
+        # Note: text column not included - not needed for deduplication
         df_with_partitions_schema = StructType([
             StructField("doc_id", StringType(), True),
-            StructField(text_column, StringType(), True),
             StructField("minhash_signature", ArrayType(IntegerType()), True),
             StructField("target_partitions", ArrayType(IntegerType()), True)
         ])
@@ -428,10 +433,24 @@ def partition_aware_deduplicate(
         seen_pairs = set()
         similar_pairs = []
         
+        # Safety cap: skip bands with too many docs to prevent O(n²) explosion
+        # Bands with >1000 docs are likely hash collisions on common patterns
+        MAX_BAND_SIZE = 1000
+        skipped_bands = 0
+        max_band_seen = 0
+
         for band_key, docs_in_band in band_index.items():
-            if len(docs_in_band) < 2:
+            band_size = len(docs_in_band)
+            max_band_seen = builtin_max(max_band_seen, band_size)
+
+            if band_size < 2:
                 continue
-            
+
+            # Skip oversized bands to prevent memory/compute explosion
+            if band_size > MAX_BAND_SIZE:
+                skipped_bands += 1
+                continue
+
             # Compare all pairs in this band
             for i, doc1 in enumerate(docs_in_band):
                 for doc2 in docs_in_band[i+1:]:
@@ -457,6 +476,8 @@ def partition_aware_deduplicate(
                             'similarity': similarity,
                             'partition_id': doc1['partition_id']
                         })
+        logger.info(f"skipped_bands: {skipped_bands}")
+        logger.info(f"max_band_seen: {max_band_seen}")
         
         return iter(similar_pairs)
     

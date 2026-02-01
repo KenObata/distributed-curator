@@ -333,7 +333,9 @@ aws s3 cp /tmp/application_1769374401406_0003.txt s3://text-deduplication-740959
 
 How to find driver log
 ```
-yarn logs -applicationId application_1769374401406_0006 -log_files stdout 2>/dev/null 
+yarn logs -applicationId application_1769374401406_0008 -log_files stdout 2>/dev/null > /tmp/application_1769374401406_0008_driver.txt
+
+aws s3 cp /tmp/application_1769374401406_0008_driver.txt s3://text-deduplication-740959772378/log/
 ```
 
 then in your local,
