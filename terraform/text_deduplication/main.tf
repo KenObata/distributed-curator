@@ -511,9 +511,9 @@ locals {
       on_demand_only   = { on_demand = 4, spot = 0 }
     }
     "9k" = {
-      instance_type    = "c6id.12xlarge"
-      on_demand_spot   = { on_demand = 12, spot = 12 }
-      on_demand_only   = { on_demand = 24, spot = 0 }
+      instance_type    = "r5ad.8xlarge"
+      on_demand_spot   = { on_demand = 6, spot = 6 }
+      on_demand_only   = { on_demand = 12, spot = 0 }
     }
     "90k" = {
       instance_type    = "r5d.12xlarge"
