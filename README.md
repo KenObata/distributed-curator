@@ -299,6 +299,32 @@ I removed these for now due to too aggresive timeout:
 ```
 
 For 9000 WET files, 
+with 4 of r5ad.8xlarge,
+```
+spark-submit \
+  --master yarn \
+  --py-files s3://your-scripts-bucket/scripts/dependencies.zip \
+  --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
+  --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
+  --num-executors 28 \
+  --executor-cores 4 \
+  --executor-memory 16g \
+  --driver-memory 24g \
+  --conf spark.sql.shuffle.partitions=3000 \
+  --conf spark.network.timeout=800s \
+  --conf spark.shuffle.io.connectionTimeout=600s \
+  --conf spark.executor.extraJavaOptions="-XX:+UseG1GC -XX:MaxGCPauseMillis=200" \
+  --conf spark.memory.offHeap.size=1g \
+  --conf spark.yarn.maxAppAttempts=1 \
+  --conf spark.shuffle.service.enabled=true \
+  --conf spark.dynamicAllocation.enabled=false \
+  --conf spark.hadoop.fs.s3a.signing-algorithm="" \
+  --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
+  --conf spark.executor.memoryOverhead=6g \
+  --deploy-mode cluster \
+  s3://your-scripts-bucket/scripts/spark_deduplication_test.py scale_proof
+```
+
 ```
 spark-submit \
   --master yarn \
@@ -368,8 +394,8 @@ spark-submit \
 Step9: How to save your sark history UI
 
 ```
-hdfs dfs -cat /var/log/spark/apps/application_1768106632592_0001_1 > ~/application_1768106632592_0001_1
-aws s3 cp application_1768106632592_0001_1 s3://your-scripts-bucket/
+hdfs dfs -cat /var/log/spark/apps/application_1769910857403_0002_1 > ~/application_1769910857403_0002_1
+aws s3 cp application_1769910857403_0002_1 s3://your-scripts-bucket/logs
 ```
 then in you macbook,
 ```
