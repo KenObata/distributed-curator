@@ -83,7 +83,7 @@ def read_common_crawl_http_file(spark: SparkSession, wet_s3_path: str) -> RDD:
     if line_count == 0:
         raise Exception("WET file appears to be empty or inaccessible")
     return wet_rdd
-
+"""
 def read_wet_files_from_s3(spark: SparkSession, wet_s3_path: str, max_files: int = None) -> DataFrame:
     try:
         # Read all WET files directly from S3
@@ -126,7 +126,7 @@ def read_wet_files_from_s3(spark: SparkSession, wet_s3_path: str, max_files: int
     except Exception as e:
         print(f"Error reading WET files from S3: {str(e)}")
         raise Exception(f"Error reading WET files from S3: {str(e)}")
-
+"""
 def parse_wet_record_v2(lines) -> List[Tuple[str, str]]:
     """Optimized WET record parser - 3-5x faster than original"""
     import io
@@ -250,6 +250,50 @@ def does_cralw_file_exists(benchmark_level: str) -> bool:
         print("- Network connectivity issues")
         return False
  
+def get_wet_file_paths(max_files: int) -> List[str]:
+    """Get WET file paths from multiple segments"""
+    import boto3
+    s3_client = boto3.client('s3')
+    
+    bucket = "commoncrawl"
+    # List ALL segments, not just one
+    prefix = "crawl-data/CC-MAIN-2024-22/segments/"
+    
+    file_paths = []
+    paginator = s3_client.get_paginator('list_objects_v2')
+    
+    # Iterate through segments
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix, Delimiter='/'):
+        if 'CommonPrefixes' not in page:
+            continue
+            
+        for segment in page['CommonPrefixes']:
+            segment_prefix = segment['Prefix'] + 'wet/'
+            
+            # List WET files in this segment
+            response = s3_client.list_objects_v2(
+                Bucket=bucket, 
+                Prefix=segment_prefix,
+                MaxKeys=100  # Each segment has ~10-20 files
+            )
+            
+            if 'Contents' in response:
+                for obj in response['Contents']:
+                    if obj['Key'].endswith('.warc.wet.gz'):
+                        file_paths.append(f"s3://{bucket}/{obj['Key']}")
+                        
+                        if len(file_paths) >= max_files:
+                            print(f"Collected {len(file_paths)} WET file paths")
+                            return file_paths
+    
+    print(f"Collected {len(file_paths)} WET file paths")
+    return file_paths
+
+def read_wet_files_from_s3(spark: SparkSession, max_files: int) -> DataFrame:
+    file_paths = get_wet_file_paths(max_files)
+    print(f"Reading {len(file_paths)} WET files...")
+    wet_df = spark.read.text(file_paths)
+    return wet_df
 
 def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
     """
@@ -298,8 +342,8 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
         print(f"No cached input files found for {benchmark_level}")
         
         try:
-            wet_s3_path = "s3://commoncrawl/crawl-data/CC-MAIN-2024-22/segments/1715971057216.39/wet/"
-            print(f"Loading Common Crawl WET files from: {wet_s3_path}")
+            # wet_s3_path = "s3://commoncrawl/crawl-data/CC-MAIN-2024-22/segments/1715971057216.39/wet/"
+            #print(f"Loading Common Crawl WET files from: {wet_s3_path}")
             
             # For WET files, we need to read them as text files and parse the format
             # WET format contains:
@@ -310,7 +354,8 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
             # - <extracted text content>
             
             # Download WET file first to avoid Spark HTTP issues
-            wet_df = read_wet_files_from_s3(spark, wet_s3_path, max_files)
+            # wet_df = read_wet_files_from_s3(spark, wet_s3_path, max_files)
+            wet_df = read_wet_files_from_s3(spark, max_files)
             wet_df.show()
             wet_rdd = wet_df.rdd.map(lambda row: row.value)
             
@@ -411,7 +456,7 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
                 "similarity_threshold": 0.9,
                 "num_hashes": 64,
                 "num_bands": 8,
-                "num_partitions": num_partitions
+                "num_partitions": shuffle_partition_count
             }
         }
         
