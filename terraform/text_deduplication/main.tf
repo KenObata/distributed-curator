@@ -511,9 +511,9 @@ locals {
       on_demand_only   = { on_demand = 4, spot = 0 }
     }
     "9k" = {
-      instance_type    = "r5ad.8xlarge"
-      on_demand_spot   = { on_demand = 6, spot = 6 }
-      on_demand_only   = { on_demand = 12, spot = 0 }
+       instance_type    = "r5ad.16xlarge"  # 64 vCores, 512 GB, 2×1200 GB NVMe
+       on_demand_spot   = { on_demand = 3, spot = 3 }
+       on_demand_only   = { on_demand = 6, spot = 0 }
     }
     "90k" = {
       instance_type    = "r5d.12xlarge"
@@ -662,7 +662,24 @@ resource "aws_emr_cluster" "dedup_cluster" {
     dynamic "instance_type_configs" {
       for_each = contains(["9k"], var.wet_file_scale) ? [1] : []
       content {
-        instance_type     = "r5d.8xlarge"  # AMD alternative
+        instance_type     = "r5ad.16xlarge"  # AMD alternative
+        weighted_capacity = 1
+        
+        bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
+        
+        ebs_config {
+          size                 = 100
+          type                 = "gp3"
+          iops                 = 3000
+          volumes_per_instance = 1
+        }
+      }
+    }
+
+    dynamic "instance_type_configs" {
+      for_each = contains(["9k"], var.wet_file_scale) ? [1] : []
+      content {
+        instance_type     = "r6id.16xlarge"  # Newer Intel
         weighted_capacity = 1
         
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
