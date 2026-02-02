@@ -122,7 +122,7 @@ terraform apply -var="wet_file_scale=1k" -var="instance_strategy=spot" -var="bid
 
 If above plan fails, then do on-demand.
 ```
-terraform apply -var="instance_strategy=on-demand" -var="wet_file_scale=1k"
+terraform apply -var="instance_strategy=on-demand" -var="wet_file_scale=9k"
 ```
 
 Note - you need to create your own terraform.tfvars file looks like this:
@@ -325,6 +325,10 @@ spark-submit \
   s3://your-scripts-bucket/scripts/spark_deduplication_test.py scale_proof
 ```
 
+Compute resources:
+* 384 vCPU (6 × 64)
+* 3,072 GB RAM (6 × 512 GB)
+* 14,400 GB NVMe SSD (6 × 2 × 1200 GB)
 ```
 spark-submit \
   --master yarn \
@@ -333,7 +337,7 @@ spark-submit \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
   --num-executors 84 \
   --executor-cores 4 \
-  --executor-memory 24g \
+  --executor-memory 26g \
   --driver-memory 48g \
   --conf spark.sql.shuffle.partitions=9000 \
   --conf spark.network.timeout=1200s \
