@@ -331,23 +331,23 @@ spark-submit \
   --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
   --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
-  --num-executors 36 \
-  --executor-cores 8 \
-  --executor-memory 60g \
-  --driver-memory 32g \
-  --conf spark.sql.shuffle.partitions=10000 \
-  --conf spark.shuffle.service.enabled=true \
-  --conf spark.default.parallelism=10000 \
-  --conf spark.memory.offHeap.size=4g \
+  --num-executors 84 \
+  --executor-cores 4 \
+  --executor-memory 24g \
+  --driver-memory 48g \
+  --conf spark.sql.shuffle.partitions=9000 \
+  --conf spark.network.timeout=1200s \
+  --conf spark.shuffle.io.connectionTimeout=900s \
+  --conf spark.executor.extraJavaOptions="-XX:+UseG1GC -XX:MaxGCPauseMillis=200" \
+  --conf spark.memory.offHeap.size=2g \
   --conf spark.yarn.maxAppAttempts=1 \
-  --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
-  --conf spark.kryoserializer.buffer.max=2048m \
+  --conf spark.shuffle.service.enabled=true \
+  --conf spark.dynamicAllocation.enabled=false \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
-  --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.Defau
-ltAWSCredentialsProviderChain \
+  --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
+  --conf spark.executor.memoryOverhead=6g \
   --deploy-mode cluster \
-  s3://text-deduplication-740959772378/scripts/spark_deduplication_test.py
-scale_proof
+  s3://text-deduplication-740959772378/scripts/spark_deduplication_test.py scale_proof
 ```
 
 How to save your executor log file.
