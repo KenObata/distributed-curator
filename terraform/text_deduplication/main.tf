@@ -658,15 +658,15 @@ resource "aws_emr_cluster" "dedup_cluster" {
       }
     }
     
-    # For 9k/90k scales, add r5.12xlarge fallbacks
+    # For 9k scale - NVMe-only fallbacks for Spark shuffle performance
     dynamic "instance_type_configs" {
       for_each = contains(["9k"], var.wet_file_scale) ? [1] : []
       content {
-        instance_type     = "r5ad.16xlarge"  # AMD alternative
+        instance_type     = "r5d.16xlarge"  # Intel with 4×400GB NVMe
         weighted_capacity = 1
-        
+
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
-        
+
         ebs_config {
           size                 = 100
           type                 = "gp3"
@@ -679,11 +679,62 @@ resource "aws_emr_cluster" "dedup_cluster" {
     dynamic "instance_type_configs" {
       for_each = contains(["9k"], var.wet_file_scale) ? [1] : []
       content {
-        instance_type     = "r6id.16xlarge"  # Newer Intel
+        instance_type     = "r6id.16xlarge"  # Newer Intel with 2×1900GB NVMe
         weighted_capacity = 1
-        
+
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
-        
+
+        ebs_config {
+          size                 = 100
+          type                 = "gp3"
+          iops                 = 3000
+          volumes_per_instance = 1
+        }
+      }
+    }
+
+    dynamic "instance_type_configs" {
+      for_each = contains(["9k"], var.wet_file_scale) ? [1] : []
+      content {
+        instance_type     = "r5d.12xlarge"  # 48 vCPU, 384GB, 2×900GB NVMe
+        weighted_capacity = 1
+
+        bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
+
+        ebs_config {
+          size                 = 100
+          type                 = "gp3"
+          iops                 = 3000
+          volumes_per_instance = 1
+        }
+      }
+    }
+
+    dynamic "instance_type_configs" {
+      for_each = contains(["9k"], var.wet_file_scale) ? [1] : []
+      content {
+        instance_type     = "r6id.12xlarge"  # 48 vCPU, 384GB, 2×1425GB NVMe
+        weighted_capacity = 1
+
+        bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
+
+        ebs_config {
+          size                 = 100
+          type                 = "gp3"
+          iops                 = 3000
+          volumes_per_instance = 1
+        }
+      }
+    }
+
+    dynamic "instance_type_configs" {
+      for_each = contains(["9k"], var.wet_file_scale) ? [1] : []
+      content {
+        instance_type     = "r5ad.12xlarge"  # AMD, 48 vCPU, 384GB, 2×900GB NVMe
+        weighted_capacity = 1
+
+        bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
+
         ebs_config {
           size                 = 100
           type                 = "gp3"
