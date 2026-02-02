@@ -660,9 +660,9 @@ resource "aws_emr_cluster" "dedup_cluster" {
     
     # For 9k/90k scales, add r5.12xlarge fallbacks
     dynamic "instance_type_configs" {
-      for_each = contains(["9k", "90k"], var.wet_file_scale) ? [1] : []
+      for_each = contains(["9k"], var.wet_file_scale) ? [1] : []
       content {
-        instance_type     = "r5ad.12xlarge"  # AMD alternative
+        instance_type     = "r5d.8xlarge"  # AMD alternative
         weighted_capacity = 1
         
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
