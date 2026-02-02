@@ -713,24 +713,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
     dynamic "instance_type_configs" {
       for_each = contains(["9k"], var.wet_file_scale) ? [1] : []
       content {
-        instance_type     = "r6id.12xlarge"  # 48 vCPU, 384GB, 2×1425GB NVMe
-        weighted_capacity = 1
-
-        bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
-
-        ebs_config {
-          size                 = 100
-          type                 = "gp3"
-          iops                 = 3000
-          volumes_per_instance = 1
-        }
-      }
-    }
-
-    dynamic "instance_type_configs" {
-      for_each = contains(["9k"], var.wet_file_scale) ? [1] : []
-      content {
-        instance_type     = "r5ad.12xlarge"  # AMD, 48 vCPU, 384GB, 2×900GB NVMe
+        instance_type     = "r5ad.12xlarge"  # AMD, 48 vCPU, 384GB, 2×900GB NVMe (most available)
         weighted_capacity = 1
 
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
