@@ -308,9 +308,9 @@ spark-submit \
   --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
   --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
-  --num-executors 63 \
+  --num-executors 54 \
   --executor-cores 4 \
-  --executor-memory 24g \
+  --executor-memory 28g \
   --driver-memory 48g \
   --conf spark.sql.shuffle.partitions=9000 \
   --conf spark.network.timeout=1200s \
@@ -321,12 +321,15 @@ spark-submit \
   --conf spark.shuffle.service.enabled=true \
   --conf spark.dynamicAllocation.enabled=false \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
-  --conf spark.local.dir=/mnt1,/mnt2
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
-  --conf spark.executor.memoryOverhead=6g \
+  --conf spark.executor.memoryOverhead=10g \
   --deploy-mode cluster \
   s3://text-deduplication-740959772378/scripts/spark_deduplication_test.py scale_proof
 ```
+
+until creating df_with_partition,
+this was fine:
+num-executors=63, memoryOverhead=6g,executor-memory=24g.
 
 Compute resources:
 * 384 vCPU (6 × 64)
@@ -351,7 +354,6 @@ spark-submit \
   --conf spark.shuffle.service.enabled=true \
   --conf spark.dynamicAllocation.enabled=false \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
-  --conf spark.local.dir=/mnt1,/mnt2
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
   --conf spark.executor.memoryOverhead=6g \
   --deploy-mode cluster \
@@ -442,6 +444,18 @@ How to kill yarn application
 
 ```
 yarn application -kill {you application_id}
+```
+
+How to check your shuffle storage usage
+```
+# From your local machine - add key to agent first
+ssh-add ./emr-dedupe-key.pem
+
+# Then SSH to master with agent forwarding (-A)
+ssh -A -i ./emr-dedupe-key.pem hadoop@<master-public-ip>
+
+# From master, now you can reach core nodes
+ssh ip-172-31-45-218.ec2.internal "df -h | grep mnt"
 ```
 
 ## EMR ssh trouble shooting
