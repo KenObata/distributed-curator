@@ -771,6 +771,8 @@ resource "aws_emr_cluster" "dedup_cluster" {
         "yarn.nodemanager.pmem-check-enabled" = "false"
         "yarn.nodemanager.aux-services" = "mapreduce_shuffle,spark_shuffle"
         "yarn.nodemanager.aux-services.spark_shuffle.class" = "org.apache.spark.network.yarn.YarnShuffleService"
+        "yarn.nodemanager.local-dirs": "/mnt1/yarn,/mnt2/yarn"
+        "yarn.nodemanager.log-dirs": "/mnt1/yarn/logs,/mnt2/yarn/logs"
       }
     },
     {
@@ -791,13 +793,6 @@ resource "aws_emr_cluster" "dedup_cluster" {
       "Classification": "iceberg-defaults",
       "Properties": {
         "iceberg.enabled": "true"
-      }
-    },
-    {
-    "Classification": "yarn-site",
-    "Properties": {
-      "yarn.nodemanager.local-dirs": "/mnt1/yarn,/mnt2/yarn",
-      "yarn.nodemanager.log-dirs": "/mnt1/yarn/logs,/mnt2/yarn/logs"
       }
     }
   ])
