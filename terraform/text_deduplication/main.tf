@@ -53,9 +53,9 @@ resource "local_file" "private_key" {
   file_permission = "0400"
 }
 
-variable "subnet_id" {
-  description = "Subnet ID for the EMR cluster"
-  type        = string
+variable "subnet_ids" {
+  description = "List of Subnet IDs for the EMR cluster (multi-AZ for better availability). Can pass single subnet as list."
+  type        = list(string)
 }
 
 variable "vpc_id" {
@@ -508,7 +508,7 @@ locals {
     "1k" = {
       instance_type    = "r5ad.8xlarge"
       on_demand_spot   = { on_demand = 2, spot = 2 }
-      on_demand_only   = { on_demand = 4, spot = 0 }
+      on_demand_only   = { on_demand = 9, spot = 0 }
     }
     "9k" = {
        instance_type    = "r5ad.8xlarge"  # 32 vCores, 256 GB, 2×600 GB NVMe (most available)
@@ -535,7 +535,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
   service_role = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/EMR_DefaultRole"
 
   ec2_attributes {
-    subnet_id                         = var.subnet_id
+    subnet_ids                        = var.subnet_ids  # Multi-AZ support for better capacity availability
     # emr_managed_master_security_group = aws_security_group.emr_master.id # let EMR manage its own security
     # emr_managed_slave_security_group  = aws_security_group.emr_core.id # let EMR manage its own security
     instance_profile                  = "arn:aws:iam::740959772378:instance-profile/EMR_EC2_DefaultRole"
@@ -658,15 +658,15 @@ resource "aws_emr_cluster" "dedup_cluster" {
       }
     }
     
-    # For 9k scale - NVMe-only fallbacks with weighted capacity
-    # Primary: 12× r5ad.8xlarge (most available)
-    # Weighting: 16xlarge (64 vCPU) = 4 units, 12xlarge (48 vCPU) = 3 units, 8xlarge (32 vCPU) = 2 units
-    # Target capacity = 24 units = 12×8xlarge OR 6×16xlarge OR 8×12xlarge (all = 384 vCPU)
+    # For 9k scale - NVMe-only fallbacks prioritizing availability (smaller = more available)
+    # Primary: 12× r5ad.8xlarge (AMD, most available)
+    # Weighting: 8xlarge (32 vCPU) = 2 units, 12xlarge (48 vCPU) = 3 units
+    # Target capacity = 24 units = 12×8xlarge OR 8×12xlarge (both = 384 vCPU)
     dynamic "instance_type_configs" {
       for_each = contains(["9k"], var.wet_file_scale) ? [1] : []
       content {
-        instance_type     = "r5d.16xlarge"  # 64 vCPU, Intel, 4×400GB NVMe
-        weighted_capacity = 4
+        instance_type     = "r5d.8xlarge"  # 32 vCPU, Intel, 2×600GB NVMe
+        weighted_capacity = 2
 
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
 
@@ -682,8 +682,8 @@ resource "aws_emr_cluster" "dedup_cluster" {
     dynamic "instance_type_configs" {
       for_each = contains(["9k"], var.wet_file_scale) ? [1] : []
       content {
-        instance_type     = "r6id.16xlarge"  # 64 vCPU, newer Intel, 2×1900GB NVMe
-        weighted_capacity = 4
+        instance_type     = "r6id.8xlarge"  # 32 vCPU, newer Intel, 2×950GB NVMe
+        weighted_capacity = 2
 
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
 
@@ -699,8 +699,8 @@ resource "aws_emr_cluster" "dedup_cluster" {
     dynamic "instance_type_configs" {
       for_each = contains(["9k"], var.wet_file_scale) ? [1] : []
       content {
-        instance_type     = "r5d.12xlarge"  # 48 vCPU, Intel, 2×900GB NVMe
-        weighted_capacity = 3  # Need 8 instances for 384 vCPU
+        instance_type     = "r6gd.8xlarge"  # 32 vCPU, Graviton ARM, 1×1900GB NVMe (highly available)
+        weighted_capacity = 2
 
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
 
@@ -716,8 +716,8 @@ resource "aws_emr_cluster" "dedup_cluster" {
     dynamic "instance_type_configs" {
       for_each = contains(["9k"], var.wet_file_scale) ? [1] : []
       content {
-        instance_type     = "r5ad.16xlarge"  # 64 vCPU, AMD, 2×1200GB NVMe
-        weighted_capacity = 4  # Need 6 instances for 384 vCPU
+        instance_type     = "r5d.12xlarge"  # 48 vCPU, Intel, 2×900GB NVMe (larger fallback)
+        weighted_capacity = 3
 
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
 
@@ -791,6 +791,13 @@ resource "aws_emr_cluster" "dedup_cluster" {
       "Classification": "iceberg-defaults",
       "Properties": {
         "iceberg.enabled": "true"
+      }
+    },
+    {
+    "Classification": "yarn-site",
+    "Properties": {
+      "yarn.nodemanager.local-dirs": "/mnt1/yarn,/mnt2/yarn",
+      "yarn.nodemanager.log-dirs": "/mnt1/yarn/logs,/mnt2/yarn/logs"
       }
     }
   ])

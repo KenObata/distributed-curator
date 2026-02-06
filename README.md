@@ -299,26 +299,29 @@ I removed these for now due to too aggresive timeout:
 ```
 
 For 9000 WET files, 
-with 4 of r5ad.8xlarge,
+with 9 of r5ad.8xlarge,
+* 288 vCPU (9 × 32)
+* 2196 GB RAM (9 × 244 GB)
 ```
 spark-submit \
   --master yarn \
   --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
   --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
-  --num-executors 28 \
+  --num-executors 63 \
   --executor-cores 4 \
-  --executor-memory 16g \
-  --driver-memory 24g \
-  --conf spark.sql.shuffle.partitions=3000 \
-  --conf spark.network.timeout=800s \
+  --executor-memory 24g \
+  --driver-memory 48g \
+  --conf spark.sql.shuffle.partitions=9000 \
+  --conf spark.network.timeout=1200s \
   --conf spark.shuffle.io.connectionTimeout=600s \
   --conf spark.executor.extraJavaOptions="-XX:+UseG1GC -XX:MaxGCPauseMillis=200" \
-  --conf spark.memory.offHeap.size=1g \
+  --conf spark.memory.offHeap.size=2g \
   --conf spark.yarn.maxAppAttempts=1 \
   --conf spark.shuffle.service.enabled=true \
   --conf spark.dynamicAllocation.enabled=false \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
+  --conf spark.local.dir=/mnt1,/mnt2
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
   --conf spark.executor.memoryOverhead=6g \
   --deploy-mode cluster \
@@ -348,6 +351,7 @@ spark-submit \
   --conf spark.shuffle.service.enabled=true \
   --conf spark.dynamicAllocation.enabled=false \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
+  --conf spark.local.dir=/mnt1,/mnt2
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
   --conf spark.executor.memoryOverhead=6g \
   --deploy-mode cluster \
@@ -370,8 +374,22 @@ aws s3 cp /tmp/application_1769374401406_0008_driver.txt s3://text-deduplication
 
 then in your local,
 ```
-aws s3 cp s3://text-deduplication-740959772378/log/application_1769374401406_0003.txt .
+aws s3 cp s3://text-deduplication-740959772378/log/application_1770252307636_0002.txt .
 ```
+
+How to find Resource Manager logs
+```
+ls /var/log/hadoop-yarn/
+```
+to find logs 
+ex) hadoop-yarn-resourcemanager-ip-172-31-47-166.ec2.internal.log
+
+then
+
+```
+grep -a -i "lost\|unhealthy\|decommission\|expired" /var/log/hadoop-yarn/hadoop-yarn-resourcemanager-ip-172-31-47-166.ec2.internal.log | tail -20
+```
+
 How to cleanup:
 before running terraform destroy, save your spark UI result.
 ```
