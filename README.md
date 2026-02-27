@@ -455,7 +455,8 @@ ssh-add ./your-emr-key.pem
 ssh -A -i ./your-emr-key.pem hadoop@<master-public-ip>
 
 # From master, now you can reach core nodes
-ssh ip-172-31-45-218.ec2.internal "df -h | grep mnt"
+yarn node -list 2>/dev/null
+ssh ip-172-31-37-206.ec2.internal "df -h | grep mnt"
 ```
 
 ## EMR ssh trouble shooting

@@ -256,3 +256,9 @@ def read_parquet_from_s3(s3_path: str, spark: SparkSession, schema: StructType =
         print("Falling back to downloading from Common Crawl...")
         # Fall back to Common Crawl download
         raise e
+
+def set_spark_context(spark, short_desc, long_desc=None):
+    spark.sparkContext.setJobDescription(short_desc)
+    spark.sparkContext.setLocalProperty("callSite.short", short_desc)
+    if long_desc:
+        spark.sparkContext.setLocalProperty("callSite.long", long_desc)
