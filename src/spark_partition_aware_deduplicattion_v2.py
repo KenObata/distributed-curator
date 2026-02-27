@@ -24,9 +24,9 @@ import json
 import logging
 import os
 try:
-    from .spark_utils import (does_file_exists, upload_df_to_s3, read_parquet_from_s3)
+    from .spark_utils import (does_file_exists, upload_df_to_s3, read_parquet_from_s3, set_spark_context)
 except:
-    from spark_utils import (does_file_exists, upload_df_to_s3, read_parquet_from_s3)
+    from spark_utils import (does_file_exists, upload_df_to_s3, read_parquet_from_s3, set_spark_context)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -256,7 +256,9 @@ def partition_aware_deduplicate(
     
     # Step 1: Compute MinHash signatures
     logger.info("Step 1: Computing MinHash signatures...")
-    
+    set_spark_context(spark, "Step 1: MinHash Signatures",
+                     f"Computing MinHash signatures for {similarity_threshold} similarity threshold")
+
     if df_with_partitions_s3_path and not does_file_exists(df_with_partitions_s3_path):
         # Get partition count from Spark config
         num_shuffle_partitions = int(spark.conf.get("spark.sql.shuffle.partitions", "1000"))
@@ -278,6 +280,8 @@ def partition_aware_deduplicate(
         
         # Step 2: Compute partition assignments based on LSH bands
         logger.info("Step 2: Computing partition assignments (KEY INNOVATION)...")
+        set_spark_context(spark, "Step 2: Partition Assignments",
+                         f"Computing partition assignments with {num_bands} LSH bands and {num_partitions} partitions")
         
         def compute_partition_assignments(signature: List[int]) -> List[int]:
             """
@@ -326,18 +330,20 @@ def partition_aware_deduplicate(
     else:
         # Define schema for df_with_partitions to avoid inference issues
         # Note: text column not included - not needed for deduplication
+        set_spark_context(spark, "Loading Cached Data",
+                         f"Loading pre-computed signatures and partitions from {df_with_partitions_s3_path}")
         df_with_partitions_schema = StructType([
             StructField("doc_id", StringType(), True),
             StructField("minhash_signature", ArrayType(IntegerType()), True),
             StructField("target_partitions", ArrayType(IntegerType()), True)
         ])
-        
+
         df_with_partitions = read_parquet_from_s3(
-            s3_path=df_with_partitions_s3_path, 
-            spark=spark, 
+            s3_path=df_with_partitions_s3_path,
+            spark=spark,
             schema=df_with_partitions_schema
         )
-        
+
         # Set total_docs_count for cached data path
         total_docs_count = df_with_partitions.count()
         logger.info(f"Loaded {total_docs_count} documents from cache...")
@@ -357,6 +363,8 @@ def partition_aware_deduplicate(
     
     # Step 3: Explode and repartition - documents go to their assigned partitions
     logger.info("Step 3: Smart partitioning - co-locating similar documents...")
+    set_spark_context(spark, "Step 3: Smart Partitioning",
+                     f"Co-locating similar documents across {num_partitions} partitions")
     
     df_exploded = df_with_partitions.select(
         col("doc_id"),
@@ -387,6 +395,8 @@ def partition_aware_deduplicate(
     
     # Step 4: Process each partition locally (no shuffle!)
     logger.info("Step 4: Local deduplication within partitions (NO SHUFFLE)...")
+    set_spark_context(spark, "Step 4: Local Deduplication",
+                     f"Finding similar pairs within partitions using {num_bands} bands")
     
     def process_partition_locally(iterator: Iterator) -> Iterator:
         """
@@ -503,6 +513,8 @@ def partition_aware_deduplicate(
     # Step 5: Build connected components for duplicate groups
     logger.info("Step 5: Build connected components. "
                 "For each distinct doc_id, it has representative doc_id")
+    set_spark_context(spark, "Step 5: GraphFrames Connected Components",
+                     f"Building duplicate groups from {similar_count} similar pairs using GraphFrames")
 
     vertices = input_df.select(col("doc_id").alias("id")).distinct().persist(StorageLevel.MEMORY_ONLY)
     doc_id_and_representative_doc_id_df_deduped = get_deduplicate_df_graphframes(
@@ -515,6 +527,8 @@ def partition_aware_deduplicate(
 
     # Step 6: Join back with original data
     logger.info("Step 6: Marking duplicates...")
+    set_spark_context(spark, "Step 6: Mark Duplicates",
+                     f"Joining deduplication results with original {total_docs_count} documents")
     
     result = input_df.join(
         doc_id_and_representative_doc_id_df_deduped,
@@ -545,6 +559,7 @@ def partition_aware_deduplicate(
 
     # Clean up cached DataFrames to free memory
     logger.info("Cleaning up cached DataFrames...")
+    set_spark_context(spark, "Cleanup", "Unpersisting cached DataFrames to free memory")
     # Only unpersist df_with_signatures if it was created (not from cache)
     if 'df_with_signatures' in locals():
         df_with_signatures.unpersist()
