@@ -516,9 +516,9 @@ locals {
        on_demand_only   = { on_demand = 24, spot = 0 }   # Capacity units: 12 instances × 2 units = 24
     }
     "90k" = {
-      instance_type    = "r5d.12xlarge"
-      on_demand_spot   = { on_demand = 14, spot = 13 }
-      on_demand_only   = { on_demand = 27, spot = 0 }
+      instance_type    = "r5ad.8xlarge"  # 32 vCores, 256 GB, 2×600 GB NVMe (same as 9k for availability)
+      on_demand_spot   = { on_demand = 64, spot = 62 }   # Capacity units: 32 instances × 2 units = 64, 31 instances × 2 = 62
+      on_demand_only   = { on_demand = 126, spot = 0 }   # Capacity units: 63 instances × 2 units = 126 (2,016 vCPU)
     }
   }
   
@@ -573,7 +573,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
     # Primary choice - dynamically selected based on scale
     instance_type_configs {
       instance_type     = local.selected_config.instance_type
-      weighted_capacity = var.wet_file_scale == "9k" ? 2 : 1  # 8xlarge baseline = 2 units (32 vCPU)
+      weighted_capacity = contains(["9k", "90k"], var.wet_file_scale) ? 2 : 1  # 8xlarge baseline = 2 units (32 vCPU)
 
       bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80  # Peak events need 100%
 
@@ -658,12 +658,12 @@ resource "aws_emr_cluster" "dedup_cluster" {
       }
     }
     
-    # For 9k scale - NVMe-only fallbacks prioritizing availability (smaller = more available)
-    # Primary: 12× r5ad.8xlarge (AMD, most available)
+    # For 9k/90k scale - NVMe-only fallbacks prioritizing availability (smaller = more available)
+    # 9k:  Primary: 12× r5ad.8xlarge (384 vCPU)
+    # 90k: Primary: 63× r5ad.8xlarge (2,016 vCPU)
     # Weighting: 8xlarge (32 vCPU) = 2 units, 12xlarge (48 vCPU) = 3 units
-    # Target capacity = 24 units = 12×8xlarge OR 8×12xlarge (both = 384 vCPU)
     dynamic "instance_type_configs" {
-      for_each = contains(["9k"], var.wet_file_scale) ? [1] : []
+      for_each = contains(["9k", "90k"], var.wet_file_scale) ? [1] : []
       content {
         instance_type     = "r5d.8xlarge"  # 32 vCPU, Intel, 2×600GB NVMe
         weighted_capacity = 2
@@ -680,7 +680,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
     }
 
     dynamic "instance_type_configs" {
-      for_each = contains(["9k"], var.wet_file_scale) ? [1] : []
+      for_each = contains(["9k", "90k"], var.wet_file_scale) ? [1] : []
       content {
         instance_type     = "r6id.8xlarge"  # 32 vCPU, newer Intel, 2×950GB NVMe
         weighted_capacity = 2
@@ -697,7 +697,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
     }
 
     dynamic "instance_type_configs" {
-      for_each = contains(["9k"], var.wet_file_scale) ? [1] : []
+      for_each = contains(["9k", "90k"], var.wet_file_scale) ? [1] : []
       content {
         instance_type     = "r6gd.8xlarge"  # 32 vCPU, Graviton ARM, 1×1900GB NVMe (highly available)
         weighted_capacity = 2
@@ -714,7 +714,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
     }
 
     dynamic "instance_type_configs" {
-      for_each = contains(["9k"], var.wet_file_scale) ? [1] : []
+      for_each = contains(["9k", "90k"], var.wet_file_scale) ? [1] : []
       content {
         instance_type     = "r5d.12xlarge"  # 48 vCPU, Intel, 2×900GB NVMe (larger fallback)
         weighted_capacity = 3
