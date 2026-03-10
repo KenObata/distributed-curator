@@ -82,10 +82,19 @@ plot_results(results)
         spark.conf.set("spark.graphx.pregel.checkpointInterval", "10")
         components = g.connectedComponents(algorithm="graphx")  
     - Implement caching mechanism
-    ☐ Test 1000 WET files with caching and num_partition= core_count    
-    ☐ I implemented skipping boiler template copy such as lisense.
+    - Test 1000 WET files with caching and num_partition= core_count    
+    - I implemented skipping boiler template copy such as lisense.
       ```if band_size > MAX_BAND_SIZE:``` - just re-run.
     ☐ Implement incremental union-find for
       faster group building
     ☐ Increase similarity threshold to reduce
       false positives
+    ☐ scala UDF
+    ☐ Unit test for scala UDF
+    ☐ 90k WET
+
+# Learning - scala
+
+- for function attributes like cache obj, in scala, use lazy val which is 
+  singleton per JVM worker.
+- lazy val should be in the companion object, not inside the UDF:

@@ -128,6 +128,20 @@ def compute_minhash_vectorized_batch_only_hash_once(texts: pd.Series, num_hashes
         base_hashes_expanded = base_hashes[:, np.newaxis]  # Shape: (num_shingles, 1)
         
         # Apply hash mixing: (base_hash XOR seed) for each combination
+        """
+        Reminder: 
+        MinHash needs num_hashes (e.g., 64) independent hash functions. 
+        But computing 64 different hashes for each shingle is expensive:
+        
+        for seed in range(64):
+            hash_val = mmh3.hash(shingle, seed=seed)  # 64 hash computations is slow.
+
+        Use XOR because:
+        - AND,OR biase toward 0,1 which is less random
+        - Addition has "carry" - bits affect each other and affects other bits.
+        - loses reversibility.
+        XOR is the only bitwise operation that preserves randomness 
+        """
         mixed_hashes = (base_hashes_expanded ^ hash_seeds) & 0xFFFFFFFF
         
         # Get minimum across all shingles for each hash function
