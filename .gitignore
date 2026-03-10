@@ -41,3 +41,5 @@ sagemaker_config.json
 data/*.csv
 data/*.json
 data/*.parquet
+
+src/minhash_implementation.py
