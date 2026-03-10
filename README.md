@@ -362,16 +362,16 @@ spark-submit \
 
 How to save your executor log file.
 ```
-yarn logs -applicationId application_1769374401406_0003 > /tmp/application_1769374401406_0003.txt
+yarn logs -applicationId application_1770437151065_0002 > /tmp/application_1770437151065_0002_executor.txt
 
-aws s3 cp /tmp/application_1769374401406_0003.txt s3://text-deduplication-740959772378/log/
+aws s3 cp /tmp/application_1770437151065_0002_executor.txt s3://text-deduplication-740959772378/log/application_1770437151065_0002_executor.txt
 ```
 
 How to find driver log
 ```
-yarn logs -applicationId application_1769374401406_0008 -log_files stdout 2>/dev/null > /tmp/application_1769374401406_0008_driver.txt
+yarn logs -applicationId application_1770437151065_0002 -log_files stdout 2>/dev/null > /tmp/application_1770437151065_0002_driver.txt
 
-aws s3 cp /tmp/application_1769374401406_0008_driver.txt s3://text-deduplication-740959772378/log/
+aws s3 cp /tmp/application_1770437151065_0002_driver.txt s3://text-deduplication-740959772378/log/application_1770437151065_0002_driver.txt
 ```
 
 then in your local,
@@ -418,8 +418,8 @@ spark-submit \
 Step9: How to save your sark history UI
 
 ```
-hdfs dfs -cat /var/log/spark/apps/application_1769910857403_0002_1 > ~/application_1769910857403_0002_1
-aws s3 cp application_1769910857403_0002_1 s3://text-deduplication-740959772378/logs
+hdfs dfs -cat /var/log/spark/apps/application_1770437151065_0002_1 > ~/application_1770437151065_0002_1
+aws s3 cp application_1770437151065_0002_1 s3://text-deduplication-740959772378/log/application_1770437151065_0002_1
 ```
 then in you macbook,
 ```
@@ -597,3 +597,52 @@ these two docs are considered to be near duplicate.
     "Who is band"
     "Who is band member"
     - impact of removing articles only reduce duplicates by 0.01 %
+
+# scala setup
+First setup venv for your project.
+```
+brew install sbt
+```
+this will download openjdk as well.
+In analogy, sbt is a venv, pip combined from Python view.
+
+sbt --version to confirm
+java --version to check which JDK version it installed.
+
+Start your local session in scala JVM
+```
+spark-shell
+```
+this is equivalent to ```pyspark``` shell
+
+1.create your build.sbt file
+Note that 
+- build.sbt    → JAR (just src code, ~KB)
+- assembly.sbt    → fat JAR (src code + all dependencies, ~MB)
+
+in this project, because EMR already has setup, we don't need assembly.sbt
+
+2.Build dependencies
+```
+sbt update
+```
+
+3.Run your scala code:
+If you're outside of sbt shell,
+```
+sbt run {file}.scala
+```
+
+If you're in the sbt shell,
+```
+run {file}.scala
+```
+4.compile test
+```
+sbt compile
+```
+this does not create JAR file yet.
+5.compile to JAR
+```
+sbt package
+```
