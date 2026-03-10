@@ -41,3 +41,14 @@ sagemaker_config.json
 data/*.csv
 data/*.json
 data/*.parquet
+
+src/minhash_implementation.py
+
+# scala build related
+target/
+project/target/
+project/project/
+.bsp/
+.metals/
+.scala-build/
+.bloop/
