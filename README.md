@@ -323,6 +323,7 @@ spark-submit \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
   --conf spark.executor.memoryOverhead=10g \
+  --jars s3://your-scripts-bucket/jars/minhash-udf_2.12-0.1.jar \
   --deploy-mode cluster \
   s3://your-scripts-bucket/scripts/spark_deduplication_test.py scale_proof
 ```
@@ -356,6 +357,7 @@ spark-submit \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
   --conf spark.executor.memoryOverhead=6g \
+  --jars s3://your-scripts-bucket/jars/minhash-udf_2.12-0.1.jar \
   --deploy-mode cluster \
   s3://your-scripts-bucket/scripts/spark_deduplication_test.py scale_proof
 ```
@@ -642,6 +644,7 @@ run {file}.scala
 sbt compile
 ```
 this does not create JAR file yet.
+
 5.compile to JAR
 ```
 sbt package
