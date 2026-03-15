@@ -335,8 +335,8 @@ def partition_aware_deduplicate(
         ).select(
             # Drop text column - not needed for deduplication, reduces cache size and memory
             col("doc_id"),
-            col("minhash_signature"),
-            col("target_partitions")
+            col("minhash_signature"), # 128 MinHash samples
+            col("target_partitions") # Array of band hash from 8 MinHash % partition count
         )
 
         if is_debug_mode:
