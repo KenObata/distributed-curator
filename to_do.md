@@ -98,3 +98,16 @@ plot_results(results)
 - for function attributes like cache obj, in scala, use lazy val which is 
   singleton per JVM worker.
 - lazy val should be in the companion object, not inside the UDF:
+- val means the reference can't change — it always points to the same Set object. mutable means the contents of that Set can change.
+    scala// val + mutable: the container is fixed, but you can modify its contents
+    val partitions = scala.collection.mutable.Set[Int]()
+    partitions += 1      // ✅ modifying contents
+    partitions += 2      // ✅ still the same Set object
+    partitions = otherSet // ❌ can't reassign the reference
+
+    // var + immutable: the reference can change, but each Set is frozen
+    var partitions = Set[Int]()
+    partitions += 1      // ✅ but this creates a NEW Set and reassigns the variable
+    partitions = otherSet // ✅ can reassign
+- do NOT return in a lambda function
+- every declaration required = sign
