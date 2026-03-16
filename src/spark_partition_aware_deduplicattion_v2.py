@@ -297,41 +297,11 @@ def partition_aware_deduplicate(
         set_spark_context(spark, "Step 2: Partition Assignments",
                          f"Computing partition assignments with {num_bands} LSH bands and {num_partitions} partitions")
         
-        def compute_partition_assignments(signature: List[int]) -> List[int]:
-            """
-            Determine which partitions this document needs to be sent to
-            based on its LSH bands. This ensures similar docs end up in same partition.
-            """
-            if not signature or all(s == 0 for s in signature):
-                return [0]  # Default partition
-            
-            partitions = set()
-            
-            for band_id in range(num_bands):
-                start = band_id * rows_per_band
-                end = builtin_min(start + rows_per_band, len(signature))
-                
-                if start >= len(signature):
-                    break
-                
-                # Hash the band to get partition assignment
-                band_values = tuple(signature[start:end])
-                band_hash = builtin_hash(band_values)
-                
-                # Map to partition - documents with same band hash go to same partition
-                partition_id = builtin_abs(band_hash) % num_partitions
-                partitions.add(partition_id)
-            
-            return list(partitions)
-        
-        partition_assignment_udf = udf(
-            compute_partition_assignments,
-            ArrayType(IntegerType())
-        )
+        spark._jvm.com.partitionAssignment.ComputePartitionAssignmentsUDF.registerUdf(spark._jsparkSession)
         
         df_with_partitions = df_with_signatures.withColumn(
             "target_partitions",
-            partition_assignment_udf(col("minhash_signature"))
+            expr(f"compute_partition_assignments(minhash_signature, {num_bands}, {rows_per_band}, {num_partitions})")
         ).select(
             # Drop text column - not needed for deduplication, reduces cache size and memory
             col("doc_id"),

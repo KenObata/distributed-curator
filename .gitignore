@@ -52,3 +52,9 @@ project/project/
 .metals/
 .scala-build/
 .bloop/
+
+# pyspark build
+src/dependencies.zip
+
+# logs
+logs/
