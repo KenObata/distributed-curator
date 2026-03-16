@@ -109,5 +109,35 @@ plot_results(results)
     var partitions = Set[Int]()
     partitions += 1      // ✅ but this creates a NEW Set and reassigns the variable
     partitions = otherSet // ✅ can reassign
+- val vs var Again:
+    - if it's Array, we can declare as val and then do += operation, but in Int, we need var if we want to increment value later?
+    - ArrayBuffer — val is fine, you're modifying contents, not the reference
+    - Int — need var, because you're replacing the value entirely
 - do NOT return in a lambda function
 - every declaration required = sign
+- Map vs HashMap
+    - Map: immutable
+    - HashMap: can be mutable. loop through and add into HashMap
+        - [Important] declareing HashMap type does not auto-create entries for new keys
+        similar to python dict, we need to declare initial value as empty ArrayBuffer.
+        - A cleaner shortcut is getOrElseUpdate, which is Scala's equivalent of defaultdict:
+        bandIndex.getOrElseUpdate(bandKey, mutable.ArrayBuffer[LocalDoc]()) += doc
+- case class: python data class. Function name needs to start with Capital letter.
+- Seq[Long] vs Array[Long]: when processing all rows in a partition, use Seq for rdd operation.
+- ArrayBuffer vs Array: ArrayBuffer — resizable, like Python's list. Array — fixed size
+- zipWithIndex: same as python's enumerate()
+- spark.createDataFrame(Row iterator, outputSchema): does not fit with data (=case) class. 
+    - use Row when you create 
+    - Alternative: case class's iterator.toDF()
+        - you need following code to do that:
+        ```
+        val spark = df.sparkSession
+        spark.implicits._
+        ```
+        this is because RDD has no .toDF() method. 
+        implicits._ lets you run rddToDatasetHolder(resultRDD).toDF() in the background.
+        
+- data class should be declared at object level, not function level. 
+    - because lambda function from df.rdd.mapPartitions will serialize everything in lambda and if data class 
+      is in the lambda function, it references outer class of case class, which can contain dataframe. 
+      But dataframe is not serializable.
