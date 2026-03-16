@@ -303,7 +303,7 @@ def partition_aware_deduplicate(
                          f"Loading pre-computed signatures and partitions from {df_with_partitions_s3_path}")
         df_with_partitions_schema = StructType([
             StructField("doc_id", StringType(), True),
-            StructField("minhash_signature", ArrayType(IntegerType()), True),
+            StructField("minhash_signature", ArrayType(LongType()), True), # changed from Int to Long because scala mh3 is signed int, we need unsigned.
             StructField("target_partitions", ArrayType(IntegerType()), True)
         ])
 
@@ -383,7 +383,7 @@ def partition_aware_deduplicate(
     similar_pairs_schema = StructType([
         StructField("doc1", StringType(), False),
         StructField("doc2", StringType(), False),
-       StructField("similarity", FloatType(), False),
+        StructField("similarity", FloatType(), False),
         StructField("partition_id", IntegerType(), False)
     ])
     similar_pairs_rdd = df_partitioned.rdd.mapPartitions(process_partition_locally)

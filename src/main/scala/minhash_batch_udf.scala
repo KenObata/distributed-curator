@@ -70,6 +70,8 @@ object MinHashUDF {
             else {
                 // HASH MIXING OPTIMIZATION: Hash each shingle ONCE, then mix with seeds
                 // .toLong because we want unsigned 32 bits, so first make it to 64 bit
+                // what's the problem of signed ? signature[i] = min(signature[i], hash_val)
+                // so negative will mess up min().
                 // 0xFFFFFFFFL's L is to make it Long.
                 val baseHashes = uniqueShingles.map( shingle => MurmurHash3.stringHash(shingle, 0).toLong & 0xFFFFFFFFL)
                 val hashSeeds: Array[Long] = seedsCache.take(numHashes) // only need numHashes different seeds
