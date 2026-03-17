@@ -404,6 +404,12 @@ variable "scripts_source_src_dir" {
   default     = "../../src"
 }
 
+variable "scripts_source_scala_dir" {
+  description = "Path to the directory containing Python scripts"
+  type        = string
+  default     = "../../target/scala-2.12"
+}
+
 variable "scripts_source_test_dir" {
   description = "Path to the directory containing Python scripts"
   type        = string
@@ -441,6 +447,14 @@ resource "aws_s3_object" "dedup_script" {
   bucket = aws_s3_bucket.scripts_bucket.id
   key    = "scripts/spark_partition_aware_deduplicattion_v2.py"
   source = "${path.module}/${var.scripts_source_src_dir}/spark_partition_aware_deduplicattion_v2.py"
+  
+  depends_on = [time_sleep.wait_for_bucket]
+}
+
+resource "aws_s3_object" "scala_script" {
+  bucket = aws_s3_bucket.scripts_bucket.id
+  key    = "scripts/minhash-udf_2.12-0.1.jar"
+  source = "${path.module}/${var.scripts_source_scala_dir}/minhash-udf_2.12-0.1.jar"
   
   depends_on = [time_sleep.wait_for_bucket]
 }
@@ -627,8 +641,25 @@ resource "aws_emr_cluster" "dedup_cluster" {
     dynamic "instance_type_configs" {
       for_each = var.wet_file_scale == "100" ? [1] : []
       content {
-        instance_type     = "r5d.xlarge"
-        weighted_capacity = 2  # 2x r5.xlarge = 1x r5.2xlarge capacity
+        instance_type     = "r5ad.2xlarge"
+        weighted_capacity = 1
+        
+        bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 85
+        
+        ebs_config {
+          size                 = 100
+          type                 = "gp3"
+          iops                 = 3000
+          volumes_per_instance = 1
+        }
+      }
+    }
+
+    dynamic "instance_type_configs" {
+      for_each = var.wet_file_scale == "100" ? [1] : []
+      content {
+        instance_type     = "r6id.2xlarge"
+        weighted_capacity = 1
         
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 85
         
