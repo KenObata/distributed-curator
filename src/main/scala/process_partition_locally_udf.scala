@@ -25,10 +25,10 @@ object ProcessPartitionLocallyUDF {
     val logger = LoggerFactory.getLogger(getClass)
 
     // Data class for processPartitions's resultRDD
-    case class LocalDoc(docId: String, signature: Seq[Long], partitionId: Int)
+    case class LocalDoc(docId: String, signature: Array[Long], partitionId: Int)
     case class SimilarityPairs(doc1: String, doc2: String, similarity: Double, partition_id: Int) // snake case because pyspark 
     
-    private def estimateSimilarity(sig1: Seq[Long], sig2: Seq[Long]):Double = {
+    private def estimateSimilarity(sig1: Array[Long], sig2: Array[Long]):Double = {
         /* Estimate Jaccard similarity from MinHash signatures 
         */
         if(sig1.isEmpty || sig2.isEmpty || sig1.length != sig2.length) {
@@ -36,10 +36,10 @@ object ProcessPartitionLocallyUDF {
         } else {
             // Count matching MinHash values
             var matches: Int = 0
-            for ((h1, h2) <- sig1.zip(sig2)) {
-                if (h1 == h2 && h1 != 0) {
-                    matches += 1
-                }
+            var i = 0
+            while (i < sig1.length) {
+                if (sig1(i) == sig2(i) && sig1(i) != 0L) matches += 1
+                i += 1
             }
             matches.toDouble / sig1.length
         }
@@ -74,7 +74,7 @@ object ProcessPartitionLocallyUDF {
             for (row <- iterator) {
                 localDocs+= LocalDoc(
                     row.getAs[String]("doc_id"),
-                    row.getAs[Seq[Long]]("minhash_signature"),
+                    row.getAs[Seq[Long]]("minhash_signature").toArray,
                     row.getAs[Int]("partition_id")
                 )
             }
@@ -87,15 +87,14 @@ object ProcessPartitionLocallyUDF {
                 // there can be multiple docs per band key of {band_id}_{band_hash}
                 val bandIndex = mutable.HashMap[String, mutable.ArrayBuffer[LocalDoc]]()
                 for (doc <- localDocs) {
-                    val sig: Seq[Long] = doc.signature // 128 MinHash
-                    if (sig != null && sig.nonEmpty && !sig.forall(_ == 0)) {
+                    val sig: Array[Long] = doc.signature // 128 MinHash
+                    if (sig != null && sig.nonEmpty) {
                         // Generate bands
                         for (bandId <- 0 until numBands) {
                             val start: Int = bandId * rowsPerBand
                             val end: Int = math.min(start + rowsPerBand, sig.length)
                             if (start < sig.length) {
-                                val bandValues = sig.slice(start, end).toArray // sig is Seq[Long]
-                                val bandHash = MurmurHash3.arrayHash(bandValues)
+                                val bandHash = MurmurHash3.arrayHash(sig.slice(start, end))
 
                                 // Add to local index
                                 val bandKey = s"${bandId}_${bandHash}"
@@ -126,12 +125,16 @@ object ProcessPartitionLocallyUDF {
                     }
                     else if (bandSize >= 2) {
                         // Compare all pairs in this "{band_id}_{band_hash}" in this partition
-                        for ((doc1, i) <- docsInBand.zipWithIndex) {
-                            for (doc2 <- docsInBand.slice(i+1, docsInBand.length)) {
+                        var i = 0
+                        while (i < docsInBand.length) {
+                            val doc1 = docsInBand(i)
+                            var j = i + 1
+                            while (j < docsInBand.length) {
                                 /* Create canonical pair ID 
                                 Sort ensures there is no dups in similar_pairs with this case (doc1,doc2) and (doc2, doc1).
                                 This case never happens.
                                 */
+                                val doc2 = docsInBand(j)
                                 val pairId: Tuple2[String, String] = if (doc1.docId < doc2.docId) (doc1.docId, doc2.docId) else (doc2.docId, doc1.docId)
                                 if (!seenPairs.contains(pairId)) {
                                     seenPairs += pairId
@@ -145,8 +148,9 @@ object ProcessPartitionLocallyUDF {
                                         )
                                     }
                                 }
-
+                                j += 1
                             }
+                            i += 1
                         }
                     }
                     
