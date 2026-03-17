@@ -256,9 +256,9 @@ spark-submit \
   --jars s3://your-scripts-bucket/scripts/minhash-udf_2.12-0.1.jar \
   --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
-  --num-executors 4 \
+  --num-executors 8 \
   --executor-cores 4 \
-  --executor-memory 16g \
+  --executor-memory 24g \
   --driver-memory 12g \
   --conf spark.sql.shuffle.partitions=50 \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
