@@ -37,6 +37,7 @@ Choose from development, validation, production_proof, scale_proof
 ```
 spark-submit --driver-memory 4g --executor-memory 4g \
 --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
+--jars ../../target/scala-2.12/minhash-udf_2.12-0.1.jar \
 --py-files ../../src/spark_partition_aware_deduplicattion_v2.py,../../src/spark_utils.py ../../test/spark_deduplication_test.py development
 ```
 - spark_deduplication.py - Complete implementation for web-scale deduplication
@@ -220,6 +221,11 @@ zip -r dependencies.zip spark_utils.py spark_partition_aware_deduplicattion_v2.p
 aws s3 cp dependencies.zip s3://text-deduplication-740959772378/scripts/
 ```
 
+Step 6.2 if you want to delete your cache data
+```
+aws s3 rm s3://text-dedupe-benchmark/development/ --recursive
+```
+
 Step 7: Run Your Benchmark
 From SSH session:
  use zip file
@@ -227,6 +233,7 @@ From SSH session:
 spark-submit \
   --master yarn \
   --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
+  --jars s3://text-deduplication-740959772378/scripts/minhash-udf_2.12-0.1.jar \
   --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
   --num-executors 4 \
@@ -246,17 +253,17 @@ For 100 of WET files, increase partition count
 spark-submit \
   --master yarn \
   --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
+  --jars s3://text-deduplication-740959772378/scripts/minhash-udf_2.12-0.1.jar \
   --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
-  --num-executors 8 \
+  --num-executors 4 \
   --executor-cores 4 \
-  --executor-memory 28g \
+  --executor-memory 16g \
   --driver-memory 12g \
-  --conf spark.sql.shuffle.partitions=2000 \
-  --conf spark.memory.offHeap.size=1g \
+  --conf spark.sql.shuffle.partitions=50 \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
-  --deploy-mode cluster \
+  --deploy-mode client \
   s3://text-deduplication-740959772378/scripts/spark_deduplication_test.py validation
 ```
 
@@ -267,6 +274,7 @@ For 1000 of WET files, increase partition count
 spark-submit \
   --master yarn \
   --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
+  --jars s3://text-deduplication-740959772378/scripts/minhash-udf_2.12-0.1.jar \
   --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
   --num-executors 28 \
@@ -306,6 +314,7 @@ with 9 of r5ad.8xlarge,
 spark-submit \
   --master yarn \
   --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
+  --jars s3://text-deduplication-740959772378/scripts/minhash-udf_2.12-0.1.jar \
   --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
   --num-executors 54 \
@@ -340,6 +349,7 @@ Compute resources:
 spark-submit \
   --master yarn \
   --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
+  --jars s3://text-deduplication-740959772378/scripts/minhash-udf_2.12-0.1.jar \
   --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
   --num-executors 84 \
