@@ -2,6 +2,7 @@ package com.minhash
 
 import org.apache.spark.sql.functions.udf
 import scala.util.hashing.MurmurHash3
+import scala.collection.mutable
 import scala.util.Random
 import scala.util.matching.Regex
 
@@ -63,31 +64,39 @@ object MinHashUDF {
             Array.fill(numHashes)(0L)
         } else {
             // Generate unique shingles for this specific text string (memory-optimized)
-            val uniqueShingles: Set[String] = normalizedTexts.sliding(ngram).toSet
-            if (uniqueShingles.isEmpty) {
-                Array.fill(numHashes)(0L)
-            }
-            else {
+            val shinglesIterator: Iterator[String] = normalizedTexts.sliding(ngram)
+            val baseHashes = mutable.HashSet[Long]()
+            while (shinglesIterator.hasNext) {
                 // HASH MIXING OPTIMIZATION: Hash each shingle ONCE, then mix with seeds
                 // .toLong because we want unsigned 32 bits, so first make it to 64 bit
                 // what's the problem of signed ? signature[i] = min(signature[i], hash_val)
                 // so negative will mess up min().
                 // 0xFFFFFFFFL's L is to make it Long.
-                val baseHashes = uniqueShingles.map( shingle => MurmurHash3.stringHash(shingle, 0).toLong & 0xFFFFFFFFL)
-                val hashSeeds: Array[Long] = seedsCache.take(numHashes) // only need numHashes different seeds
-                
-                // Apply hash mixing: (base_hash XOR seed) for each combination
-                val baseHashesArray = baseHashes.toArray  // Set → Array for indexed access
-                
+                val hash: Long = MurmurHash3.stringHash(shinglesIterator.next(), 0).toLong & 0xFFFFFFFFL
+                baseHashes += hash
+            }
+            // Apply hash mixing: (base_hash XOR seed) for each combination
+            val baseHashesArray = baseHashes.toArray  // Set → Array for indexed access
+            if (baseHashesArray.isEmpty) {
+                Array.fill(numHashes)(0L)
+            }
+            else {
                 // Initialize. Eventually get minimum across all shingles for each hash function
                 val signature = Array.fill(numHashes)(0xFFFFFFFFL)
 
                 // For each shingle × each 128 hash function, track minimum. Output is array of 128 samples of minimum hashes
-                for (baseHash <- baseHashesArray) {
-                    for (i <- 0 until numHashes) {
-                        val mixedHash = (baseHash ^ hashSeeds(i)) & 0xFFFFFFFFL
-                        signature(i) = math.min(signature(i), mixedHash)
+                var j: Int = 0
+                while (j < baseHashesArray.length) {
+                    val baseHash: Long = baseHashesArray(j)
+                    var i: Int = 0
+                    while (i < numHashes) {
+                        val mixedHash = (baseHash ^ seedsCache(i)) & 0xFFFFFFFFL
+                        if (mixedHash < signature(i)) {
+                            signature(i) = mixedHash
+                        }
+                        i += 1
                     }
+                    j += 1
                 }
             
                 signature
