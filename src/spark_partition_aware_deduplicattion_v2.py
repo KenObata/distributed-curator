@@ -263,15 +263,18 @@ def partition_aware_deduplicate(
         num_shuffle_partitions = int(spark.conf.get("spark.sql.shuffle.partitions", "1000"))
         input_df = input_df.repartition(num_shuffle_partitions)
 
-        #@pandas_udf(ArrayType(IntegerType()))
-        #def minhash_batch_udf(rows: pd.Series) -> pd.Series:
-        #    """Process entire batch using highly optimized vectorized operations"""
-        #    return compute_minhash_vectorized_batch_only_hash_once(rows, num_hashes, ngram=9)
-        spark._jvm.com.minhash.MinHashUDF.registerUdf(spark._jsparkSession)        
+        @pandas_udf(ArrayType(LongType())) # LongType because Step4 expects Long
+        def minhash_batch_udf(rows: pd.Series) -> pd.Series:
+            """Process entire batch using highly optimized vectorized operations"""
+            return compute_minhash_vectorized_batch_only_hash_once(rows, num_hashes, ngram=9)
+        
+        # If users really need scala UDF (not recommended)
+        # spark._jvm.com.minhash.MinHashUDF.registerUdf(spark._jsparkSession)        
 
         df_with_signatures = input_df.withColumn(
             "minhash_signature",
-            expr(f"compute_minhash({text_column}, {num_hashes}, {ngram}, {str(remove_articles).lower()})")
+            minhash_batch_udf(col(text_column))
+            # expr(f"compute_minhash({text_column}, {num_hashes}, {ngram}, {str(remove_articles).lower()})") # scala UDF
         ).cache()
         
         total_docs_count = df_with_signatures.count()
