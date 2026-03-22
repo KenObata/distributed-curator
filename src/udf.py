@@ -1,6 +1,87 @@
+import logging
+import numpy as np
+import pandas as pd
+from collections import defaultdict
+from typing import List, Iterator
+builtin_hash = hash
+builtin_min = min
+builtin_sum = sum
+builtin_max = max
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+def compute_minhash_vectorized_batch_only_hash_once(texts: pd.Series, num_hashes: int = 128, ngram: int = 9, remove_articles: bool = False) -> pd.Series:
+    """
+    This is for Step1: compute MinHash. This function is pure python UDF which is no longer used.
+    But if in case users cannot use src/cython_min_hash/ code, we keep this python UDF.
+    Highly optimized vectorized MinHash computation using pandas and numpy
+    Difference from compute_minhash_vectorized_batch is that this function
+    hashes the shingle only once and then for different seed i, use different permutation to generate different hash values.
+    """
+    results = []
+    
+    # Step 1: Vectorized text normalization using pandas string operations
+    normalized_texts = texts.str.lower()
+    
+    # Remove articles using vectorized regex
+    if remove_articles:
+        articles_pattern = r'\b(the|a|an|this|that|these|those)\b'
+        normalized_texts = normalized_texts.str.replace(articles_pattern, '', regex=True)
+        normalized_texts = normalized_texts.str.replace(r'\s+', ' ', regex=True)
+        normalized_texts = normalized_texts.str.strip()
+    
+    # Step 2: Process each text individually (fixed the Series slicing issue)
+    for text in normalized_texts:
+        if not text or len(text) < ngram:
+            results.append([0] * num_hashes)
+            continue
+        
+        # Generate unique shingles for this specific text string (memory-optimized)
+        unique_shingles = list({text[i:i+ngram] for i in range(len(text) - ngram + 1)})
+        if not unique_shingles:
+            results.append([0] * num_hashes)
+            continue
+
+        # HASH MIXING OPTIMIZATION: Hash each shingle ONCE, then mix with seeds
+        base_hashes = np.array([builtin_hash(s) & 0xFFFFFFFF for s in unique_shingles], dtype=np.uint32)
+        
+        # Use same seeds as the main function for consistency
+        if not hasattr(compute_minhash_vectorized_batch_only_hash_once, '_seeds_cache'):
+            import random
+            random.seed(42)  # Same seed for reproducibility
+            compute_minhash_vectorized_batch_only_hash_once._seeds_cache = [
+                random.randint(1, 0xFFFFFFFF) for _ in range(1024)
+            ]
+        
+        hash_seeds = np.array(compute_minhash_vectorized_batch_only_hash_once._seeds_cache[:num_hashes], dtype=np.uint32)
+        
+        # Vectorized hash mixing: broadcast (num_shingles, 1) x (num_hashes,)
+        base_hashes_expanded = base_hashes[:, np.newaxis]  # Shape: (num_shingles, 1)
+        
+        # Apply hash mixing: (base_hash XOR seed) for each combination
+        """
+        Reminder: 
+        MinHash needs num_hashes (e.g., 64) independent hash functions. 
+        But computing 64 different hashes for each shingle is expensive:
+        
+        for seed in range(64):
+            hash_val = mmh3.hash(shingle, seed=seed)  # 64 hash computations is slow.
+
+        Use XOR because:
+        - AND,OR biase toward 0,1 which is less random
+        - Addition has "carry" - bits affect each other and affects other bits.
+        - loses reversibility.
+        XOR is the only bitwise operation that preserves randomness 
+        """
+        mixed_hashes = (base_hashes_expanded ^ hash_seeds) & 0xFFFFFFFF
+        
+        # Get minimum across all shingles for each hash function
+        signature = np.min(mixed_hashes, axis=0)
+        results.append(signature.tolist())
+    
+    return pd.Series(results)
+
 
 def estimate_similarity(sig1: List[int], sig2: List[int]) -> float:
     """Estimate Jaccard similarity from MinHash signatures"""
@@ -16,8 +97,8 @@ def estimate_similarity(sig1: List[int], sig2: List[int]) -> float:
         return 0.0
     
     return float(matches) / len(sig1)
-    
-def process_partition_locally(iterator: Iterator) -> Iterator:
+
+def process_partition_locally(iterator: Iterator, num_bands: int, rows_per_band: int, similarity_threshold: float) -> Iterator:
     """
     This function is not referenced anywhere. 
     We created this function in case we want to run python vectorized UDF as baseline

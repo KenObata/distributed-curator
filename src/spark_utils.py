@@ -29,6 +29,8 @@ def create_deduplication_spark_session() -> SparkSession:
         .config("spark.sql.shuffle.partitions", "200") \
         .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
         .config("spark.sql.execution.arrow.pyspark.enabled", "true") \
+        .config("spark.driver.extraJavaOptions", "--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.misc=ALL-UNNAMED") \
+        .config("spark.executor.extraJavaOptions", "--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.misc=ALL-UNNAMED") \
         .getOrCreate()
     
     # Set log level to reduce verbosity
@@ -66,7 +68,10 @@ def create_spark_session_partition_aware(app_name: str = "PartitionAwareDedup", 
         .config("spark.hadoop.fs.s3a.connection.establish.timeout", "60000") \
         .config("spark.hadoop.fs.s3a.attempts.maximum", "3") \
         .config("spark.hadoop.fs.s3a.retry.interval", "1000") \
-        .config("spark.sql.execution.arrow.pyspark.enabled", "true")
+        .config("spark.sql.execution.arrow.pyspark.enabled", "true") \
+        .config("spark.driver.extraJavaOptions", "--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.misc=ALL-UNNAMED") \
+        .config("spark.executor.extraJavaOptions", "--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.misc=ALL-UNNAMED") \
+    
     
     # Add GraphFrames JAR if provided
     if graphframes_jar_path and os.path.exists(graphframes_jar_path):
@@ -98,6 +103,8 @@ def create_spark_session_partition_aware_emr(app_name: str = "PartitionAwareDedu
         .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
         .config("spark.ui.enabled", "true") \
         .config("spark.sql.execution.arrow.pyspark.enabled", "true") \
+        .config("spark.driver.extraJavaOptions", "--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.misc=ALL-UNNAMED") \
+        .config("spark.executor.extraJavaOptions", "--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.misc=ALL-UNNAMED") \
         .getOrCreate()
 
     # Set log level to reduce verbosity

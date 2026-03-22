@@ -34,11 +34,13 @@ pip install -r requirements_emr.txt
 
 Note that development is an argument.
 Choose from development, validation, production_proof, scale_proof
+
+if you run this locally, ```cp src/cython_minhash/shingle_hash*.so venv/lib/python3.13/site-packages/``` first
 ```
 spark-submit --driver-memory 4g --executor-memory 4g \
 --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
 --jars ../../target/scala-2.12/minhash-udf_2.12-0.1.jar \
---py-files ../../src/spark_partition_aware_deduplicattion_v2.py,../../src/spark_utils.py ../../test/spark_deduplication_test.py development
+--py-files ../../src/spark_partition_aware_deduplicattion_v2.py,../../src/spark_utils.py,../../src/udf.py,../../src/cython_minhash/shingle_hash_wrapper.py  ../../test/spark_deduplication_test.py development
 ```
 - spark_deduplication.py - Complete implementation for web-scale deduplication
 - common_crawl_explorer.py: PoC
@@ -217,7 +219,7 @@ export YARN_CONF_DIR=/etc/hadoop/conf
 Step6: upload helper functions as zip
 ```
 cd /llm_trainining/src
-zip -r dependencies.zip spark_utils.py spark_partition_aware_deduplicattion_v2.py
+zip -r dependencies.zip spark_utils.py spark_partition_aware_deduplicattion_v2.py cython_minhash/shingle_hash_wrapper.py udf.py
 aws s3 cp dependencies.zip s3://text-deduplication-740959772378/scripts/
 ```
 
@@ -610,6 +612,60 @@ these two docs are considered to be near duplicate.
     "Who is band member"
     - impact of removing articles only reduce duplicates by 0.01 %
 
+- how do you know mh3 is accurate?
+
+We tested both builtin oython hash vs mh3. 
+The result is very similar dedupe rate.
+
+| Metric | Python UDF (`builtin_hash`) | Cython UDF (MurmurHash3) |
+|---|---|---|
+| Total docs | 29,076 | 29,076 |
+| Duplicates | 355 | 358 |
+| Dedup rate | 1.22% | 1.23% |
+| Similar pairs | 17,906 | 1,387 |
+
+- What does builtin_hash's high similar pair but low duplicates mean compared to mh3?
+
+This means builtin python hash has false positives due to hash collision.
+builtin_hash has poor distribution on short strings (9-char shingles), causing hash collisions between unrelated shingles. These collisions inflate MinHash signature similarity, generating thousands of false candidate pairs that must be processed by downstream steps (connected components).
+
+ex)
+Document A shingles: "the quick", "he quick ", "e quick b", ...
+Document B shingles: "something", "completely", "different", ...
+
+With builtin_hash (poor distribution on 9-char strings):
+  hash("the quick") = 0x7F3A    ← collision!
+  hash("something") = 0x7F3A    ← same hash for different shingle!
+  
+  MinHash sees: "these documents share a shingle" (they don't)
+  Signature similarity: inflated → 0.92 (above 0.9 threshold)
+  → counted as similar pair (false positive)
+
+With MurmurHash3 (better distribution):
+  mmh3("the quick") = 0x7F3A2B01
+  mmh3("something") = 0xE4C81D55    ← different hash, correct
+  
+  MinHash sees: "these documents don't share this shingle"
+  Signature similarity: accurate → 0.12 (below threshold)
+  → not counted
+
+- if A,B are similar and B, D are similar, isn't expected behavior to catch A,D are similar just like builtin_hash found?
+
+Not necessarily. Jaccard similarity is not transitive:
+A and B share 92% of shingles → similar (above 0.9)
+B and D share 91% of shingles → similar (above 0.9)
+A and D share ???% of shingles → could be anything
+
+But it doesn't matter — connected components handles transitivity
+
+MurmurHash3 finds:     (A,B) and (B,D)
+Connected components:   A — B — D  → all in same group
+Result: A,B,D are all duplicates of representative A
+
+The explicit (A,D) pair found by builtin_hash is unnecessary.
+A and D end up in the same group through B.
+So MurmurHash3's 1,387 pairs are sufficient — connected components discovers all transitive relationships. 
+
 # scala setup
 First setup venv for your project.
 ```
@@ -659,3 +715,41 @@ this does not create JAR file yet.
 ```
 sbt package
 ```
+
+
+# Cython setup
+## Building the Cython shingle hash module
+
+1. Download MurmurHash3 C source:
+From root, go to 
+```cd /src/cython_minhash```
+
+then,
+```bash
+   pip download mmh3 --no-binary :all:
+   tar xzf mmh3-*.tar.gz
+   cp mmh3-*/src/mmh3/murmurhash3.c .
+   cp mmh3-*/src/mmh3/murmurhash3.h .
+   rm -rf mmh3-*/  mmh3-*.tar.gz
+```
+
+2. Build the Cython extension:
+```bash
+   cd cython_minhash
+   python setup.py build_ext --inplace
+```
+```
+
+And in `.gitignore`:
+```
+cython_minhash/MurmurHash3.c
+cython_minhash/MurmurHash3.h
+cython_minhash/*.so
+cython_minhash/build/
+
+2.Compile
+```
+python setup.py build_ext --inplace
+```
+
+3.
