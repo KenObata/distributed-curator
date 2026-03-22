@@ -10,6 +10,7 @@ Architecture:
     broadcast XOR with seeds → min reduction → signature
      (processes all shingles including duplicates, min() is idempotent)
 """
+import logging
 import numpy as np
 import pandas as pd
 import random
@@ -20,6 +21,9 @@ try:
 except: 
     from cython_minhash.shingle_hash import hash_shingles
 
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Precompute seeds once (same as existing code for reproducibility)
 _SEEDS_CACHE = None
@@ -43,6 +47,9 @@ def compute_minhash_cython_batch(texts: pd.Series, num_hashes: int = 128, ngram:
     """
     hash_seeds = _get_seeds(num_hashes)
     results = []
+    # Log which module is loaded (runs once per executor batch)
+    import shingle_hash
+    logger.info(f"shingle_hash loaded from: {shingle_hash.__file__}")
     
     for text in texts.str.lower():
         if not text or not isinstance(text, str) or len(text) < ngram:

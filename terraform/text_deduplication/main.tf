@@ -420,6 +420,7 @@ resource "aws_s3_object" "bootstrap_script" {
     set -e
     
     echo "Installing Python dependencies..."
+    sudo yum install -y python3-devel
     sudo /usr/bin/pip3 install numpy mmh3 xxhash cython
     echo "Verifying installation..."
     python3 -c "import numpy; import mmh3; import xxhash; import cython; print('All packages installed successfully')"
@@ -431,7 +432,8 @@ resource "aws_s3_object" "bootstrap_script" {
     ls shingle_hash*.so || { echo "Cython build failed!"; exit 1; }
 
     echo "Cython .so generated. Now Install to system Python so all executors can import it"
-    sudo cp shingle_hash*.so /usr/lib/python3/dist-packages/
+    SITE_PACKAGES=$(python3 -c "import site; print(site.getsitepackages()[0])")
+    sudo cp shingle_hash*.so $SITE_PACKAGES/
     echo "Bootstrap complete!"
   EOF
 }
@@ -801,10 +803,6 @@ resource "aws_emr_cluster" "dedup_cluster" {
         "spark.sql.adaptive.enabled"       = "true"
 
         "spark.sql.catalog.glue_catalog": "org.apache.iceberg.spark.SparkCatalog",
-        "spark.sql.catalog.glue_catalog.warehouse": "s3://${aws_s3_bucket.data.bucket}/iceberg/",
-        "spark.sql.catalog.glue_catalog.catalog-impl": "org.apache.iceberg.aws.glue.GlueCatalog",
-        "spark.sql.catalog.glue_catalog.io-impl": "org.apache.iceberg.aws.s3.S3FileIO",
-        "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
         "spark.eventLog.enabled": "true",
         "spark.eventLog.dir": "hdfs:///var/log/spark/apps",
         "spark.history.fs.logDirectory": "hdfs:///var/log/spark/apps"

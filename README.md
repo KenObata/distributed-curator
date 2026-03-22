@@ -40,7 +40,7 @@ if you run this locally, ```cp src/cython_minhash/shingle_hash*.so venv/lib/pyth
 spark-submit --driver-memory 4g --executor-memory 4g \
 --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
 --jars ../../target/scala-2.12/minhash-udf_2.12-0.1.jar \
---py-files ../../src/spark_partition_aware_deduplicattion_v2.py,../../src/spark_utils.py,../../src/udf.py,../../src/cython_minhash/shingle_hash_wrapper.py  ../../test/spark_deduplication_test.py development
+--py-files ../../src/spark_partition_aware_deduplicattion_v2.py,../../src/spark_utils.py,../../src/udf.py,../../src/shingle_hash_wrapper.py  ../../test/spark_deduplication_test.py development
 ```
 - spark_deduplication.py - Complete implementation for web-scale deduplication
 - common_crawl_explorer.py: PoC
@@ -219,7 +219,7 @@ export YARN_CONF_DIR=/etc/hadoop/conf
 Step6: upload helper functions as zip
 ```
 cd /llm_trainining/src
-zip -r dependencies.zip spark_utils.py spark_partition_aware_deduplicattion_v2.py cython_minhash/shingle_hash_wrapper.py udf.py
+zip -r dependencies.zip spark_utils.py spark_partition_aware_deduplicattion_v2.py shingle_hash_wrapper.py udf.py
 aws s3 cp dependencies.zip s3://your-scripts-bucket/scripts/
 ```
 
@@ -242,7 +242,7 @@ spark-submit \
   --executor-cores 4 \
   --executor-memory 14g \
   --driver-memory 12g \
-  --conf spark.sql.shuffle.partitions=30 \
+  --conf spark.sql.shuffle.partitions=1000 \
   --conf spark.memory.offHeap.size=1g \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
@@ -752,4 +752,16 @@ cython_minhash/build/
 python setup.py build_ext --inplace
 ```
 
-3.
+3.terraform code change
+You need to add sudo yum install -y python3-devel in terraform file.
+This is because Python itself is installed on EMR, but the .h files needed to compile against Python's C API are a separate package:
+
+python3 package (already on EMR):
+  /usr/bin/python3              ← the interpreter
+  /usr/lib/python3/             ← .py modules
+
+python3-devel package (not on EMR by default):
+  /usr/include/python3.9/Python.h    ← C headers
+  /usr/include/python3.9/object.h
+  /usr/include/python3.9/pymem.h
+  /usr/lib/libpython3.9.so           ← shared library for linking
