@@ -425,10 +425,18 @@ resource "aws_s3_object" "bootstrap_script" {
     set -e
     
     echo "Installing Python dependencies..."
-    sudo /usr/bin/pip3 install numpy mmh3 xxhash
+    sudo /usr/bin/pip3 install numpy mmh3 xxhash cython
     echo "Verifying installation..."
-    python3 -c "import numpy; import mmh3; import xxhash; print('All packages installed successfully')"
+    python3 -c "import numpy; import mmh3; import xxhash; import cython; print('All packages installed successfully')"
     
+    echo "Building Cython .so file under cython_minhash/..."
+    aws s3 cp s3://${var.scripts_bucket}-${data.aws_caller_identity.current.account_id}/scripts/cython_minhash/ /tmp/cython_minhash/ --recursive
+    cd /tmp/cython_minhash
+    python3 setup.py build_ext --inplace
+    ls shingle_hash*.so || { echo "Cython build failed!"; exit 1; }
+
+    echo "Cython .so generated. Now Install to system Python so all executors can import it"
+    sudo cp shingle_hash*.so /usr/lib/python3/dist-packages/
     echo "Bootstrap complete!"
   EOF
 }
@@ -473,7 +481,28 @@ resource "aws_s3_object" "iceberg_setup_test_script" {
   bucket = aws_s3_bucket.scripts_bucket.id
   key    = "scripts/iceberg_setup_test.py"
   source = "${path.module}/${var.scripts_source_test_dir}/iceberg_setup_test.py"
-  
+
+  depends_on = [time_sleep.wait_for_bucket]
+}
+
+# Upload Cython MinHash source files to S3
+# These are compiled on EMR nodes via bootstrap action
+locals {
+  cython_files = [
+    "shingle_hash.pyx",
+    "murmurhash3.c",
+    "murmurhash3.h",
+    "setup.py",
+  ]
+}
+
+resource "aws_s3_object" "cython_files" {
+  for_each = toset(local.cython_files)
+
+  bucket = aws_s3_bucket.scripts_bucket.id
+  key    = "scripts/cython_minhash/${each.value}"
+  source = "${path.module}/${var.scripts_source_src_dir}/cython_minhash/${each.value}"
+
   depends_on = [time_sleep.wait_for_bucket]
 }
 
