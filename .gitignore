@@ -68,3 +68,5 @@ src/cython_minhash/MurmurHash3.h
 src/cython_minhash/*.so
 src/cython_minhash/build/
 src/cython_minhash/build/
+# result of build
+src/cython_minhash/shingle_hash.c 
