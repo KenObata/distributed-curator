@@ -1,5 +1,5 @@
 """
-Test agsinst shingle-hash_wrapper.py
+Test agsinst shingle_hash_wrapper.py
 verify Cython MinHash produces same dedup results as current Python path.
 """
 import numpy as np
