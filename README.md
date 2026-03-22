@@ -217,7 +217,7 @@ export YARN_CONF_DIR=/etc/hadoop/conf
 Step6: upload helper functions as zip
 ```
 cd /llm_trainining/src
-zip -r dependencies.zip spark_utils.py spark_partition_aware_deduplicattion_v2.py
+zip -r dependencies.zip spark_utils.py spark_partition_aware_deduplicattion_v2.py cython_minhash/shingle_hash_wrapper.py udf.py
 aws s3 cp dependencies.zip s3://your-scripts-bucket/scripts/
 ```
 
@@ -659,3 +659,41 @@ this does not create JAR file yet.
 ```
 sbt package
 ```
+
+
+# Cython setup
+## Building the Cython shingle hash module
+
+1. Download MurmurHash3 C source:
+From root, go to 
+```cd /src/cython_minhash```
+
+then,
+```bash
+   pip download mmh3 --no-binary :all:
+   tar xzf mmh3-*.tar.gz
+   cp mmh3-*/src/mmh3/murmurhash3.c .
+   cp mmh3-*/src/mmh3/murmurhash3.h .
+   rm -rf mmh3-*/  mmh3-*.tar.gz
+```
+
+2. Build the Cython extension:
+```bash
+   cd cython_minhash
+   python setup.py build_ext --inplace
+```
+```
+
+And in `.gitignore`:
+```
+cython_minhash/MurmurHash3.c
+cython_minhash/MurmurHash3.h
+cython_minhash/*.so
+cython_minhash/build/
+
+2.Compile
+```
+python setup.py build_ext --inplace
+```
+
+3.
