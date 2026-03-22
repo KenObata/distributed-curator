@@ -433,6 +433,7 @@ resource "aws_s3_object" "bootstrap_script" {
     aws s3 cp s3://${var.scripts_bucket}-${data.aws_caller_identity.current.account_id}/scripts/cython_minhash/ /tmp/cython_minhash/ --recursive
     cd /tmp/cython_minhash
     python3 setup.py build_ext --inplace
+    ls shingle_hash*.so || { echo "Cython build failed!"; exit 1; }
 
     echo "Cython .so generated. Now Install to system Python so all executors can import it"
     sudo cp shingle_hash*.so /usr/lib/python3/dist-packages/
@@ -492,7 +493,6 @@ locals {
     "murmurhash3.c",
     "murmurhash3.h",
     "setup.py",
-    "minhash_cython.py"
   ]
 }
 
