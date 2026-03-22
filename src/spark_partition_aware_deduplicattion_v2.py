@@ -26,10 +26,7 @@ try:
     from .spark_utils import (does_file_exists, upload_df_to_s3, read_parquet_from_s3, set_spark_context)
 except:
     from spark_utils import (does_file_exists, upload_df_to_s3, read_parquet_from_s3, set_spark_context)
-try:
-    from cython_minhash.shingle_hash_wrapper import compute_minhash_cython_batch
-except:
-    from shingle_hash_wrapper import compute_minhash_cython_batch
+from shingle_hash_wrapper import compute_minhash_cython_batch
 from udf import compute_minhash_vectorized_batch_only_hash_once
 
 # Configure logging
