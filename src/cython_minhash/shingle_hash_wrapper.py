@@ -45,7 +45,7 @@ def compute_minhash_cython_batch(texts: pd.Series, num_hashes: int = 128, ngram:
     results = []
     
     for text in texts.str.lower():
-        if not text or len(text) < ngram:
+        if not text or not isinstance(text, str) or len(text) < ngram:
             results.append([0] * num_hashes)
             continue
         
