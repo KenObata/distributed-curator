@@ -8,7 +8,7 @@ import time
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../src/'))
-from cython_minhash.shingle_hash_wrapper import compute_minhash_cython_batch
+from shingle_hash_wrapper import compute_minhash_cython_batch
 import random
 from udf import compute_minhash_vectorized_batch_only_hash_once
 from udf import estimate_similarity
