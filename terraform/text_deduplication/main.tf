@@ -391,11 +391,6 @@ resource "aws_s3_bucket" "emr_logs" {
   force_destroy = true
 }
 
-# S3 bucket for Iceberg data warehouse
-resource "aws_s3_bucket" "data" {
-  bucket = "${var.scripts_bucket}-data-${data.aws_caller_identity.current.account_id}"
-  force_destroy = true
-}
 
 # useful for uploading local files
 variable "scripts_source_src_dir" {
@@ -473,15 +468,6 @@ resource "aws_s3_object" "integration_test_script" {
   key    = "scripts/spark_deduplication_test.py"
   source = "${path.module}/${var.scripts_source_test_dir}/spark_deduplication_test.py"
   
-  depends_on = [time_sleep.wait_for_bucket]
-}
-
-# Upload iceberg setup test script to S3
-resource "aws_s3_object" "iceberg_setup_test_script" {
-  bucket = aws_s3_bucket.scripts_bucket.id
-  key    = "scripts/iceberg_setup_test.py"
-  source = "${path.module}/${var.scripts_source_test_dir}/iceberg_setup_test.py"
-
   depends_on = [time_sleep.wait_for_bucket]
 }
 
@@ -927,47 +913,4 @@ output "private_key_pem" {
 output "spark_submit_example" {
   description = "Example spark-submit command"
   value       = "spark-submit --master yarn --deploy-mode cluster s3://${var.scripts_bucket}/scripts/deduplication_benchmark.py"
-}
-
-
-
-
-# Glue Catalog
-resource "aws_iam_role_policy" "emr_glue_access" {
-  name = "emr-glue-iceberg-access"
-  role = aws_iam_role.emr_ec2_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "glue:CreateDatabase",
-          "glue:GetDatabase",
-          "glue:GetDatabases",
-          "glue:CreateTable",
-          "glue:GetTable",
-          "glue:GetTables",
-          "glue:UpdateTable",
-          "glue:DeleteTable",
-          "glue:GetPartitions",
-          "glue:BatchCreatePartition",
-          "glue:BatchDeletePartition"
-        ]
-        Resource = [
-          "arn:aws:glue:${var.region}:${data.aws_caller_identity.current.account_id}:catalog",
-          "arn:aws:glue:${var.region}:${data.aws_caller_identity.current.account_id}:database/*",
-          "arn:aws:glue:${var.region}:${data.aws_caller_identity.current.account_id}:table/*"
-        ]
-      }
-    ]
-  })
-}
-# Glue catalog database with lifecycle management
-resource "aws_glue_catalog_database" "lineage" {
-  name = "lineage"
-  
-  description = "Provenance tracking for LLM training data"
-  
 }
