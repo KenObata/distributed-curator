@@ -4,6 +4,7 @@ from pyspark import RDD
 from typing import List, Tuple
 import numpy as np
 import time
+import os
 try:
     from spark_partition_aware_deduplicattion_v2 import (
         partition_aware_deduplicate
@@ -322,6 +323,9 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
         spark = create_spark_session_partition_aware_emr("CommonCrawlStressTest")
     else:
         print("Running locally - using local Spark session with S3 support")
+        # os.environ["_JAVA_OPTIONS"] = "--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.misc=ALL-UNNAMED"
+        os.environ["PYSPARK_SUBMIT_ARGS"] = "--driver-java-options '--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.misc=ALL-UNNAMED' pyspark-shell"
+        
         # Try to find GraphFrames JAR locally
         jar_path = os.path.join(os.getcwd(), "graphframes-0.8.3-spark3.5-s_2.12.jar")
         if not os.path.exists(jar_path):
