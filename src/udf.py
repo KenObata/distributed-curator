@@ -1,6 +1,7 @@
 import logging
 import numpy as np
 import pandas as pd
+from collections import defaultdict
 from typing import List, Iterator
 builtin_hash = hash
 builtin_min = min
@@ -97,7 +98,7 @@ def estimate_similarity(sig1: List[int], sig2: List[int]) -> float:
     
     return float(matches) / len(sig1)
 
-def process_partition_locally(iterator: Iterator) -> Iterator:
+def process_partition_locally(iterator: Iterator, num_bands: int, rows_per_band: int, similarity_threshold: float) -> Iterator:
     """
     This function is not referenced anywhere. 
     We created this function in case we want to run python vectorized UDF as baseline
