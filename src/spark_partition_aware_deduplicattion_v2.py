@@ -17,7 +17,6 @@ import mmh3
 import numpy as np
 import pandas as pd
 from typing import List, Tuple, Dict, Iterator, Set
-from collections import defaultdict
 import hashlib
 import time
 import json
@@ -329,7 +328,15 @@ def partition_aware_deduplicate(
         StructField("similarity", FloatType(), False),
         StructField("partition_id", IntegerType(), False)
     ])
-    similar_pairs_rdd = df_partitioned.rdd.mapPartitions(process_partition_locally)
+    from udf import process_partition_locally
+    # mapPartitions acccepts only one function pointer, so either pass process_partition_locally
+    # or pass lambda and use other params.
+    similar_pairs_rdd = df_partitioned.rdd.mapPartitions(lambda iterator:
+            process_partition_locally,
+            num_bands,
+            rows_per_band,
+            similarity_threshold
+         )
     similar_pairs_df = spark.createDataFrame(similar_pairs_rdd, similar_pairs_schema)
     """
 
