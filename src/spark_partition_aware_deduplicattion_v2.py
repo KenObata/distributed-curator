@@ -27,6 +27,11 @@ try:
     from .spark_utils import (does_file_exists, upload_df_to_s3, read_parquet_from_s3, set_spark_context)
 except:
     from spark_utils import (does_file_exists, upload_df_to_s3, read_parquet_from_s3, set_spark_context)
+try:
+    from cython_minhash.shingle_hash_wrapper import compute_minhash_cython_batch
+except:
+    from shingle_hash_wrapper import compute_minhash_cython_batch
+from udf import compute_minhash_vectorized_batch_only_hash_once
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -78,77 +83,6 @@ generate_shingles = generate_shingles_emr if is_emr() else generate_shingles_loc
 
 
 
-# NOTE: compute_minhash_vectorized_batch() moved to spark_utils_deprecated.py (2025-12-28)
-# Current implementation uses compute_minhash_vectorized_batch_only_hash_once() which is more optimized
-
-def compute_minhash_vectorized_batch_only_hash_once(texts: pd.Series, num_hashes: int = 128, ngram: int = 9, remove_articles: bool = False) -> pd.Series:
-    """
-    Highly optimized vectorized MinHash computation using pandas and numpy
-    Difference from compute_minhash_vectorized_batch is that this function
-    hashes the shingle only once and then for different seed i, use different permutation to generate different hash values.
-    """
-    results = []
-    
-    # Step 1: Vectorized text normalization using pandas string operations
-    normalized_texts = texts.str.lower()
-    
-    # Remove articles using vectorized regex
-    if remove_articles:
-        articles_pattern = r'\b(the|a|an|this|that|these|those)\b'
-        normalized_texts = normalized_texts.str.replace(articles_pattern, '', regex=True)
-        normalized_texts = normalized_texts.str.replace(r'\s+', ' ', regex=True)
-        normalized_texts = normalized_texts.str.strip()
-    
-    # Step 2: Process each text individually (fixed the Series slicing issue)
-    for text in normalized_texts:
-        if not text or len(text) < ngram:
-            results.append([0] * num_hashes)
-            continue
-        
-        # Generate unique shingles for this specific text string (memory-optimized)
-        unique_shingles = list({text[i:i+ngram] for i in range(len(text) - ngram + 1)})
-        if not unique_shingles:
-            results.append([0] * num_hashes)
-            continue
-
-        # HASH MIXING OPTIMIZATION: Hash each shingle ONCE, then mix with seeds
-        base_hashes = np.array([builtin_hash(s) & 0xFFFFFFFF for s in unique_shingles], dtype=np.uint32)
-        
-        # Use same seeds as the main function for consistency
-        if not hasattr(compute_minhash_vectorized_batch_only_hash_once, '_seeds_cache'):
-            import random
-            random.seed(42)  # Same seed for reproducibility
-            compute_minhash_vectorized_batch_only_hash_once._seeds_cache = [
-                random.randint(1, 0xFFFFFFFF) for _ in range(1024)
-            ]
-        
-        hash_seeds = np.array(compute_minhash_vectorized_batch_only_hash_once._seeds_cache[:num_hashes], dtype=np.uint32)
-        
-        # Vectorized hash mixing: broadcast (num_shingles, 1) x (num_hashes,)
-        base_hashes_expanded = base_hashes[:, np.newaxis]  # Shape: (num_shingles, 1)
-        
-        # Apply hash mixing: (base_hash XOR seed) for each combination
-        """
-        Reminder: 
-        MinHash needs num_hashes (e.g., 64) independent hash functions. 
-        But computing 64 different hashes for each shingle is expensive:
-        
-        for seed in range(64):
-            hash_val = mmh3.hash(shingle, seed=seed)  # 64 hash computations is slow.
-
-        Use XOR because:
-        - AND,OR biase toward 0,1 which is less random
-        - Addition has "carry" - bits affect each other and affects other bits.
-        - loses reversibility.
-        XOR is the only bitwise operation that preserves randomness 
-        """
-        mixed_hashes = (base_hashes_expanded ^ hash_seeds) & 0xFFFFFFFF
-        
-        # Get minimum across all shingles for each hash function
-        signature = np.min(mixed_hashes, axis=0)
-        results.append(signature.tolist())
-    
-    return pd.Series(results)
 
 
 def get_deduplicate_df_graphframes(spark: SparkSession, similar_pairs_df:DataFrame, vertices:DataFrame) -> DataFrame:
@@ -218,9 +152,10 @@ def partition_aware_deduplicate(
     num_bands: int = 16,
     num_partitions: int = 1000,
     ngram: int = 9,
-    is_debug_mode = False,
+    is_debug_mode: bool = False,
     df_with_partitions_s3_path: str = None,
-    remove_articles = False,
+    remove_articles: bool = False,
+    use_python_udf_min_hash: bool = False,
 ) -> DataFrame:
     """
     Partition-aware deduplication that scales to 1TB+
@@ -239,6 +174,7 @@ def partition_aware_deduplicate(
         num_hashes: Number of MinHash functions
         num_bands: Number of LSH bands
         num_partitions: Number of partitions for processing
+        use_python_udf_min_hash: if True, call python UDF, else call Cython UDF.
     
     Returns:
         DataFrame with duplicates marked
@@ -250,6 +186,7 @@ def partition_aware_deduplicate(
     logger.info(f"Spark UI available at: {spark.sparkContext.uiWebUrl}")
     print(f"🚀 Spark UI: {spark.sparkContext.uiWebUrl}")  # Print to console for visibility
     logger.info(f"Using {'EMR NumPy' if is_emr() else 'Local built-in'} shingle generation")
+    logger.info(f"Using {'Python UDF' if use_python_udf_min_hash else 'Cython UDF'} for MinHash")
 
     rows_per_band = num_hashes // num_bands
     
@@ -266,7 +203,10 @@ def partition_aware_deduplicate(
         @pandas_udf(ArrayType(LongType())) # LongType because Step4 expects Long
         def minhash_batch_udf(rows: pd.Series) -> pd.Series:
             """Process entire batch using highly optimized vectorized operations"""
-            return compute_minhash_vectorized_batch_only_hash_once(rows, num_hashes, ngram=9)
+            if use_python_udf_min_hash:
+                return compute_minhash_vectorized_batch_only_hash_once(rows, num_hashes, ngram=9)
+            else:
+                return compute_minhash_cython_batch(rows, num_hashes, ngram=9)
         
         # If users really need scala UDF (not recommended)
         # spark._jvm.com.minhash.MinHashUDF.registerUdf(spark._jsparkSession)        
