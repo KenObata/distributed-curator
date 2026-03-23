@@ -35,9 +35,22 @@
 
 # Learning - scala
 
+- object vs class
+  - Object means singleton, 1 instance per JVM.
+  - class has a public constructor 
+  - object — no public constructor
+    object MyTest extends AnyFunSuite { ... }
+    // testClass.newInstance() → fails, constructor is private
+    // Scala compiles object to:
+    //   class MyTest$ {
+    //     private MyTest$() { ... }        ← private constructor
+    //     public static MyTest$ MODULE$;   ← singleton accessed here
+    //   }
 - for function attributes like cache obj, in scala, use lazy val which is 
   singleton per JVM worker.
 - lazy val should be in the companion object, not inside the UDF:
+  - lazy val — "compute once, cache the result" (per instance)
+  - object   — "one instance for the entire JVM" (singleton)
 - val means the reference can't change — it always points to the same Set object. mutable means the contents of that Set can change.
     scala// val + mutable: the container is fixed, but you can modify its contents
     val partitions = scala.collection.mutable.Set[Int]()
@@ -81,3 +94,6 @@
     - because lambda function from df.rdd.mapPartitions will serialize everything in lambda and if data class 
       is in the lambda function, it references outer class of case class, which can contain dataframe. 
       But dataframe is not serializable.
+- when we create a row in Spark from Array of something, always need to convert Array toSeq
+  - Reason: Spark's ArrayType stores data internally as Seq, so when creating a Row, it expects Seq for array columns.
+  - This is Spark thing.
