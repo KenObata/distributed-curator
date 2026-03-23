@@ -25,13 +25,16 @@
       faster group building
     ☐ Increase similarity threshold to reduce
       false positives
-    ☐ scala UDF
-    ☐ Unit test for scala UDF
+    - scala UDF
+    - Unit test for scala UDF
     - test 1000 partition count with python MinHash UDF for Found xxx similar pair.
       - DONE. simiar pair is more impacted by spark partition count rather than hash algo.
     - test 100 WET file with Cython UDF.
       - DONE. 4 min in Step1. 15 min E2E.
+    ☐ Setup mandatory pre-commit script for pytest and sbt test
     ☐ 90k WET
+    ☐ Package as library
+    ☐ consume from library
 
 # Learning - scala
 
