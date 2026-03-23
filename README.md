@@ -28,7 +28,7 @@ source venv/bin/activate
 You should see (venv) after actuvation.
 # Install PySpark locally
 ```
-pip install -r requirements_emr.txt
+pip install -r requirements.txt
 ```
 # Run Spark locally with 4GB RAM
 
@@ -40,7 +40,7 @@ if you run this locally, ```cp src/cython_minhash/shingle_hash*.so venv/lib/pyth
 spark-submit --driver-memory 4g --executor-memory 4g \
 --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
 --jars ../../target/scala-2.12/minhash-udf_2.12-0.1.jar \
---py-files ../../src/spark_partition_aware_deduplicattion_v2.py,../../src/spark_utils.py,../../src/udf.py,../../src/shingle_hash_wrapper.py  ../../test/spark_deduplication_test.py development
+--py-files ../../src/spark_partition_aware_deduplicattion_v2.py,../../src/spark_utils.py,../../src/udf.py,../../src/shingle_hash_wrapper.py  ../../test/integration_test/spark_deduplication_test.py development
 ```
 - spark_deduplication.py - Complete implementation for web-scale deduplication
 - common_crawl_explorer.py: PoC
@@ -75,7 +75,7 @@ spark-submit \
 ```
 Or run it on a single machine
 ```
-spark-submit --driver-memory 4g --executor-memory 4g test/spark_deduplication_test.py
+spark-submit --driver-memory 4g --executor-memory 4g test/integration_test/spark_deduplication_test.py
 ```
 
 
@@ -158,8 +158,8 @@ Then from SSH session on the master node:
 
 ```
 ssh -i ./emr-dedupe-key.pem hadoop@<master-public-dns>
-aws s3 cp s3://text-deduplication-740959772378/scripts/requirements_emr.txt .
-sudo pip3 install --ignore-installed --no-cache-dir --no-deps -r requirements_emr.txt
+aws s3 cp s3://text-deduplication-740959772378/scripts/requirements.txt .
+sudo pip3 install --ignore-installed --no-cache-dir --no-deps -r requirements.txt
 ```
 
 

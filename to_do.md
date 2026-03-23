@@ -27,8 +27,10 @@
       false positives
     ☐ scala UDF
     ☐ Unit test for scala UDF
-    ☐ test 1000 partition count with python MinHash UDF for Found xxx similar pair.
-    ☐ test 100 WET file with Cython UDF.
+    - test 1000 partition count with python MinHash UDF for Found xxx similar pair.
+      - DONE. simiar pair is more impacted by spark partition count rather than hash algo.
+    - test 100 WET file with Cython UDF.
+      - DONE. 4 min in Step1. 15 min E2E.
     ☐ 90k WET
 
 # Learning - scala
