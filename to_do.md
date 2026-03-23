@@ -32,6 +32,7 @@
     - test 100 WET file with Cython UDF.
       - DONE. 4 min in Step1. 15 min E2E.
     ☐ Setup mandatory pre-commit script for pytest and sbt test
+    ☐ optimize fetching WET files?
     ☐ 90k WET
     ☐ Package as library
     ☐ consume from library
