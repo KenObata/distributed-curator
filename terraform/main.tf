@@ -441,8 +441,8 @@ resource "aws_s3_object" "bootstrap_script" {
 # Upload requirements.txt to S3
 resource "aws_s3_object" "requirements" {
   bucket = aws_s3_bucket.scripts_bucket.id
-  key    = "scripts/requirements_emr.txt"
-  source = "${path.module}/requirements_emr.txt"  # Local file path
+  key    = "scripts/requirements.txt"
+  source = "${path.module}/requirements.txt"  # Local file path
   
   depends_on = [time_sleep.wait_for_bucket]
 }
@@ -468,7 +468,7 @@ resource "aws_s3_object" "scala_script" {
 resource "aws_s3_object" "integration_test_script" {
   bucket = aws_s3_bucket.scripts_bucket.id
   key    = "scripts/spark_deduplication_test.py"
-  source = "${path.module}/${var.scripts_source_test_dir}/spark_deduplication_test.py"
+  source = "${path.module}/${var.scripts_source_test_dir}/integration_test/spark_deduplication_test.py"
   
   depends_on = [time_sleep.wait_for_bucket]
 }

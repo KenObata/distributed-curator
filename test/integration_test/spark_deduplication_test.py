@@ -330,7 +330,7 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
         jar_path = os.path.join(os.getcwd(), "graphframes-0.8.3-spark3.5-s_2.12.jar")
         if not os.path.exists(jar_path):
             # Try relative path from test directory
-            jar_path = os.path.join(os.path.dirname(__file__), "../terraform/text_deduplication/graphframes-0.8.3-spark3.5-s_2.12.jar")
+            jar_path = os.path.join(os.path.dirname(__file__), "../../terraform/graphframes-0.8.3-spark3.5-s_2.12.jar")
         
         if os.path.exists(jar_path):
             print(f"Found GraphFrames JAR at: {jar_path}")
