@@ -58,7 +58,7 @@ object ComputePartitionAssignmentsUDF {
     here we don't store bandHash in dataframe to not increase shuffle memory.
     it's a trade-off between latency gain vs minimizing memory 
     */
-    private def ComputePartitionAssignmentsLogic(signature: Array[Long], 
+    private[partitionAssignment] def ComputePartitionAssignmentsLogic(signature: Array[Long], 
                                                 numBands: Int, 
                                                 rowsPerBand: Int,
                                                 numPartitions:Int): Array[Int] = {

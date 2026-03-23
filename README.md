@@ -711,7 +711,11 @@ sbt compile
 ```
 this does not create JAR file yet.
 
-5.compile to JAR
+5. Unit test
+```
+sbt test
+```
+6.compile to JAR
 ```
 sbt package
 ```
