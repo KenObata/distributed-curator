@@ -1,27 +1,17 @@
 # spark_partition_aware_deduplicattion_v2.py - Scalable partition-aware MinHash LSH implementation
 
 # Import Python's built-in functions before PySpark overwrites them
-import builtins
-builtin_hash = hash
 builtin_sum = sum
 builtin_min = min
 builtin_max = max
-builtin_abs = builtins.abs
 
 from graphframes import GraphFrame
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 from pyspark import StorageLevel
-import mmh3
-import numpy as np
 import pandas as pd
-from typing import List, Tuple, Dict, Iterator, Set
-import hashlib
-import time
-import json
 import logging
-import os
 try:
     from .spark_utils import (does_file_exists, upload_df_to_s3, read_parquet_from_s3, set_spark_context)
 except:
@@ -32,53 +22,6 @@ from udf import compute_minhash_vectorized_batch_only_hash_once
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-# Environment detection for optimization strategy
-def is_emr() -> bool:
-    """Detect if running on EMR vs local environment"""
-    # Check multiple EMR indicators
-    return (
-        os.path.exists('/emr') or 
-        'EMR' in os.environ.get('SPARK_HOME', '') or 
-        os.environ.get('AWS_EMR_CLUSTER_ID') or
-        os.path.exists('/usr/share/aws/emr') or
-        'hadoop' in os.environ.get('JAVA_HOME', '').lower()
-    )
-
-def generate_shingles_local(text: str, ngram: int) -> List[str]:
-    """Local-optimized shingle generation using built-in string operations"""
-    if len(text) < ngram:
-        return []
-    # Built-in string slicing is fastest on local/ARM processors
-    return list(set(text[i:i+ngram] for i in range(len(text) - ngram + 1)))
-
-def generate_shingles_emr(text: str, ngram: int) -> List[str]:
-    """EMR-optimized shingle generation using NumPy vectorization"""
-    if len(text) < ngram:
-        return []
-    
-    try:
-        # NumPy vectorized approach for Intel/x86 with more cores
-        text_len = len(text)
-        text_array = np.array(list(text))
-        
-        # Create sliding window view
-        shingle_indices = np.lib.stride_tricks.sliding_window_view(
-            np.arange(text_len), window_shape=ngram
-        )
-        
-        # Vectorized shingle generation
-        shingles = [''.join(text_array[indices]) for indices in shingle_indices]
-        return list(set(shingles))
-    except Exception:
-        # Fallback to local method if NumPy fails
-        return generate_shingles_local(text, ngram)
-
-# Function pointer based on environment
-generate_shingles = generate_shingles_emr if is_emr() else generate_shingles_local
-
-
-
 
 
 def get_deduplicate_df_graphframes(spark: SparkSession, similar_pairs_df:DataFrame, vertices:DataFrame) -> DataFrame:
@@ -144,7 +87,7 @@ def partition_aware_deduplicate(
     input_df: DataFrame,
     text_column: str = "text",
     similarity_threshold: float = 0.8,
-    num_hashes: int = 128,
+    num_hashes: int = 64,
     num_bands: int = 16,
     num_partitions: int = 1000,
     ngram: int = 9,
@@ -181,7 +124,6 @@ def partition_aware_deduplicate(
           f"bands={num_bands}, partitions={num_partitions}")
     logger.info(f"Spark UI available at: {spark.sparkContext.uiWebUrl}")
     print(f"🚀 Spark UI: {spark.sparkContext.uiWebUrl}")  # Print to console for visibility
-    logger.info(f"Using {'EMR NumPy' if is_emr() else 'Local built-in'} shingle generation")
     logger.info(f"Using {'Python UDF' if use_python_udf_min_hash else 'Cython UDF'} for MinHash")
 
     rows_per_band = num_hashes // num_bands
@@ -200,9 +142,9 @@ def partition_aware_deduplicate(
         def minhash_batch_udf(rows: pd.Series) -> pd.Series:
             """Process entire batch using highly optimized vectorized operations"""
             if use_python_udf_min_hash:
-                return compute_minhash_vectorized_batch_only_hash_once(rows, num_hashes, ngram=9)
+                return compute_minhash_vectorized_batch_only_hash_once(rows, num_hashes, ngram=ngram, remove_articles)
             else:
-                return compute_minhash_cython_batch(rows, num_hashes, ngram=9)
+                return compute_minhash_cython_batch(rows, num_hashes, ngram=ngram)
         
         # If users really need scala UDF (not recommended)
         # spark._jvm.com.minhash.MinHashUDF.registerUdf(spark._jsparkSession)        
