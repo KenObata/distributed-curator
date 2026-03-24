@@ -54,6 +54,9 @@ project/project/
 .scala-build/
 .bloop/
 
+# plugins.sbt is needed for pre-commit
+!project/plugins.sbt
+
 # pyspark build
 src/dependencies.zip
 
