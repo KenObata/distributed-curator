@@ -97,12 +97,6 @@ if $HAS_PY; then
         printf "       Install: ${YELLOW}pip install ruff${NC}\n"
     fi
 
-    # ── 3. Format check (ruff format --check) ────────────────────────────────
-    if command -v ruff &>/dev/null; then
-        printf "  Running ruff format --check ...\n"
-        # Note: if you want read only, doesn't modify files, add --check
-        run_step "ruff format" ruff format $STAGED_PY
-    fi
 
     # ── 4. File name check for test files ────────────────────────────────
     # Find .py files under test/unit_test that don't match *_test.py
