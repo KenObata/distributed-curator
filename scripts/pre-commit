@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Pre-commit hook: unit tests + lint/style for Python and Scala
+#
+# Install:  ./scripts/install-hooks.sh
+# Bypass:   git commit --no-verify
+# ==============================================================================
+
+# -e: exit immediately if any command fails
+# -u: treat unset variables as errors instead of empty string
+# -o pipefail: a pipeline (cmd1 | cmd2) returns the exit code of the last failing command, not just the final command
+set -euo pipefail
+
+# ── colours ───────────────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+PASS="${GREEN}✓${NC}"
+FAIL="${RED}✗${NC}"
+SKIP="${YELLOW}⊘${NC}"
+
+FAILED=0
+
+header() { printf "\n${CYAN}━━━ %s ━━━${NC}\n" "$1"; }
+
+run_step() {
+    # run_step "pytest" pytest test/
+    #           $1      $2     $3
+
+    local label="$1" # e.g pytest, sbt
+    shift # shift moves cursor to next
+
+    # @: get the remaining arguments
+    # 2>&1 redirects stderr into stdout
+    if "$@" 2>&1 | tail -20; then
+        printf "  ${PASS} %s\n" "$label"
+    else
+        printf "  ${FAIL} %s\n" "$label"
+        FAILED=1
+    fi
+}
+
+# ── detect which files are staged ─────────────────────────────────────────────
+# ACM: only include files that are Added, Copied, or Modified
+# || true — prevent set -e from killing the script if no files match
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM -- '*.py' || true)
+STAGED_SCALA=$(git diff --cached --name-only --diff-filter=ACM -- '*.scala' || true)
+
+HAS_PY=false
+HAS_SCALA=false
+[[ -n "$STAGED_PY" ]] && HAS_PY=true
+[[ -n "$STAGED_SCALA" ]] && HAS_SCALA=true
+
+if ! $HAS_PY && ! $HAS_SCALA; then
+    printf "${SKIP} No Python or Scala files staged — skipping checks.\n"
+    exit 0
+fi
+
+# ==============================================================================
+# PYTHON
+# ==============================================================================
+if $HAS_PY; then
+    header "Python"
+
+    # ── 1. Unit tests (pytest) ────────────────────────────────────────────────
+    # &>/dev/null discards both stdout and stderr — we only care about the exit code, not the path
+    if command -v pytest &>/dev/null; then
+        printf "  Running pytest ...\n"
+        # -x — stop on first failure
+        # -q — quiet output
+        # --tb=short — shorter tracebacks
+        run_step "pytest" pytest test/ -x -q --tb=short --no-header
+    else
+        printf "  ${SKIP} pytest not found — skipping Python tests\n"
+    fi
+
+    # ── 2. Lint (ruff check) ──────────────────────────────────────────────────
+    if command -v ruff &>/dev/null; then
+        printf "  Running ruff check ...\n"
+        # Only lint the staged files
+        # Intentionally unquoted $STAGED_PY because word splitting is wanted
+        run_step "ruff check" ruff check $STAGED_PY
+    else
+        printf "  ${SKIP} ruff not found — skipping Python lint\n"
+        printf "       Install: ${YELLOW}pip install ruff${NC}\n"
+    fi
+
+    # ── 3. Format check (ruff format --check) ────────────────────────────────
+    if command -v ruff &>/dev/null; then
+        printf "  Running ruff format --check ...\n"
+        # --check: read only, doesn't modify files
+        run_step "ruff format" ruff format --check $STAGED_PY
+    fi
+
+    # ── 4. File name check for test files ────────────────────────────────
+    # Find .py files under test/unit_test that don't match *_test.py
+    #  (and aren't __init__.py or conftest.py)
+    BAD_UNIT_TEST_NAMES=$(find test/unit_test -name '*.py' \
+        ! -name '*_test.py' \
+        ! -name '__init__.py' \
+        ! -name 'conftest.py' \
+        2>/dev/null)
+    
+    BAD_INTEGRATION_TEST_NAMES=$(find test/integration_test -name '*.py' \
+        ! -name '*_test.py' \
+        ! -name '__init__.py' \
+        ! -name 'conftest.py' \
+        2>/dev/null)
+
+    # if list exists
+    if [[ -n "$BAD_UNIT_TEST_NAMES" || -n "$BAD_INTEGRATION_TEST_NAMES" ]]; then
+        printf "  ${FAIL} These test files won't be discovered by pytest (must end with _test.py):\n"
+        printf '%s\n%s\n' "$BAD_UNIT_TEST_NAMES" "$BAD_INTEGRATION_TEST_NAMES" | while read -r filename; do
+            [[ -n "$filename" ]] && printf "       %s\n" "$filename"
+        done
+        FAILED=1
+    fi
+fi
+
+# ==============================================================================
+# SCALA
+# ==============================================================================
+if $HAS_SCALA; then
+    header "Scala"
+
+    # ── 1. Unit tests (sbt test) ─────────────────────────────────────────────
+    if command -v sbt &>/dev/null; then
+        printf "  Running sbt test ...\n"
+        # -batch — disables interactive mode, (no "press enter to continue" prompts)
+        # -no-colors: we already handles coloring in this file
+        run_step "sbt test" sbt -batch -no-colors test
+    else
+        printf "  ${SKIP} sbt not found — skipping Scala tests\n"
+    fi
+
+    # ── 2. Format check (scalafmt) ───────────────────────────────────────────
+    if command -v sbt &>/dev/null; then
+        printf "  Running scalafmt check ...\n"
+        # scalafmtCheckAll: checks based on .scalafmt.conf
+        run_step "scalafmt" sbt -batch -no-colors "scalafmtCheckAll"
+    else
+        printf "  ${SKIP} sbt not found — skipping scalafmt\n"
+    fi
+fi
+
+# ==============================================================================
+# RESULT
+# ==============================================================================
+echo ""
+# -ne: not equal
+if [[ $FAILED -ne 0 ]]; then
+    printf "${RED}╔══════════════════════════════════════════╗${NC}\n"
+    printf "${RED}║  Pre-commit checks FAILED — commit blocked  ║${NC}\n"
+    printf "${RED}╚══════════════════════════════════════════╝${NC}\n"
+    printf "\nFix the issues above, then ${YELLOW}git add${NC} and retry.\n"
+    printf "To bypass (not recommended): ${YELLOW}git commit --no-verify${NC}\n\n"
+    exit 1
+else
+    printf "${GREEN}╔══════════════════════════════════════════╗${NC}\n"
+    printf "${GREEN}║  All pre-commit checks passed            ║${NC}\n"
+    printf "${GREEN}╚══════════════════════════════════════════╝${NC}\n\n"
+    exit 0
+fi
