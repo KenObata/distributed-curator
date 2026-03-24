@@ -79,10 +79,19 @@ if $HAS_PY; then
 
     # ── 2. Lint (ruff check) ──────────────────────────────────────────────────
     if command -v ruff &>/dev/null; then
-        printf "  Running ruff check ...\n"
+        printf "  Running ruff check + Auto-fixing lint and format ...\n"
+        # Phase 1: fix silently (don't care about exit code) - no run_step
         # Only lint the staged files
+        ruff check --fix $STAGED_PY 2>&1 | tail -20
+        ruff format $STAGED_PY 2>&1 | tail -20
+        git add $STAGED_PY
+        
         # Intentionally unquoted $STAGED_PY because word splitting is wanted
+        printf "  Verifying ruff check ...\n"
         run_step "ruff check" ruff check $STAGED_PY
+
+        printf "  Verifying ruff format ...\n"
+        run_step "ruff format" ruff format --check $STAGED_PY
     else
         printf "  ${SKIP} ruff not found — skipping Python lint\n"
         printf "       Install: ${YELLOW}pip install ruff${NC}\n"
@@ -91,8 +100,8 @@ if $HAS_PY; then
     # ── 3. Format check (ruff format --check) ────────────────────────────────
     if command -v ruff &>/dev/null; then
         printf "  Running ruff format --check ...\n"
-        # --check: read only, doesn't modify files
-        run_step "ruff format" ruff format --check $STAGED_PY
+        # Note: if you want read only, doesn't modify files, add --check
+        run_step "ruff format" ruff format $STAGED_PY
     fi
 
     # ── 4. File name check for test files ────────────────────────────────
