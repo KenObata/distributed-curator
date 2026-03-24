@@ -1,0 +1,72 @@
+# ==============================================================================
+# pyproject.toml — ruff configuration for Python lint + style
+# Place in repo root alongside build.sbt
+
+# modern Python standard (PEP 518/621) that replaces the old scattered config files.
+# ruff specifically only reads from pyproject.toml (or ruff.toml) 
+# — it doesn't support the old .flake8 yaml/ini format at all
+
+# Syntax of this file is PEP 518: https://peps.python.org/pep-0518/
+# ==============================================================================
+
+[tool.ruff]
+target-version = "py39"
+line-length = 120
+# Only lint project source and test files
+include = ["src/**/*.py", "test/**/*.py"]
+exclude = [
+    "src/__pycache__",
+    "src/cython_minhash",      # generated Cython artifacts
+    "src/dependencies.zip",
+    ".scala-build",
+    "terraform",
+    "venv",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
+# these mappings are defined at https://docs.astral.sh/ruff/rules/
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort (import ordering)
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "SIM",   # flake8-simplify
+    "RUF",   # ruff-specific rules
+]
+ignore = [
+    "E501",  # line length — handled by formatter
+    "B905",  # zip-strict — not needed for Spark UDFs
+    "SIM108",# ternary — readability preference
+]
+
+[tool.ruff.lint.per-file-ignores]
+# these rules are relaxed only under the target folder.
+"test/**/*.py" = [
+    "N802",  # allow non-lowercase function names in tests
+    "N803",  # allow non-lowercase argument names in tests
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space" # PEP 8 mandates this for Python
+line-ending = "auto"
+
+# ==============================================================================
+# pytest configuration
+# This replaces the old pytest.ini or setup.cfg [tool:pytest] section
+# ==============================================================================
+[tool.pytest.ini_options]
+testpaths = ["test"]
+python_files = ["*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+# Default command-line flags
+# -x: stop on first failure
+# -q: quiet output
+# --tb=short: shorter tracebacks
+addopts = "-x -q --tb=short"
