@@ -41,6 +41,7 @@ ignore = [
     "E501",  # line length — handled by formatter
     "B905",  # zip-strict — not needed for Spark UDFs
     "SIM108",# ternary — readability preference
+    "N812",   # Lowercase imported as non-lowercase — F is standard Spark convention
 ]
 
 [tool.ruff.lint.per-file-ignores]
