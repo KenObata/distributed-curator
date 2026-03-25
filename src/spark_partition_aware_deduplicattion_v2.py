@@ -133,7 +133,7 @@ def partition_aware_deduplicate(
         f"Computing MinHash signatures for {similarity_threshold} similarity threshold",
     )
 
-    if df_with_partitions_s3_path and not does_file_exists(df_with_partitions_s3_path):
+    if df_with_partitions_s3_path is None or not does_file_exists(df_with_partitions_s3_path):
         # Get partition count from Spark config
         num_shuffle_partitions = int(spark.conf.get("spark.sql.shuffle.partitions", "1000"))
         input_df = input_df.repartition(num_shuffle_partitions)
@@ -180,7 +180,7 @@ def partition_aware_deduplicate(
             F.col("target_partitions"),  # Array of band hash from 8 MinHash % partition count
         )
 
-        if is_debug_mode:
+        if is_debug_mode and df_with_partitions_s3_path:
             upload_df_to_s3(df=df_with_partitions, s3_path=df_with_partitions_s3_path, row_count=total_docs_count)
     else:
         # Define schema for df_with_partitions to avoid inference issues

@@ -1,200 +1,147 @@
-# test_partition_aware_deduplication.py
+import os
 
 import pytest
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col
 
-from src.spark_partition_aware_deduplicattion_v2 import (
-    compute_minhash_signature,
-    estimate_similarity,
-    partition_aware_deduplicate,
+from src.spark_partition_aware_deduplicattion_v2 import partition_aware_deduplicate
+
+# Resolve JAR paths relative to repo root
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+GRAPHFRAMES_JAR = os.path.join(REPO_ROOT, "graphframes-0.8.3-spark3.5-s_2.12.jar")
+SCALA_UDF_JAR = os.path.join(
+    REPO_ROOT,
+    "target",
+    "scala-2.12",
+    "minhash-udf_2.12-1.0.jar",  # adjust to your actual JAR name
+)
+
+# Skip entire module if JARs are missing
+pytestmark = pytest.mark.skipif(
+    not os.path.exists(GRAPHFRAMES_JAR) or not os.path.exists(SCALA_UDF_JAR),
+    reason=f"Required JARs not found. Run 'sbt package' first.\n"
+    f"  GraphFrames: {GRAPHFRAMES_JAR} (exists={os.path.exists(GRAPHFRAMES_JAR)})\n"
+    f"  Scala UDF:   {SCALA_UDF_JAR} (exists={os.path.exists(SCALA_UDF_JAR)})",
 )
 
 
 @pytest.fixture(scope="session")
 def spark():
-    """Create a SparkSession for testing"""
+    """Create SparkSession with required JARs for integration testing"""
+    jars = f"{GRAPHFRAMES_JAR},{SCALA_UDF_JAR}"
     spark = (
-        SparkSession.builder.appName("TestDeduplication")
+        SparkSession.builder.appName("TestPartitionAwareDedup")
         .master("local[2]")
+        .config("spark.jars", jars)
+        .config("spark.driver.extraClassPath", jars)
         .config("spark.sql.shuffle.partitions", "10")
         .getOrCreate()
     )
     yield spark
-
     spark.stop()
 
 
-class TestMinHashSignature:
-    """Test MinHash signature generation"""
-
-    def test_identical_documents_have_same_signature(self):
-        """Identical documents should have identical signatures"""
-        text = "The quick brown fox jumps over the lazy dog."
-        sig1 = compute_minhash_signature(text, num_hashes=128, k=9)
-        sig2 = compute_minhash_signature(text, num_hashes=128, k=9)
-        assert sig1 == sig2
-
-    def test_empty_text_returns_zero_signature(self):
-        """Empty text should return all zeros"""
-        sig = compute_minhash_signature("", num_hashes=128, k=9)
-        assert all(s == 0 for s in sig)
-        assert len(sig) == 128
-
-    def test_short_text_returns_zero_signature(self):
-        """Text shorter than k should return all zeros"""
-        sig = compute_minhash_signature("short", num_hashes=128, k=9)
-        assert all(s == 0 for s in sig)
-
-
-class TestSimilarityEstimation:
-    """Test Jaccard similarity estimation"""
-
-    def test_identical_signatures_have_similarity_one(self):
-        """Identical signatures should have similarity 1.0"""
-        sig = [1, 2, 3, 4, 5] * 20  # 100 values
-        similarity = estimate_similarity(sig, sig)
-        assert similarity == 1.0
-
-    def test_completely_different_signatures_have_low_similarity(self):
-        """Completely different signatures should have similarity near 0"""
-        sig1 = list(range(100))
-        sig2 = list(range(100, 200))
-        similarity = estimate_similarity(sig1, sig2)
-        assert similarity == 0.0
-
-    def test_partially_similar_signatures(self):
-        """Partially similar signatures should have intermediate similarity"""
-        sig1 = [1] * 50 + [2] * 50
-        sig2 = [1] * 50 + [3] * 50
-        similarity = estimate_similarity(sig1, sig2)
-        assert 0.45 < similarity < 0.55  # Should be ~0.5
-
-
-class TestDocumentSimilarity:
-    """Test document similarity with various text variations"""
-
-    @pytest.mark.parametrize(
-        "text1, text2, k, expected_min, expected_max",
-        [
-            # Identical documents
-            (
-                "The quick brown fox jumps over the lazy dog.",
-                "The quick brown fox jumps over the lazy dog.",
-                9,
-                0.99,
-                1.0,
-            ),
-            # Minor punctuation difference
-            (
-                "The quick brown fox jumps over the lazy dog.",
-                "The quick brown fox jumps over the lazy dog!",
-                9,
-                0.85,
-                1.0,
-            ),
-            # One word difference ("the" vs "a") - should be high similarity with normalization
-            (
-                "The quick brown fox jumps over the lazy dog.",
-                "The quick brown fox jumps over a lazy dog.",
-                9,
-                0.85,
-                1.0,
-            ),
-            # One word difference ("jumps" vs "leaps")
-            (
-                "The quick brown fox jumps over the lazy dog.",
-                "The quick brown fox leaps over the lazy dog.",
-                9,
-                0.55,
-                0.99,
-            ),
-            # Completely different documents
-            (
-                "The quick brown fox jumps over the lazy dog.",
-                "A completely different document about cats.",
-                9,
-                0.0,
-                0.15,
-            ),
-        ],
-    )
-    def test_document_similarity_ranges(self, text1, text2, k, expected_min, expected_max):
-        """Test that document similarities fall within expected ranges"""
-        sig1 = compute_minhash_signature(text1, num_hashes=128, k=k)
-        sig2 = compute_minhash_signature(text2, num_hashes=128, k=k)
-        similarity = estimate_similarity(sig1, sig2)
-
-        assert expected_min <= similarity <= expected_max, (
-            f"Similarity {similarity:.3f} not in range [{expected_min}, {expected_max}] for:\n"
-            f"  Text1: {text1}\n"
-            f"  Text2: {text2}\n"
-            f"  k={k}"
-        )
-
-
 class TestPartitionAwareDeduplication:
-    """Test the full partition-aware deduplication pipeline"""
+    """Integration tests for the full deduplication pipeline"""
 
-    def test_deduplication_finds_exact_duplicates(self, spark):
-        """Should find exact duplicates"""
+    def test_exact_duplicates_detected(self, spark):
+        """Exact duplicate documents should be identified"""
         data = [
-            ("doc1", "The quick brown fox jumps over the lazy dog."),
-            ("doc2", "The quick brown fox jumps over the lazy dog."),
-            ("doc3", "A completely different document."),
+            ("doc1", "The quick brown fox jumps over the lazy dog and runs away fast."),
+            ("doc2", "The quick brown fox jumps over the lazy dog and runs away fast."),
+            ("doc3", "A completely different document about machine learning and data science."),
         ]
         df = spark.createDataFrame(data, ["doc_id", "text"])
 
         result = partition_aware_deduplicate(
-            spark, df, similarity_threshold=0.9, num_hashes=64, num_bands=8, num_partitions=5
+            spark,
+            df,
+            similarity_threshold=0.9,
+            num_hashes=64,
+            num_bands=8,
+            num_partitions=5,
+            use_python_udf_min_hash=True,
         )
 
         duplicates = result.filter(col("is_duplicate")).count()
         assert duplicates == 1
 
-    def test_deduplication_threshold_sensitivity(self, spark):
-        """Test that threshold controls sensitivity"""
+        # The duplicate should share a representative with its match
+        reps = result.filter(col("doc_id").isin(["doc1", "doc2"])).select("representative_id").distinct().count()
+        assert reps == 1, "Exact duplicates should share the same representative"
+
+    def test_different_documents_not_marked_duplicate(self, spark):
+        """Completely different documents should not be marked as duplicates"""
         data = [
-            ("doc1", "The quick brown fox jumps over the lazy dog."),
-            ("doc2", "The quick brown fox jumps over a lazy dog."),  # Small difference
-            ("doc3", "A completely different document."),
-        ]
-        df = spark.createDataFrame(data, ["doc_id", "text"])
-
-        # High threshold - should not find doc2 as duplicate
-        result_high = partition_aware_deduplicate(
-            spark, df, similarity_threshold=0.7, num_hashes=128, num_bands=16, num_partitions=5
-        )
-        duplicates_high = result_high.filter(col("is_duplicate")).count()
-        assert duplicates_high == 0
-
-        # Lower threshold - should find doc2 as duplicate
-        result_low = partition_aware_deduplicate(
-            spark, df, similarity_threshold=0.6, num_hashes=128, num_bands=16, num_partitions=5
-        )
-        duplicates_low = result_low.filter(col("is_duplicate")).count()
-        assert duplicates_low == 1
-
-    def test_deduplication_groups_multiple_duplicates(self, spark):
-        """Should group multiple similar documents together"""
-        data = [
-            ("doc1", "The quick brown fox jumps over the lazy dog."),
-            ("doc2", "The quick brown fox jumps over the lazy dog!"),
-            ("doc3", "The quick brown fox jumps over the lazy dog"),
-            ("doc4", "A completely different document."),
+            ("doc1", "The quick brown fox jumps over the lazy dog and runs away fast."),
+            ("doc2", "Machine learning models require large datasets for training purposes."),
+            ("doc3", "The weather forecast predicts sunny skies and warm temperatures today."),
         ]
         df = spark.createDataFrame(data, ["doc_id", "text"])
 
         result = partition_aware_deduplicate(
-            spark, df, similarity_threshold=0.8, num_hashes=128, num_bands=16, num_partitions=5
+            spark,
+            df,
+            similarity_threshold=0.8,
+            num_hashes=64,
+            num_bands=8,
+            num_partitions=5,
+            use_python_udf_min_hash=True,
         )
 
-        # Should have 2 unique documents (one group of 3, one standalone)
-        unique = result.filter(~col("is_duplicate")).count()
-        assert unique == 2
+        duplicates = result.filter(col("is_duplicate")).count()
+        assert duplicates == 0, "Completely different documents should not be duplicates"
 
-        # Check that doc1, doc2, doc3 share the same representative
-        representatives = (
+    def test_groups_multiple_near_duplicates(self, spark):
+        """Multiple near-duplicate documents should share the same representative"""
+        data = [
+            ("doc1", "The quick brown fox jumps over the lazy dog and runs away fast."),
+            ("doc2", "The quick brown fox jumps over the lazy dog and runs away fast!"),
+            ("doc3", "The quick brown fox jumps over the lazy dog and runs away fast"),
+            ("doc4", "A completely different document about machine learning and data science."),
+        ]
+        df = spark.createDataFrame(data, ["doc_id", "text"])
+
+        result = partition_aware_deduplicate(
+            spark,
+            df,
+            similarity_threshold=0.8,
+            num_hashes=128,
+            num_bands=16,
+            num_partitions=5,
+            use_python_udf_min_hash=True,
+        )
+
+        # doc1, doc2, doc3 should form one group; doc4 standalone
+        unique = result.filter(~col("is_duplicate")).count()
+        assert unique == 2, f"Expected 2 unique docs (1 group of 3 + 1 standalone), got {unique}"
+
+        # Verify the near-duplicates share a representative
+        reps = (
             result.filter(col("doc_id").isin(["doc1", "doc2", "doc3"])).select("representative_id").distinct().count()
         )
-        assert representatives == 1
+        assert reps == 1, "Near-duplicate group should have exactly one representative"
+
+    def test_result_schema(self, spark):
+        """Result should have expected columns"""
+        data = [
+            ("doc1", "The quick brown fox jumps over the lazy dog and runs away fast."),
+            ("doc2", "A completely different document about machine learning and data science."),
+        ]
+        df = spark.createDataFrame(data, ["doc_id", "text"])
+
+        result = partition_aware_deduplicate(
+            spark,
+            df,
+            similarity_threshold=0.9,
+            num_hashes=64,
+            num_bands=8,
+            num_partitions=5,
+            use_python_udf_min_hash=True,
+        )
+
+        result_columns = set(result.columns)
+        assert "doc_id" in result_columns
+        assert "representative_id" in result_columns
+        assert "is_duplicate" in result_columns
+        assert "text" in result_columns

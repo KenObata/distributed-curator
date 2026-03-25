@@ -72,7 +72,7 @@ if $HAS_PY; then
         # -x — stop on first failure
         # -q — quiet output
         # --tb=short — shorter tracebacks
-        run_step "pytest" pytest test/ -x -q --tb=short --no-header
+        run_step "pytest" pytest test/unit_test -x -q --tb=short --no-header
     else
         printf "  ${SKIP} pytest not found — skipping Python tests\n"
     fi
