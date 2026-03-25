@@ -41,6 +41,7 @@ ignore = [
     "E501",  # line length — handled by formatter
     "B905",  # zip-strict — not needed for Spark UDFs
     "SIM108",# ternary — readability preference
+    "N812",   # Lowercase imported as non-lowercase — F is standard Spark convention
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -70,3 +71,9 @@ python_functions = ["test_*"]
 # -q: quiet output
 # --tb=short: shorter tracebacks
 addopts = "-x -q --tb=short"
+
+# ignore warnings
+filterwarnings = [
+    "ignore::DeprecationWarning:pyspark.*",
+    "ignore::UserWarning:pyspark.*",
+]
