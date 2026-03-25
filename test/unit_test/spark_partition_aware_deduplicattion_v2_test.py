@@ -8,12 +8,12 @@ from src.spark_partition_aware_deduplicattion_v2 import partition_aware_deduplic
 
 # Resolve JAR paths relative to repo root
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-GRAPHFRAMES_JAR = os.path.join(REPO_ROOT, "graphframes-0.8.3-spark3.5-s_2.12.jar")
+GRAPHFRAMES_JAR = os.path.join(REPO_ROOT, "lib", "graphframes-0.8.3-spark3.5-s_2.12.jar")
 SCALA_UDF_JAR = os.path.join(
     REPO_ROOT,
     "target",
     "scala-2.12",
-    "minhash-udf_2.12-1.0.jar",  # adjust to your actual JAR name
+    "minhash-udf_2.12-0.1.jar",  # adjust to your actual JAR name
 )
 
 # Skip entire module if JARs are missing
