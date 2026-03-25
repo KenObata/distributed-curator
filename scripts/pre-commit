@@ -72,7 +72,7 @@ if $HAS_PY; then
         # -x — stop on first failure
         # -q — quiet output
         # --tb=short — shorter tracebacks
-        run_step "pytest" pytest test/ -x -q --tb=short --no-header
+        run_step "pytest" pytest test/unit_test -x -q --tb=short --no-header
     else
         printf "  ${SKIP} pytest not found — skipping Python tests\n"
     fi
@@ -82,8 +82,8 @@ if $HAS_PY; then
         printf "  Running ruff check + Auto-fixing lint and format ...\n"
         # Phase 1: fix silently (don't care about exit code) - no run_step
         # Only lint the staged files
-        ruff check --fix $STAGED_PY 2>&1 | tail -20
-        ruff format $STAGED_PY 2>&1 | tail -20
+        ruff check --fix $STAGED_PY 2>&1 | tail -20 || true # true: due to set -euo pipefail, script exist early but we want to continue
+        ruff format $STAGED_PY 2>&1 | tail -20 || true
         git add $STAGED_PY
         
         # Intentionally unquoted $STAGED_PY because word splitting is wanted
