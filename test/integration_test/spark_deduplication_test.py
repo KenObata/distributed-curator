@@ -1,18 +1,17 @@
 import os
 import time
+from collections.abc import Iterable, Iterator
 
 from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql.functions import col, length
+from pyspark.sql.functions import col
 
 try:
     from spark_partition_aware_deduplicattion_v2 import partition_aware_deduplicate
 except ImportError:
-    import os
     import sys
 
     sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
     from spark_partition_aware_deduplicattion_v2 import partition_aware_deduplicate
-import os
 
 import boto3
 
@@ -29,10 +28,11 @@ s3 = boto3.client("s3")
 S3_BUCKET_TEST_INPUT = "text-dedupe-benchmark"
 
 BENCHMARK_CONFIGS = {
-    "development": {"wet_files": 1, "sampling_rate": 0.1, "size": "9gb"},
-    "validation": {"wet_files": 100, "sampling_rate": 0.001, "size": "90gb"},
-    "production_proof": {"wet_files": 1000, "sampling_rate": 0.0001, "size": "900gb"},
-    "scale_proof": {"wet_files": 9000, "sampling_rate": 0.00001, "size": "9000gb"},
+    "development": {"wet_files": 1},
+    "validation": {"wet_files": 100},
+    "production_proof": {"wet_files": 1000},
+    "scale_proof": {"wet_files": 9000},
+    "full_corpus": {"wet_files": 90000},
 }
 
 
@@ -42,57 +42,56 @@ def init() -> None:
     print("=" * 80)
 
 
-"""
-def read_wet_files_from_s3(spark: SparkSession, wet_s3_path: str, max_files: int = None) -> DataFrame:
-    try:
-        # Read all WET files directly from S3
-        print("Reading WET files from S3...")
+def parse_wet_record_v2(lines: Iterable[str]) -> Iterator[tuple[str, str]]:
+    """
+    Args:
+    - lines: Iterable. Caller's each row.value is a str. But lines receives the generator of many lines.
 
-        if max_files is None:
-            # Read all files
-            wet_df = spark.read.text(wet_s3_path + "*.warc.wet.gz")
-        else:
-            # Get list of specific files limited by max_files
-            import boto3
-            s3_client = boto3.client('s3')
+    Retuns:
+    - Iterator[tuple[str, str]
 
-            # Parse S3 path
-            bucket = "commoncrawl"
-            prefix = wet_s3_path.replace("s3://commoncrawl/", "")
+    Parsing based on WET file format logic:
+    - From WARC-Target-URI:, fetch URL. lines without URL is skipped.
+    - While URL is set, when blank line is found, flag=True for IN_CONTENT.
+    - While URL is set and IN_CONTENT is True, then accumulate contents.
+    - when WARC-Type: keyword is found, reset
 
-            print(f"Listing WET files (limit: {max_files})...")
-            response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=max_files)
+    ex) aws s3 cp s3://commoncrawl/crawl-data/CC-MAIN-2024-22/segments/1715971057216.39/wet
+        /CC-MAIN-20240517233122-20240518023122-00001.warc.wet.gz - | gunzip | head -100
 
-            if 'Contents' not in response:
-                raise Exception(f"No WET files found at {wet_s3_path}")
+    WARC/1.0
+    WARC-Type: warcinfo                                                    <- record 1 (metadata, no URL)
+    WARC-Date: 2024-05-31T01:24:21Z
+    WARC-Filename: CC-MAIN-20240517233122-20240518023122-00001.warc.wet.gz
+    WARC-Record-ID: <urn:uuid:be47515c-d86b-4ce6-82f6-8c3c11086d3c>
+    Content-Type: application/warc-fields
+    Content-Length: 368
 
-            # Build list of specific file paths
-            file_paths = []
-            for obj in response['Contents'][:max_files]:
-                if obj['Key'].endswith('.warc.wet.gz'):
-                    file_paths.append(f"s3://{bucket}/{obj['Key']}")
-
-            print(f"Selected {len(file_paths)} WET files for processing")
-
-            if not file_paths:
-                raise Exception("No .warc.wet.gz files found")
-
-            # Read the selected files
-            # Pass list of paths directly - Spark handles multiple S3 files efficiently
-            wet_df = spark.read.text(file_paths)
-
-        return wet_df
-    except Exception as e:
-        print(f"Error reading WET files from S3: {str(e)}")
-        raise Exception(f"Error reading WET files from S3: {str(e)}")
-"""
+    Software-Info: ia-web-commons.1.1.10-SNAPSHOT-20240513074037
+    Extracted-Date: Fri, 31 May 2024 01:24:21 GMT
+    robots: checked via crawler-commons 1.5-SNAPSHOT (https://github.com/crawler-commons/crawler-commons)
+    isPartOf: CC-MAIN-2024-22
+    operator: Common Crawl Admin (info@commoncrawl.org)
+    description: Wide crawl of the web for May 2024
+    publisher: Common Crawl
 
 
-def parse_wet_record_v2(lines) -> list[tuple[str, str]]:
-    """Optimized WET record parser - 3-5x faster than original"""
+
+    WARC/1.0
+    WARC-Type: conversion
+    WARC-Target-URI: http://0-50.ru/news/line/2013-03-26/id_30926.html    <- record 2 (get URL)
+    WARC-Date: 2024-05-18T01:05:37Z
+    WARC-Record-ID: <urn:uuid:6e69bc67-a141-4cc8-b949-a3a9b647d87c>
+    WARC-Refers-To: <urn:uuid:a25e1f4e-42d7-4e2f-8a77-0f8645af7b2c>
+    WARC-Block-Digest: sha1:FCFS6CEWGSGDH4JZJLWRSXOKZ4JUFI52
+    WARC-Identified-Content-Language: rus
+    Content-Type: text/plain
+    Content-Length: 17217
+                                                                          <- blank line = content starts
+    (document contents start)
+    """
     import io
 
-    records = []
     current_url = None
     content_buffer = io.StringIO()
     in_content = False
@@ -100,14 +99,16 @@ def parse_wet_record_v2(lines) -> list[tuple[str, str]]:
     for line in lines:
         stripped = line.strip()
 
-        # Fast string matching using startswith
-        if stripped[:10] == "WARC-Type:":  # Faster than startswith for short strings
-            # Finalize previous record
+        if stripped.startswith("WARC-Type:"):
+            # WARC-Type is the start of new doc and finalize previous record
             if current_url and content_buffer.tell() > 0:
                 content_buffer.seek(0)
                 text = content_buffer.read().strip()
-                if len(text) > 50:  # Filter short content
-                    records.append((current_url, text))
+                if len(text) > 100:  # Filter short content
+                    # With yield, this function becomes a generator (each record
+                    # flows downstream immediately, then gets garbage collected).
+                    # We use mapPartition as lazy eval.
+                    yield (current_url, text)
 
             # Reset state
             current_url = None
@@ -115,14 +116,16 @@ def parse_wet_record_v2(lines) -> list[tuple[str, str]]:
             content_buffer.truncate(0)
             in_content = False
 
-        elif stripped[:16] == "WARC-Target-URI:":  # Extract URL efficiently
+        elif stripped.startswith("WARC-Target-URI:"):
+            # Extract URL
             current_url = stripped[17:].strip()  # Skip "WARC-Target-URI: "
 
         elif stripped == "" and current_url:
+            # Blank line after headers means content starts next
             in_content = True
 
         elif in_content and stripped:
-            # Use StringIO for efficient text accumulation
+            # it means we are at contents lines - use StringIO for efficient text accumulation
             content_buffer.write(stripped)
             content_buffer.write(" ")
 
@@ -130,52 +133,8 @@ def parse_wet_record_v2(lines) -> list[tuple[str, str]]:
     if current_url and content_buffer.tell() > 0:
         content_buffer.seek(0)
         text = content_buffer.read().strip()
-        if len(text) > 50:
-            records.append((current_url, text))
-
-    return records
-
-
-# Parse WET format to extract URL and text content
-def parse_wet_record_v1(lines) -> list[tuple[str, str]]:
-    """Parse WET record format to extract URL and text"""
-    records = []
-    current_record = {}
-    content_lines = []
-    in_content = False
-
-    for line in lines:
-        line = line.strip()
-
-        if line.startswith("WARC-Type:"):
-            # Start of new record
-            if current_record and "url" in current_record and content_lines:
-                # Save previous record
-                current_record["text"] = " ".join(content_lines).strip()
-                if len(current_record["text"]) > 50:  # Filter out very short content
-                    records.append((current_record["url"], current_record["text"]))
-
-            current_record = {}
-            content_lines = []
-            in_content = False
-
-        elif line.startswith("WARC-Target-URI:"):
-            current_record["url"] = line.split(":", 1)[1].strip()
-
-        elif line == "" and "url" in current_record:
-            # Blank line indicates start of content
-            in_content = True
-
-        elif in_content and line:
-            content_lines.append(line)
-
-    # Handle last record
-    if current_record and "url" in current_record and content_lines:
-        current_record["text"] = " ".join(content_lines).strip()
-        if len(current_record["text"]) > 50:
-            records.append((current_record["url"], current_record["text"]))
-
-    return records
+        if len(text) > 100:
+            yield (current_url, text)
 
 
 def does_cralw_file_exists(benchmark_level: str) -> bool:
@@ -211,15 +170,29 @@ def does_cralw_file_exists(benchmark_level: str) -> bool:
         return False
 
 
-def get_wet_file_paths(max_files: int) -> list[str]:
-    """Get WET file paths from multiple segments"""
+def get_wet_file_paths(max_files: int, cc_main_id: str) -> list[str]:
+    """Get WET file paths from multiple segments
+    S3 directory structure:
+    - Each month contains 100 segments.
+    - Each segment contains 900 WET files
+    - total 900 * 100 = 90k WET files.
+    one segment contains 900 .gz WET files.
+    ex) s3://commoncrawl/crawl-data/CC-MAIN-2024-22/segments/
+        - 1715971057216.39/
+            - warc/
+            - wet/
+                -   CC-MAIN-20240517233122-20240518023122-00899.warc.wet.gz
+                - ...
+        - other segments ID/
+
+    """
     import boto3
 
     s3_client = boto3.client("s3")
 
     bucket = "commoncrawl"
     # List ALL segments, not just one
-    prefix = "crawl-data/CC-MAIN-2024-22/segments/"
+    prefix = f"crawl-data/{cc_main_id}/segments/"
 
     file_paths = []
     paginator = s3_client.get_paginator("list_objects_v2")
@@ -232,11 +205,10 @@ def get_wet_file_paths(max_files: int) -> list[str]:
         for segment in page["CommonPrefixes"]:
             segment_prefix = segment["Prefix"] + "wet/"
 
-            # List WET files in this segment
+            # List WET files in this segment. default MaxKeys=1000 > 900 WET files per segment.
             response = s3_client.list_objects_v2(
                 Bucket=bucket,
                 Prefix=segment_prefix,
-                MaxKeys=100,  # Each segment has ~10-20 files
             )
 
             if "Contents" in response:
@@ -252,20 +224,25 @@ def get_wet_file_paths(max_files: int) -> list[str]:
     return file_paths
 
 
-def read_wet_files_from_s3(spark: SparkSession, max_files: int) -> DataFrame:
-    file_paths = get_wet_file_paths(max_files)
+def read_wet_files_from_s3(spark: SparkSession, max_files: int, cc_main_id: str) -> DataFrame:
+    """
+    spark.read.text() splits the file into one row per line:
+    """
+    file_paths = get_wet_file_paths(max_files, cc_main_id)
     print(f"Reading {len(file_paths)} WET files...")
     wet_df = spark.read.text(file_paths)
     return wet_df
 
 
-def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
+def test_integration_commoncrawl_sample(benchmark_level: str = "development", cc_main_id: str = "CC-MAIN-2024-22"):
     """
     Stress test with Common Crawl data from AWS S3
     Tests deduplication performance on real-world web crawl data
 
     Args:
-        benchmark_level: One of 'development', 'validation', 'production_proof', 'scale_proof'
+    - benchmark_level: One of 'development', 'validation', 'production_proof', 'scale_proof', 'full_corpus'
+    - cc_main_id: snapshot ID for that month.
+      ex) https://data.commoncrawl.org/crawl-data/CC-MAIN-2024-22/index.html
     """
     init()
     # Get benchmark configuration
@@ -311,9 +288,6 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
         print(f"No cached input files found for {benchmark_level}")
 
         try:
-            # wet_s3_path = "s3://commoncrawl/crawl-data/CC-MAIN-2024-22/segments/1715971057216.39/wet/"
-            # print(f"Loading Common Crawl WET files from: {wet_s3_path}")
-
             # For WET files, we need to read them as text files and parse the format
             # WET format contains:
             # - WARC-Type: conversion
@@ -322,15 +296,13 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
             # - <blank line>
             # - <extracted text content>
 
-            # Download WET file first to avoid Spark HTTP issues
-            # wet_df = read_wet_files_from_s3(spark, wet_s3_path, max_files)
-            wet_df = read_wet_files_from_s3(spark, max_files)
+            wet_df = read_wet_files_from_s3(spark, max_files, cc_main_id)
             wet_df.show()
-            wet_rdd = wet_df.rdd.map(lambda row: row.value)
 
             # Process in partitions and parse WET format
+            # we do lazy eval insteaed of glom - process row by row to avoid stoing all data in list.
             print("Parsing WET format...")
-            parsed_rdd = wet_rdd.glom().flatMap(parse_wet_record_v2)
+            parsed_rdd = wet_df.rdd.mapPartitions(lambda rows: parse_wet_record_v2(row.value for row in rows))
 
             # Convert to DataFrame and take sample
             from pyspark.sql.types import StringType, StructField, StructType
@@ -342,7 +314,7 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development"):
             df_parsed.show()
 
             print("Applying filters...")
-            df_filtered = df_parsed.filter(col("text").isNotNull() & (length(col("text")) > 100))
+            df_filtered = df_parsed.filter(col("text").isNotNull())
 
         except Exception as e:
             print("Common Crawl access requires AWS credentials or has connectivity issues.")
@@ -456,7 +428,7 @@ if __name__ == "__main__":
         print(f"Using benchmark level from command line: {benchmark_level}")
     else:
         print(f"No benchmark level specified, using default: {benchmark_level}")
-        print("Available levels: development, validation, production_proof, scale_proof")
+        print("Available levels: development, validation, production_proof, scale_proof, full_corpus")
         print("Usage: python script.py <benchmark_level>")
         print("   or: spark-submit script.py <benchmark_level>")
 
