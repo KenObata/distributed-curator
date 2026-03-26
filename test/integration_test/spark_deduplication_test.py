@@ -8,12 +8,10 @@ from pyspark.sql.functions import col
 try:
     from spark_partition_aware_deduplicattion_v2 import partition_aware_deduplicate
 except ImportError:
-    import os
     import sys
 
     sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
     from spark_partition_aware_deduplicattion_v2 import partition_aware_deduplicate
-import os
 
 import boto3
 
