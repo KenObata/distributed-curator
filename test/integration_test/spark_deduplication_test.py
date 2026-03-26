@@ -3,7 +3,7 @@ import time
 from collections.abc import Iterable, Iterator
 
 from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql.functions import col, length
+from pyspark.sql.functions import col
 
 try:
     from spark_partition_aware_deduplicattion_v2 import partition_aware_deduplicate
@@ -106,7 +106,7 @@ def parse_wet_record_v2(lines: Iterable[str]) -> Iterator[tuple[str, str]]:
             if current_url and content_buffer.tell() > 0:
                 content_buffer.seek(0)
                 text = content_buffer.read().strip()
-                if len(text) > 50:  # Filter short content
+                if len(text) > 100:  # Filter short content
                     # With yield, this function becomes a generator (each record
                     # flows downstream immediately, then gets garbage collected).
                     # We use mapPartition as lazy eval.
@@ -135,7 +135,7 @@ def parse_wet_record_v2(lines: Iterable[str]) -> Iterator[tuple[str, str]]:
     if current_url and content_buffer.tell() > 0:
         content_buffer.seek(0)
         text = content_buffer.read().strip()
-        if len(text) > 50:
+        if len(text) > 100:
             yield (current_url, text)
 
 
@@ -316,7 +316,7 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development", cc
             df_parsed.show()
 
             print("Applying filters...")
-            df_filtered = df_parsed.filter(col("text").isNotNull() & (length(col("text")) > 100))
+            df_filtered = df_parsed.filter(col("text").isNotNull())
 
         except Exception as e:
             print("Common Crawl access requires AWS credentials or has connectivity issues.")
