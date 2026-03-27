@@ -15,21 +15,24 @@ vim ~/.vimrc
 ```
 
 
-one-off
+one-off (3.9 is to align with EMR)
 ```
-python3 -m venv venv
+python3.9 -m venv venv39
 ```
 
 Every time
 ```
 deactivate
-source venv/bin/activate
+source venv39/bin/activate
 ```
 You should see (venv) after actuvation.
 # Install PySpark locally
 ```
 pip install -r requirements.txt
+pip install graphframes
 ```
+graphframes is because on EMR, it's passed as --packages.
+
 # Run Spark locally with 4GB RAM
 
 Note that development is an argument.

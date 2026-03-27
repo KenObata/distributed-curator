@@ -396,19 +396,19 @@ resource "aws_s3_bucket" "emr_logs" {
 variable "scripts_source_src_dir" {
   description = "Path to the directory containing Python scripts"
   type        = string
-  default     = "../../src"
+  default     = "../src"
 }
 
 variable "scripts_source_scala_dir" {
   description = "Path to the directory containing Python scripts"
   type        = string
-  default     = "../../target/scala-2.12"
+  default     = "../target/scala-2.12"
 }
 
 variable "scripts_source_test_dir" {
   description = "Path to the directory containing Python scripts"
   type        = string
-  default     = "../../test"
+  default     = "../test"
 }
 
 # Bootstrap action script

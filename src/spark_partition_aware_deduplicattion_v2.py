@@ -1,4 +1,6 @@
 # spark_partition_aware_deduplicattion_v2.py - Scalable partition-aware MinHash LSH implementation
+from __future__ import annotations
+
 import logging
 
 import pandas as pd
