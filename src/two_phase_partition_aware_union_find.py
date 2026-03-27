@@ -1,0 +1,246 @@
+import logging
+from collections.abc import Iterator
+
+from pyspark import StorageLevel
+from pyspark.sql import DataFrame, Row, SparkSession
+from pyspark.sql.types import StringType, StructField, StructType
+
+try:
+    from .union_find import UnionFind
+except Exception:
+    from union_find import UnionFind
+
+logger = logging.getLogger(__name__)
+
+"""
+This file is now replaced by main/scala/partition_local_union_find.scala
+"""
+
+
+def _run_phase1_local_union_find(similar_pairs_df: DataFrame) -> DataFrame:
+    """
+    Phase 1: Partition-local Union-Find using Python RDD mapPartitions.
+    In phase 1, union-find happens only within each partition so that there is no shuffle.
+
+    Reads all pairs within each Spark partition, runs true Union-Find with
+    path compression + union by rank, emits (doc_id, local_representative) per unique doc.
+
+    Args:
+    - similar_pairs_df: (doc_1, doc_2, similarity, partition_id) from Step 3
+
+    Returns:
+    - (doc_id, local_representative) — one per unique doc per partition
+      - only subset of input_df that exceeded similarity score are included.
+    """
+    local_uf_schema = StructType(
+        [
+            StructField("doc_id", StringType(), False),
+            StructField("local_representative", StringType(), False),
+        ]
+    )
+
+    def run_local_union_find(iterator: Iterator[Row]) -> Iterator[Row]:
+        """Run partition-local Union-Find using shared UnionFind class.
+
+        Args:
+        - iterator: Iterator[Row]
+          - this function receives each partition in a batch,
+            that is why there is a for row in iterator loop.
+            so this function is per partition, not per row.
+        """
+        uf = UnionFind()
+
+        # Consuming phase: iterate all pairs, update in-memory HashMap
+        for row in iterator:
+            doc1, doc2 = row["doc1"], row["doc2"]
+            uf.initial_setup(doc1)
+            uf.initial_setup(doc2)
+            uf.union(doc1, doc2)
+
+        # uf.parent is dict, so one row per unique doc_id (NOT one per pair)
+        for doc_id in uf.parent:
+            yield Row(doc_id=doc_id, local_representative=uf.find(doc_id))
+
+    # mapPartitions = narrow transformation, no shuffle in phase1
+    return similar_pairs_df.rdd.mapPartitions(run_local_union_find).toDF(local_uf_schema)
+
+
+def _run_phase2_global_transitivity_closure(
+    spark: SparkSession,
+    local_results: DataFrame,
+    vertices: DataFrame,
+    max_iterations: int = 50,
+) -> DataFrame:
+    """
+    Phase 2: Merge components across partition boundaries.
+    df.join().groupBy().agg()
+
+    A doc appearing in multiple partitions may have different local_reps.
+    Build meta-edges between disagreeing reps, then run label propagation
+    on this much smaller graph.
+
+    Args:
+    - local_results: (doc_id, local_representative) from Phase 1
+    - vertices: same as input_df containing all input doc
+    - max_iterations: if this exceeds, it warns.
+
+    Returns:
+    - DataFrame: (doc_id, representative_id) for all docs from input_df including singletons
+      output of this function will be joined back to input_df.
+
+    Logic:
+    Step 2-1: for each doc, collect across partitions since phase1 was within a partition.
+        => GROUP BY doc_id, Array(local_representative)
+    Step 2-2: Build transitive graph
+    Step 2-3: iterative converge
+
+    ex) Step 2-1:
+        docA → [rep_X_partition_0, rep_Y_parttion1]
+        docB → [rep_Y_partition_1, rep_Z_partition_2]
+
+        Step2-2:
+        (X,Y)
+        (Y,Z)
+        Y: (rep_X_partition_0, rep_Y_parttion1, rep_Z_partition_2) are connected
+        => must all merge
+
+        Step2-3:
+        iteration1:
+            rep_X: min(X, Y)       = X
+            rep_Y: min(Y, X, Z)    = X
+            rep_Z: min(Z, Y)       = Y
+        iteration2:
+            rep_X: min(X, Y (=X))       = X
+            rep_Y: min(Y (=X), X, Z (=Y))    = X
+            rep_Z: min(Z(=Y), Y ( = X))       = X
+    """
+    local_results.createOrReplaceTempView("local_results")
+    vertices.createOrReplaceTempView("vertices")
+    # Step 2-1+2 combined:
+    # - Step 2-1: For each doc_id, collect all distinct local_reps
+    # - Step 2-2: Build transitive graph from docs with multiple representatives
+    # For a doc with reps [A, B, C], emit edges: (A,B), (A,C)
+    # Using the first element as anchor is sufficient for connectivity
+    multiple_reps_edges = spark.sql("""
+        SELECT DISTINCT reps[0] AS src, dst
+        FROM (
+            SELECT doc_id, collect_set(local_representative) AS reps
+            FROM local_results
+            GROUP BY doc_id
+            HAVING size(collect_set(local_representative)) > 1
+        ) multi_rep_docs
+        LATERAL VIEW explode(slice(reps, 2, 100)) t AS dst
+    """).persist(StorageLevel.MEMORY_AND_DISK)
+    meta_edge_count = multiple_reps_edges.count()
+    logger.info(f"multiple_reps_edges (transitive) graph: {meta_edge_count} edges")
+
+    multiple_reps_edges.createOrReplaceTempView("multiple_reps_edges")
+
+    # early exit
+    if meta_edge_count == 0:
+        logger.info("No cross-partition edges. All components resolved locally.")
+        result = spark.sql("""
+            SELECT
+                v.id AS doc_id,
+                COALESCE(c.representative_id, v.id) AS representative_id
+            FROM vertices v
+            LEFT JOIN (
+                SELECT doc_id, MIN(local_representative) AS representative_id
+                FROM local_results
+                GROUP BY doc_id
+            ) c ON v.id = c.doc_id
+        """)
+        multiple_reps_edges.unpersist()
+        return result
+
+    # Step 2-3: iterative converge
+    # Set checkpoint directory for iteration lineage truncation
+    if spark.conf.get("spark.master").startswith("yarn"):
+        # On EMR (YARN): HDFS is shared across all nodes
+        checkpoint_dir = "hdfs:///tmp/union-find-checkpoints"
+    else:
+        # On local machine: HDFS doesn't exist locally
+        checkpoint_dir = "/tmp/union-find-checkpoints"
+    spark.sparkContext.setCheckpointDir(checkpoint_dir)
+
+    # Initialize: each representative's component = itself
+    rep_components = spark.sql("""
+        SELECT DISTINCT local_representative, local_representative AS component
+        FROM local_results
+    """)
+
+    for i in range(max_iterations):
+        if i > 0 and i % 3 == 0:
+            rep_components = rep_components.checkpoint()
+
+        rep_components.cache()
+        rep_components.createOrReplaceTempView("rep_components")
+
+        # Propagate minimum component through meta-edges (both directions)
+        new_rep_components = spark.sql("""
+            SELECT local_representative, MIN(component) AS component
+            FROM (
+                SELECT local_representative, component FROM rep_components
+                UNION ALL
+                SELECT dst AS local_representative, component
+                FROM multiple_reps_edges
+                JOIN rep_components
+                  ON src = local_representative
+
+                UNION ALL
+
+                SELECT src AS local_representative, component
+                FROM multiple_reps_edges
+                JOIN rep_components
+                  ON dst = local_representative
+            )
+            GROUP BY local_representative
+        """)
+
+        # Check convergence - if still componets changed that means no converged yet
+        new_rep_components.createOrReplaceTempView("new_rep_components")
+        changes = spark.sql("""
+            SELECT COUNT(*) AS cnt
+            FROM rep_components old
+            JOIN new_rep_components new
+              ON old.local_representative = new.local_representative
+            WHERE old.component != new.component
+        """).collect()[0]["cnt"]
+
+        rep_components.unpersist()
+        rep_components = new_rep_components
+
+        logger.info(f"Phase 2 iteration {i + 1}: {changes} representatives changed")
+        if changes == 0:
+            logger.info(f"Phase 2 converged in {i + 1} iterations")
+            break
+    else:
+        logger.warning(
+            f"Phase 2 did NOT converge after {max_iterations} iterations. "
+            f"{changes} representatives still changing. "
+            f"Results may contain unresolved duplicates. Consider increasing max_iterations."
+        )
+    rep_components = rep_components.persist(StorageLevel.MEMORY_AND_DISK)
+    rep_components.createOrReplaceTempView("rep_components")
+
+    # ── Final: Map every doc_id to its global representative ──
+    # local_results (doc_id, local_representative) is a subset of input_df that exceeded similarity score
+    # and rep_components = (local_representative, root)
+    result = spark.sql("""
+        SELECT
+            v.id AS doc_id,
+            COALESCE(g.representative_id, v.id) AS representative_id
+        FROM vertices v
+        LEFT JOIN (
+            SELECT lr.doc_id, MIN(rc.component) AS representative_id
+            FROM local_results lr
+            JOIN rep_components rc
+              ON lr.local_representative = rc.local_representative
+            GROUP BY lr.doc_id
+        ) g ON v.id = g.doc_id
+    """)
+
+    multiple_reps_edges.unpersist()
+    rep_components.unpersist()
+
+    return result
