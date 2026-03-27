@@ -15,9 +15,9 @@ vim ~/.vimrc
 ```
 
 
-one-off
+one-off (3.9 is to align with EMR)
 ```
-python3 -m venv venv
+python3.9 -m venv venv39
 ```
 
 Every time
