@@ -16,5 +16,19 @@ os.environ["_JAVA_OPTIONS"] = (
     "--add-opens=java.base/sun.misc=ALL-UNNAMED "
     "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
 )
+
+"""
+Why I set PYTHONPATH on top of sys.path.insert
+pytest process (current process)
+├── sys.path.insert → finds wet_file_utils, spark_partition_aware_deduplicattion_v2
+│
+└── SparkSession local[2]
+    ├── Python worker subprocess 1 → needs PYTHONPATH to find udf.py
+    └── Python worker subprocess 2 → needs PYTHONPATH to find udf.py
+"""
+# For pyspark
+os.environ["PYTHONPATH"] = src_dir + ":" + os.environ.get("PYTHONPATH", "")
+
+# For pytest
 sys.path.insert(0, src_dir)
 sys.path.insert(0, integration_test_dir)
