@@ -21,7 +21,7 @@
     - Test 1000 WET files with caching and num_partition= core_count    
     - I implemented skipping boiler template copy such as lisense.
       ```if band_size > MAX_BAND_SIZE:``` - just re-run.
-    ☐ Implement incremental union-find for
+    - Implement incremental union-find for
       faster group building
     ☐ Increase similarity threshold to reduce
       false positives
