@@ -5,10 +5,11 @@ import logging
 
 import pandas as pd
 import pyspark.sql.functions as F
-from graphframes import GraphFrame
 from pyspark import StorageLevel
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import ArrayType, IntegerType, LongType, StringType, StructField, StructType
+
+from two_phase_partition_aware_union_find import _run_phase1_local_union_find, _run_phase2_global_transitivity_closure
 
 try:
     from .spark_utils import does_file_exists, read_parquet_from_s3, set_spark_context, upload_df_to_s3
@@ -25,58 +26,6 @@ builtin_max = max
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
-
-
-def get_deduplicate_df_graphframes(spark: SparkSession, similar_pairs_df: DataFrame, vertices: DataFrame) -> DataFrame:
-    """
-    Use GraphFrames connected components to find duplicate groups.
-
-    Args:
-        similar_pairs_df: DataFrame with columns (doc1, doc2) representing similar pairs
-        all_doc_ids_df: DataFrame with column (doc_id) for all documents
-
-    Returns:
-        DataFrame with (doc_id, component) where component is the representative doc
-    """
-
-    # Create edges - bidirectional for undirected graph
-    edges_forward = similar_pairs_df.select(F.col("doc1").alias("src"), F.col("doc2").alias("dst"))
-    edges_backward = similar_pairs_df.select(F.col("doc2").alias("src"), F.col("doc1").alias("dst"))
-    # No need of .distinct becase pair_id = tuple(sorted([doc1['doc_id'], doc2['doc_id']]))  # Always (smaller, larger)
-    edges = edges_forward.union(edges_backward)
-
-    # Create graph and run connected components
-    g = GraphFrame(vertices, edges)
-
-    # Connected components requires checkpoint directory
-    # Use HDFS path on EMR for better performance, local path for local development
-    if spark.conf.get("spark.master").startswith("yarn"):
-        # Running on EMR/YARN - use HDFS (faster for temporary checkpoints)
-        checkpoint_dir = "hdfs:///tmp/graphframes-checkpoints"
-    else:
-        # Running locally - use local filesystem
-        checkpoint_dir = "/tmp/graphframes-checkpoints"
-    logger.info(f"checkpoint_dir for GraphFrame: {checkpoint_dir}")
-
-    spark.sparkContext.setCheckpointDir(checkpoint_dir)
-    components = g.connectedComponents()
-    # Result of components: (id, component) where component is a Long
-
-    # Create temporary view for SQL query
-    components.createOrReplaceTempView("components")
-
-    sql_command = """
-    SELECT component, MIN(id) as representative_id
-    FROM components
-    GROUP BY component
-    """
-    component_and_representative_id_df_deduped = spark.sql(sql_command)
-    doc_id_and_representative_doc_id_df_deduped = components.join(
-        component_and_representative_id_df_deduped, on="component"
-    ).select(F.col("id").alias("doc_id"), F.col("representative_id"))
-
-    # Result has columns: doc_id, representative_id
-    return doc_id_and_representative_doc_id_df_deduped
 
 
 def partition_aware_deduplicate(
@@ -295,25 +244,41 @@ def partition_aware_deduplicate(
     similar_pairs_df = spark.createDataFrame(similar_pairs_rdd, similar_pairs_schema)
     """
 
-    # Remove duplicate pairs that might appear in multiple partitions
-    similar_pairs_df = similar_pairs_df.dropDuplicates(["doc1", "doc2"]).persist(StorageLevel.MEMORY_AND_DISK)
+    # Don't drop dups because dropDuplicates triggers a shuffle that destroys your partition layout:
+    # similar_pairs_df = similar_pairs_df.dropDuplicates(["doc1", "doc2"]).persist(StorageLevel.MEMORY_AND_DISK)
+    similar_pairs_df = similar_pairs_df.persist(StorageLevel.MEMORY_AND_DISK)
 
     similar_count = similar_pairs_df.count()
     logger.info(f"Found {similar_count} similar document pairs")
 
     # Step 5: Build connected components for duplicate groups
     logger.info("Step 5: Build connected components. For each distinct doc_id, it has representative doc_id")
-    set_spark_context(
-        spark,
-        "Step 5: GraphFrames Connected Components",
-        f"Building duplicate groups from {similar_count} similar pairs using GraphFrames",
-    )
+    set_spark_context(spark, "Step 5 Phase 1", "Partition-local Union-Find (no shuffle)")
 
     vertices = input_df.select(F.col("doc_id").alias("id")).distinct().persist(StorageLevel.MEMORY_ONLY)
-    doc_id_and_representative_doc_id_df_deduped = get_deduplicate_df_graphframes(
-        spark=spark, similar_pairs_df=similar_pairs_df, vertices=vertices
+    # doc_id_and_representative_doc_id_df_deduped = get_deduplicate_df_graphframes(
+    #     spark=spark, similar_pairs_df=similar_pairs_df, vertices=vertices
+    # ).persist(StorageLevel.MEMORY_AND_DISK)
+
+    # if use_scala_phase1:
+
+    # else:
+    local_results = _run_phase1_local_union_find(similar_pairs_df=similar_pairs_df).persist(
+        StorageLevel.MEMORY_AND_DISK
+    )
+    local_count = local_results.count()
+    logger.info(f"Phase 1 complete: {local_count} doc -> representative mappings")
+
+    set_spark_context(spark, "Step 5 Phase 2", "Cross-partition component merge")
+    doc_id_and_representative_doc_id_df_deduped = _run_phase2_global_transitivity_closure(
+        spark=spark, local_results=local_results, vertices=vertices, max_iterations=50
     ).persist(StorageLevel.MEMORY_AND_DISK)
+    doc_id_and_representative_doc_id_df_count = doc_id_and_representative_doc_id_df_deduped.count()
+    logger.info(
+        f"Phase 2 complete: {doc_id_and_representative_doc_id_df_count} doc→representative mappings (includes singletons)"
+    )
     logger.info("vertices cached. doc_id_and_representative_doc_id_df_deduped cached.")
+    local_results.unpersist()
 
     # Step 6: Join back with original data
     logger.info("Step 6: Marking duplicates...")
