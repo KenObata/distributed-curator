@@ -317,4 +317,6 @@ def partition_aware_deduplicate(
     vertices.unpersist()
     doc_id_and_representative_doc_id_df_deduped.unpersist()
 
+    # Don't unpersist result here because downstream caller function can trigger re-compute.
+
     return result
