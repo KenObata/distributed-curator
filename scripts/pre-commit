@@ -97,6 +97,13 @@ if $HAS_PY; then
         printf "       Install: ${YELLOW}pip install ruff${NC}\n"
     fi
 
+    # ── 3. PySpark persist check ──────────────────────────────────────────
+    if [[ -f scripts/check_spark_persist.py ]]; then
+        printf "  Running PySpark persist check ...\n"
+        run_step "persist check" python scripts/check_spark_persist.py $STAGED_PY
+    else
+        printf "  ${SKIP} scripts/check_spark_persist.py not found — skipping persist check\n"
+    fi
 
     # ── 4. File name check for test files ────────────────────────────────
     # Find .py files under test/unit_test that don't match *_test.py
