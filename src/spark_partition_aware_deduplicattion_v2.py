@@ -9,7 +9,7 @@ from pyspark import StorageLevel
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import ArrayType, IntegerType, LongType, StringType, StructField, StructType
 
-from two_phase_partition_aware_union_find import _run_phase1_local_union_find, _run_phase2_global_transitivity_closure
+from two_phase_partition_aware_union_find import run_phase1_local_union_find, run_phase2_global_transitivity_closure
 
 try:
     from .spark_utils import does_file_exists, read_parquet_from_s3, set_spark_context, upload_df_to_s3
@@ -263,14 +263,12 @@ def partition_aware_deduplicate(
     # if use_scala_phase1:
 
     # else:
-    local_results = _run_phase1_local_union_find(similar_pairs_df=similar_pairs_df).persist(
-        StorageLevel.MEMORY_AND_DISK
-    )
+    local_results = run_phase1_local_union_find(similar_pairs_df=similar_pairs_df).persist(StorageLevel.MEMORY_AND_DISK)
     local_count = local_results.count()
     logger.info(f"Phase 1 complete: {local_count} doc -> representative mappings")
 
     set_spark_context(spark, "Step 5 Phase 2", "Cross-partition component merge")
-    doc_id_and_representative_doc_id_df_deduped = _run_phase2_global_transitivity_closure(
+    doc_id_and_representative_doc_id_df_deduped = run_phase2_global_transitivity_closure(
         spark=spark, local_results=local_results, vertices=vertices, max_iterations=50
     ).persist(StorageLevel.MEMORY_AND_DISK)
     doc_id_and_representative_doc_id_df_count = doc_id_and_representative_doc_id_df_deduped.count()

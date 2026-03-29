@@ -15,8 +15,8 @@ from pyspark.sql import Row, SparkSession
 
 from two_phase_partition_aware_union_find import (
     Phase2GlobalTransitivityClosureQuery,
-    _run_phase1_local_union_find,
-    _run_phase2_global_transitivity_closure,
+    run_phase1_local_union_find,
+    run_phase2_global_transitivity_closure,
 )
 
 
@@ -49,7 +49,7 @@ class TestPhase1:
         """Output schema should be (doc_id: string, local_representative: string)."""
         pairs = spark.createDataFrame([Row(doc1="A", doc2="B", similarity=0.9, partition_id=0)]).repartition(1)
 
-        result = _run_phase1_local_union_find(pairs)
+        result = run_phase1_local_union_find(pairs)
         assert result.columns == ["doc_id", "local_representative"]
         assert str(result.schema["doc_id"].dataType) == "StringType()"
         assert str(result.schema["local_representative"].dataType) == "StringType()"
@@ -64,7 +64,7 @@ class TestPhase1:
         """
         pairs = spark.createDataFrame([Row(doc1="docA", doc2="docB", similarity=0.9, partition_id=0)]).repartition(1)
 
-        result = _run_phase1_local_union_find(pairs).collect()
+        result = run_phase1_local_union_find(pairs).collect()
         assert len(result) == 2
 
     def test_single_pair_should_point_same_local_representative(self, spark):
@@ -75,7 +75,7 @@ class TestPhase1:
         Expect: docA => docA, docB => docA  (because UnionFind picks first arg)
         """
         pairs = spark.createDataFrame([Row(doc1="docA", doc2="docB", similarity=0.9, partition_id=0)]).repartition(1)
-        result = _run_phase1_local_union_find(pairs).collect()
+        result = run_phase1_local_union_find(pairs).collect()
         assert isinstance(result[0], Row)
 
         # Both docs should have the same local_representative
@@ -96,7 +96,7 @@ class TestPhase1:
             ]
         ).repartition(1)
 
-        result = _run_phase1_local_union_find(pairs).collect()
+        result = run_phase1_local_union_find(pairs).collect()
 
         assert len(result) == 3
         assert (
@@ -117,7 +117,7 @@ class TestPhase1:
             ]
         ).repartition(1)
 
-        result = _run_phase1_local_union_find(pairs).collect()
+        result = run_phase1_local_union_find(pairs).collect()
         root = {row["doc_id"]: row["local_representative"] for row in result}
 
         assert root["A"] == root["B"]
@@ -141,7 +141,7 @@ class TestPhase1:
             ]
         ).repartition(2, "partition_id")
 
-        result = _run_phase1_local_union_find(pairs).collect()
+        result = run_phase1_local_union_find(pairs).collect()
         reps = {row["doc_id"]: row["local_representative"] for row in result}
 
         assert reps["A"] == reps["B"]
@@ -160,7 +160,7 @@ class TestPhase1:
             ]
         ).repartition(1)
 
-        result = _run_phase1_local_union_find(pairs).collect()
+        result = run_phase1_local_union_find(pairs).collect()
         reps = {row["doc_id"]: row["local_representative"] for row in result}
 
         assert len(reps) != 4  # not A -> A, A -> A, B->A, B->A
@@ -181,7 +181,7 @@ class TestPhase1:
             ]
         ).repartition(2, "partition_id")
 
-        result = _run_phase1_local_union_find(pairs).collect()
+        result = run_phase1_local_union_find(pairs).collect()
 
         a_rows = [row for row in result if row["doc_id"] == "A"]
         assert len(a_rows) >= 1, "A should appear at least once"
@@ -618,11 +618,11 @@ class TestEndToEnd:
         ).repartition(1)
         vertices = spark.createDataFrame([Row(id="A"), Row(id="B"), Row(id="C"), Row(id="D")])
 
-        local_results = _run_phase1_local_union_find(pairs)
+        local_results = run_phase1_local_union_find(pairs)
         result = {row["doc_id"]: row["local_representative"] for row in local_results.collect()}
         assert result["A"] == result["B"] == result["C"]
 
-        result = _run_phase2_global_transitivity_closure(spark, local_results, vertices, max_iterations=5)
+        result = run_phase2_global_transitivity_closure(spark, local_results, vertices, max_iterations=5)
         reps = {row["doc_id"]: row["representative_id"] for row in result.collect()}
 
         assert reps["A"] == reps["B"] == reps["C"]
@@ -641,8 +641,8 @@ class TestEndToEnd:
         ).repartition(2, "partition_id")
         vertices = spark.createDataFrame([Row(id="A"), Row(id="B"), Row(id="C")])
 
-        local_results = _run_phase1_local_union_find(pairs)
-        result = _run_phase2_global_transitivity_closure(spark, local_results, vertices, max_iterations=10)
+        local_results = run_phase1_local_union_find(pairs)
+        result = run_phase2_global_transitivity_closure(spark, local_results, vertices, max_iterations=10)
         reps = {row["doc_id"]: row["representative_id"] for row in result.collect()}
 
         assert reps["A"] == reps["B"] == reps["C"]
@@ -657,8 +657,8 @@ class TestEndToEnd:
         ).repartition(2, "partition_id")
         vertices = spark.createDataFrame([Row(id="A"), Row(id="B"), Row(id="C"), Row(id="D"), Row(id="E")])
 
-        local_results = _run_phase1_local_union_find(pairs)
-        result = _run_phase2_global_transitivity_closure(spark, local_results, vertices, max_iterations=5)
+        local_results = run_phase1_local_union_find(pairs)
+        result = run_phase2_global_transitivity_closure(spark, local_results, vertices, max_iterations=5)
         reps = {row["doc_id"]: row["representative_id"] for row in result.collect()}
 
         assert reps["A"] == reps["B"]

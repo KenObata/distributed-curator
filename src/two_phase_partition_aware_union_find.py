@@ -128,7 +128,7 @@ class Phase2GlobalTransitivityClosureQuery:
         return result
 
 
-def _run_phase1_local_union_find(similar_pairs_df: DataFrame) -> DataFrame:
+def run_phase1_local_union_find(similar_pairs_df: DataFrame) -> DataFrame:
     """
     Phase 1: Partition-local Union-Find using Python RDD mapPartitions.
     In phase 1, union-find happens only within each partition so that there is no shuffle.
@@ -176,7 +176,7 @@ def _run_phase1_local_union_find(similar_pairs_df: DataFrame) -> DataFrame:
     return similar_pairs_df.rdd.mapPartitions(run_local_union_find).toDF(local_uf_schema)
 
 
-def _run_phase2_global_transitivity_closure(
+def run_phase2_global_transitivity_closure(
     spark: SparkSession,
     local_results: DataFrame,
     vertices: DataFrame,
