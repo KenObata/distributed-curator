@@ -291,7 +291,7 @@ def partition_aware_deduplicate(
             F.when(F.col("representative_id").isNull(), F.col("doc_id")).otherwise(F.col("representative_id")),
         )
         .withColumn("is_duplicate", F.col("representative_id") != F.col("doc_id"))
-    )
+    ).persist(StorageLevel.MEMORY_AND_DISK)
 
     # Compute statistics
     deduplicate_docs = result.filter(~F.col("is_duplicate"))
