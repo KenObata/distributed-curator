@@ -222,7 +222,7 @@ export YARN_CONF_DIR=/etc/hadoop/conf
 Step6: upload helper functions as zip
 ```
 cd /llm_trainining/src
-zip -j dependencies.zip spark_utils.py spark_partition_aware_deduplicattion_v2.py shingle_hash_wrapper.py udf.py ../test/integration_test/wet_file_utils.py
+zip -j dependencies.zip spark_utils.py spark_partition_aware_deduplicattion_v2.py shingle_hash_wrapper.py udf.py ../test/integration_test/wet_file_utils.py union_find.py two_phase_partition_aware_union_find.py
 aws s3 cp dependencies.zip s3://your-scripts-bucket/scripts/
 ```
 -j strips the directory path so all files end up at the zip root.
