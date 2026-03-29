@@ -291,7 +291,7 @@ def partition_aware_deduplicate(
             F.when(F.col("representative_id").isNull(), F.col("doc_id")).otherwise(F.col("representative_id")),
         )
         .withColumn("is_duplicate", F.col("representative_id") != F.col("doc_id"))
-    )
+    ).persist(StorageLevel.MEMORY_AND_DISK)
 
     # Compute statistics
     deduplicate_docs = result.filter(~F.col("is_duplicate"))
@@ -316,5 +316,7 @@ def partition_aware_deduplicate(
     similar_pairs_df.unpersist()
     vertices.unpersist()
     doc_id_and_representative_doc_id_df_deduped.unpersist()
+
+    # Don't unpersist result here because downstream caller function can trigger re-compute.
 
     return result
