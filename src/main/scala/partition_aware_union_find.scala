@@ -1,0 +1,118 @@
+package com.unionFind
+
+import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
+import org.apache.spark.sql.types.{StringType, StructField, StructType}
+import scala.collection.mutable
+
+/**
+ * Partition-aware local Union-Find with path compression + union by rank. Runs inside mapPartitions — zero shuffle.
+ *
+ * Goal is to replace graphframe becaise it shuffles globally. in this scala, we run phase 1 within partition to map
+ * local representative doc id in a pair. phase 2 is written in udf.py
+ *
+ * Usage from PySpark: this function runs per partition, not per row. This means we directly calls JVM method from
+ * similar_pairs_df._jdf
+ */
+object PartitionAwareUnionFindUDF {
+  // Data class for runPhase1LocalUnionFind's resultRDD.
+  // Need python naming style for downstream pyspark
+  case class LocalUnionFindSchema(doc_id: String, local_representative: String)
+
+  private class UnionFind {
+    /*
+    Parent and Rank need to be under each executor to find localRepresentative
+    So live under class, not Object (=singleton)
+     */
+    val parent: mutable.HashMap[String, String] = new mutable.HashMap[String, String]()
+    val rank: mutable.HashMap[String, Int]      = new mutable.HashMap[String, Int]()
+
+    def initialSetup(node: String): Unit = if (!parent.contains(node)) {
+      parent(node) = node
+      rank(node) = 0
+    }
+
+    def find(node: String): String = {
+      var root = node
+      while (parent(root) != root) root = parent(root)
+
+      var pointer: String = node
+      // Path compression: point every node on the path directly to root
+      while (parent(pointer) != root) {
+        val nextParent = parent(pointer)
+        parent(pointer) = root
+        pointer = nextParent
+      }
+      root
+    }
+
+    def union(doc1: String, doc2: String): Unit = {
+      val root1: String = find(doc1)
+      val root2: String = find(doc2)
+      if (root1 != root2) { // else, return
+        // Union by rank: attach shorter tree under taller tree
+        if (rank(root1) < rank(root2)) {
+          parent(root1) = root2
+        } else if (rank(root2) < rank(root1)) {
+          parent(root2) = root1
+        } else {
+          parent(root2) = root1
+          rank(root1) = rank(root1) + 1
+        }
+      }
+    }
+
+  } // end of class UnionFind
+
+  def runPhase1LocalUnionFind(
+    similarPairsDf: DataFrame
+  ): DataFrame = {
+    /*
+    Phase 1: Partition-aware local Union-Find in each partition.
+    In phase 1, union-find happens only within each partition so that there is no shuffle.
+
+    Reads all pairs within each Spark partition, runs true Union-Find with
+    path compression + union by rank, emits (doc_id, localRepresentative) per unique doc.
+
+    Args:
+    - similarPairsDf: (doc1, doc2, similarity, partition_id) from Step 3
+
+    Returns:
+    - (doc_id, localRepresentative) — one per unique doc per partition
+      - only subset of input_df that exceeded similarity score are included.
+     */
+
+    val resultRDD = similarPairsDf.rdd.mapPartitions { iterator: Iterator[Row] =>
+      /*
+      Run partition-local Union-Find using shared UnionFind class.
+
+          Args:
+          - iterator: Iterator[Row] = (doc1, doc2, similarity, partition_id) from Step 3
+            - this function receives each partition in a batch,
+              that is why there is a for row in iterator loop.
+              so this function is per partition, not per row.
+       */
+      val unionFindInstance: UnionFind = new UnionFind()
+
+      for (row <- iterator) {
+        val doc1 = row.getAs[String]("doc1")
+        val doc2 = row.getAs[String]("doc2")
+        unionFindInstance.initialSetup(doc1)
+        unionFindInstance.initialSetup(doc2)
+
+        unionFindInstance.union(doc1, doc2)
+      }
+
+      /* unionFindInstance.parent is dict, so one row per unique doc_id (NOT one per pair)
+         Note: avoid using ArrayBuffer collects everything into memory then converts to iterator
+       */
+      // use keysIterator over parent.key to avoid creating a new collection in memory
+      unionFindInstance.parent.keysIterator.map { docId =>
+        LocalUnionFindSchema(docId, unionFindInstance.find(docId))
+      } // keysIterator.map returns Iterator
+    }   // End of val resultRDD
+    val spark = similarPairsDf.sparkSession
+    import spark.implicits._
+    resultRDD.toDF()
+  } // End of def runPhase1LocalUnionFind()
+
+}
