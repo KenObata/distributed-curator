@@ -24,6 +24,7 @@
     - Implement incremental union-find for
       faster group building
       ☐ check if processPartitionLocally needs to be fixed for .map to remove arrayBuffer
+    ☐ missing one test scala file.
     ☐ Increase similarity threshold to reduce
       false positives
     - scala UDF
