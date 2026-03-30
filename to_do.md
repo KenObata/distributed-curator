@@ -23,8 +23,12 @@
       ```if band_size > MAX_BAND_SIZE:``` - just re-run.
     - Implement incremental union-find for
       faster group building
-      ☐ check if processPartitionLocally needs to be fixed for .map to remove arrayBuffer
-    ☐ missing one test scala file.
+      - check if processPartitionLocally needs to be fixed for .map to remove arrayBuffer
+          - DONE. Won't do improvement is for memory, not latency,
+           and we lose logging maxBandSeen if we go with lazy flatMap because maxBandSeen is within a partition.
+    - missing one test scala file for MinHash UDF
+        - Expected because it's Cython.
+
     ☐ Increase similarity threshold to reduce
       false positives
     - scala UDF
@@ -35,6 +39,8 @@
       - DONE. 4 min in Step1. 15 min E2E.
     - Setup mandatory pre-commit script for pytest and sbt test
     - optimize fetching WET files?
+    ☐ 9k WET test after following optimization:
+     Step4 in scala (prev. 1 hour), Step5 two phase UnionFind (prev. 1 hour).
     ☐ 90k WET
     ☐ Package as library
     ☐ consume from library
