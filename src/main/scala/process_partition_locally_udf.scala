@@ -164,7 +164,7 @@ object ProcessPartitionLocallyUDF {
 
     val spark = df.sparkSession
     import spark.implicits._
-    resultRDD.toDF() // driver collects similarPairs.iterator
-  }                  // End of def processPartitions()
+    resultRDD.toDF()
+  } // End of def processPartitions()
 
-}                    // End of object
+} // End of object

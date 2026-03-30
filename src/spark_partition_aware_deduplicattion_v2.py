@@ -41,6 +41,7 @@ def partition_aware_deduplicate(
     df_with_partitions_s3_path: str | None = None,
     remove_articles: bool = False,
     use_python_udf_min_hash: bool = False,
+    use_scala_phase1: bool = True,
 ) -> DataFrame:
     """
     Partition-aware deduplication that scales to 1TB+
@@ -256,14 +257,17 @@ def partition_aware_deduplicate(
     set_spark_context(spark, "Step 5 Phase 1", "Partition-local Union-Find (no shuffle)")
 
     vertices = input_df.select(F.col("doc_id").alias("id")).distinct().persist(StorageLevel.MEMORY_ONLY)
-    # doc_id_and_representative_doc_id_df_deduped = get_deduplicate_df_graphframes(
-    #     spark=spark, similar_pairs_df=similar_pairs_df, vertices=vertices
-    # ).persist(StorageLevel.MEMORY_AND_DISK)
 
-    # if use_scala_phase1:
-
-    # else:
-    local_results = run_phase1_local_union_find(similar_pairs_df=similar_pairs_df).persist(StorageLevel.MEMORY_AND_DISK)
+    if use_scala_phase1:
+        jvm_helper = spark._jvm.com.unionFind.PartitionAwareUnionFindUDF
+        local_results_jdf = jvm_helper.runPhase1LocalUnionFind(
+            similar_pairs_df._jdf,  # Pass the underlying JVM DataFrame
+        )
+        local_results = DataFrame(local_results_jdf, spark).persist(StorageLevel.MEMORY_AND_DISK)
+    else:
+        local_results = run_phase1_local_union_find(similar_pairs_df=similar_pairs_df).persist(
+            StorageLevel.MEMORY_AND_DISK
+        )
     local_count = local_results.count()
     logger.info(f"Phase 1 complete: {local_count} doc -> representative mappings")
 
