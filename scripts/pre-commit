@@ -100,7 +100,7 @@ if $HAS_PY; then
     # ── 3. PySpark persist check ──────────────────────────────────────────
     if [[ -f scripts/check_spark_persist.py ]]; then
         printf "  Running PySpark persist check ...\n"
-        run_step "persist check" python scripts/check_spark_persist.py $STAGED_PY
+        run_step "persist check" python3 scripts/check_spark_persist.py $STAGED_PY
     else
         printf "  ${SKIP} scripts/check_spark_persist.py not found — skipping persist check\n"
     fi
