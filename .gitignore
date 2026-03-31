@@ -63,6 +63,7 @@ src/dependencies.zip
 # logs
 logs/
 to_do.md
+spark_history_logs/
 
 # Cython downloaded code
 src/cython_minhash/mmh3-5.2.1/
