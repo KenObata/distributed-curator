@@ -111,7 +111,7 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development", cc
 
     if is_emr:
         print("Running on EMR - using EMR Spark session")
-        spark = create_spark_session_partition_aware_emr("CommonCrawlStressTest")
+        spark = create_spark_session_partition_aware_emr(f"CommonCrawl_{max_files}_WET_files")
     else:
         print("Running locally - using local Spark session with S3 support")
         # os.environ["_JAVA_OPTIONS"] = "--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.misc=ALL-UNNAMED"
