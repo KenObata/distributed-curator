@@ -499,7 +499,7 @@ where am means application manager and number means attempt.
 
 ### How to view downloaded spark history server locally
 
-One time
+#### One time setup
 ```
 cat > /tmp/spark-history-s3.conf << 'EOF'
 spark.history.fs.logDirectory s3a://text-dedupe-benchmark/spark-history/
@@ -522,6 +522,20 @@ Create config file
 echo "spark.history.fs.logDirectory file:///Users/kenichiobata/src/llm_trainining/spark_history_logs" > /tmp/spark-history.conf
 ```
 
+Check hadoop aws version for direct S3 files access
+```
+ ls | grep hadoop
+```
+ex) sample output
+hadoop-client-api-3.4.2.jar
+=> then version is 3.4.2
+
+Download hadoop aws for direct S3 files access
+```
+curl -O https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.4.2/hadoop-aws-3.4.2.jar
+curl -O https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.367/aws-java-sdk-bundle-1.12.367.jar
+```
+#### After one time setup is done:
 Start history server
 ```
 $SPARK_HOME/sbin/start-history-server.sh --properties-file /tmp/spark-history.conf
