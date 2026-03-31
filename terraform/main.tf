@@ -69,6 +69,12 @@ variable "scripts_bucket" {
   default     = "text-deduplication" 
 }
 
+variable "text_dedupe_benchmark_bucket" {
+  description = "S3 bucket for cached data and persisted spark history server"
+  type        = string
+  default     = "text-dedupe-benchmark"
+}
+
 variable "region" {
   description = "AWS region"
   type        = string
