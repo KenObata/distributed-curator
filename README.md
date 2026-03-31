@@ -547,6 +547,47 @@ yarn logs -applicationId <app_id> -am 1
 ```
 where am means application manager and number means attempt.
 
+
+### How to view downloaded spark history server locally
+```
+export SPARK_HISTORY_OPTS="-Dspark.history.fs.logDirectory=file:///Users/kenichiobata/src/llm_trainining/spark-history-logs"
+```
+
+set SPARK_HOME
+```
+export SPARK_HOME=/opt/homebrew/Cellar/apache-spark/4.1.1/libexec
+```
+
+Create config file
+```
+echo "spark.history.fs.logDirectory file:///Users/kenichiobata/src/llm_trainining/spark_history_logs" > /tmp/spark-history.conf
+```
+
+Start history server
+```
+$SPARK_HOME/sbin/start-history-server.sh --properties-file /tmp/spark-history.conf
+```
+
+Stop when it's done
+```
+$SPARK_HOME/sbin/stop-history-server.sh
+```
+
+If history server log is too large, then
+# Stop current server
+$SPARK_HOME/sbin/stop-history-server.sh
+
+# Start with more memory (4GB heap)
+```
+SPARK_DAEMON_MEMORY=4g $SPARK_HOME/sbin/start-history-server.sh --properties-file /tmp/spark-history.conf
+```
+
+Make sure your spark history log shows this before downloading
+```
+yarn application -status <app_id> | grep "Final-State"
+```
+Should show: Final-State : SUCCEEDED
+
 ## pyspark common errors
 
 - suddenly application shutdown manager was called.
