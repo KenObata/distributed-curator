@@ -75,6 +75,13 @@ variable "text_dedupe_benchmark_bucket" {
   default     = "text-dedupe-benchmark"
 }
 
+resource "aws_s3_object" "spark_history_dir" {
+  bucket       = var.text_dedupe_benchmark_bucket
+  key          = "spark-history/"
+  content_type = "application/x-directory"
+  content      = ""
+}
+
 variable "region" {
   description = "AWS region"
   type        = string

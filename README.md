@@ -139,16 +139,6 @@ vpc_id         = "vpc-xxxxxx"             # Your VPC ID
 scripts_bucket = ""        # Your S3 bucket name
 ```
 
-upon succes, you should see terminal output:
-cluster_id = "j-xxxx"
-master_public_dns = "ec2-xx-xxx-xxx-xx.compute-1.amazonaws.com"
-private_key_file = "./emr-dedupe-key.pem"
-private_key_pem = <sensitive>
-spark_submit_example = "spark-submit --master yarn --deploy-mode cluster s3://text-deduplication/scripts/deduplication_benchmark.py"
-spark_ui_url = "http://ec2-34-203-229-18.compute-1.amazonaws.com:4040"
-ssh_command = "ssh -i ./emr-dedupe-key.pem hadoop@ec2-34-203-229-18.compute-1.amazonaws.com"
-yarn_ui_url = "http://ec2-34-203-229-18.compute-1.amazonaws.com:8088"
-
 Step2:
 then run these
 ```
@@ -170,47 +160,6 @@ Step4: Exit ssh, and on your macbook, install YARN(8088), Spark UI (4040)
 Find YAN host name - run
 ```
 hostname -f
-```
-Static port forwarding
-```
-ssh -i ./emr-dedupe-key.pem \
-  -L 8088:localhost:8088 \
-  -L 18080:localhost:18080 \
-  -L 8042:localhost:8042 \
-  -L 19888:localhost:19888 \
-  -L 18080:localhost:18080 \
-  -L 20888:ip-172-31-38-47.ec2.internal:20888 \
-  -L 4040:<EMR driver (master node) hostname>:4040 \
-  hadoop@<master-public-dns>
-```
-
-where 
-- NodeManager: http://localhost:8042
-- Job History: http://localhost:19888
-- History Server http://localhost:18080/
-- YAN Cluster mode's Spark UI
-    - How to view UI: http://localhost:20888/proxy/application_xxx/
-
-Dynamic port forwarding
-```
-ssh -i ./emr-dedupe-key.pem \
-  -D 18080 \
-  hadoop@<master-public-dns>
-```
-
-where The -D flag only takes a port number, not a host:port mapping.
-
-after this, on your macbook, run
-```
-/Applications/Google\ Chrome.app//Contents/MacOS/Google\ Chrome --proxy-server="socks5://localhost:8080"
-```
-
-
-
-or
-
-```
-yarn application -list
 ```
 
 Step5: setup YARN
@@ -549,6 +498,16 @@ where am means application manager and number means attempt.
 
 
 ### How to view downloaded spark history server locally
+
+#### One time setup
+```
+cat > /tmp/spark-history-s3.conf << 'EOF'
+spark.history.fs.logDirectory s3a://text-dedupe-benchmark/spark-history/
+spark.hadoop.fs.s3a.aws.credentials.provider com.amazonaws.auth.DefaultAWSCredentialsProviderChain
+EOF
+```
+aws sts get-caller-identity
+
 ```
 export SPARK_HISTORY_OPTS="-Dspark.history.fs.logDirectory=file:///Users/kenichiobata/src/llm_trainining/spark-history-logs"
 ```
@@ -563,12 +522,9 @@ Create config file
 echo "spark.history.fs.logDirectory file:///Users/kenichiobata/src/llm_trainining/spark_history_logs" > /tmp/spark-history.conf
 ```
 
-Start history server
-```
-$SPARK_HOME/sbin/start-history-server.sh --properties-file /tmp/spark-history.conf
-```
+#### After one time setup is done:
 
-Stop when it's done
+Stop/restart when it's done
 ```
 $SPARK_HOME/sbin/stop-history-server.sh
 ```
@@ -577,6 +533,10 @@ If history server log is too large, then
 # Stop current server
 $SPARK_HOME/sbin/stop-history-server.sh
 
+Download history server files
+```
+aws s3 sync s3://text-dedupe-benchmark/spark-history/ ~/src/llm_trainining/spark_history_logs/
+```
 # Start with more memory (4GB heap)
 ```
 SPARK_DAEMON_MEMORY=4g $SPARK_HOME/sbin/start-history-server.sh --properties-file /tmp/spark-history.conf
