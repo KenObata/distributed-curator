@@ -19,7 +19,7 @@ terraform {
 }
 
 provider "aws" {
-  region = "us-east-1"  # Same region as Common Crawl for no data transfer costs
+  region = "us-east-1" # Same region as Common Crawl for no data transfer costs
 }
 
 # Variables
@@ -66,7 +66,7 @@ variable "vpc_id" {
 variable "scripts_bucket" {
   description = "S3 bucket for scripts and bootstrap actions"
   type        = string
-  default     = "text-deduplication" 
+  default     = "text-deduplication"
 }
 
 variable "text_dedupe_benchmark_bucket" {
@@ -99,7 +99,7 @@ resource "aws_security_group" "emr_master" { # master means spark driver
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]  # Restrict to your IP in production
+    cidr_blocks = ["0.0.0.0/0"] # Restrict to your IP in production
   }
 
   # Spark History Server - commented out due to EMR security restrictions
@@ -388,7 +388,7 @@ resource "aws_iam_role_policy" "emr_ec2_default_s3_access" {
 
 # S3 bucket for scripts and data (name must be globally unique)
 resource "aws_s3_bucket" "scripts_bucket" {
-  bucket = "${var.scripts_bucket}-${data.aws_caller_identity.current.account_id}"
+  bucket        = "${var.scripts_bucket}-${data.aws_caller_identity.current.account_id}"
   force_destroy = true # destroy including existing S3 files
 }
 
@@ -400,7 +400,7 @@ resource "time_sleep" "wait_for_bucket" {
 
 # S3 bucket for logs
 resource "aws_s3_bucket" "emr_logs" {
-  bucket = "${var.scripts_bucket}-emr-logs-${data.aws_caller_identity.current.account_id}"
+  bucket        = "${var.scripts_bucket}-emr-logs-${data.aws_caller_identity.current.account_id}"
   force_destroy = true
 }
 
@@ -455,8 +455,8 @@ resource "aws_s3_object" "bootstrap_script" {
 resource "aws_s3_object" "requirements" {
   bucket = aws_s3_bucket.scripts_bucket.id
   key    = "scripts/requirements.txt"
-  source = "${path.module}/requirements.txt"  # Local file path
-  
+  source = "${path.module}/requirements.txt" # Local file path
+
   depends_on = [time_sleep.wait_for_bucket]
 }
 
@@ -465,7 +465,7 @@ resource "aws_s3_object" "dedup_script" {
   bucket = aws_s3_bucket.scripts_bucket.id
   key    = "scripts/spark_partition_aware_deduplicattion_v2.py"
   source = "${path.module}/${var.scripts_source_src_dir}/spark_partition_aware_deduplicattion_v2.py"
-  
+
   depends_on = [time_sleep.wait_for_bucket]
 }
 
@@ -473,7 +473,7 @@ resource "aws_s3_object" "scala_script" {
   bucket = aws_s3_bucket.scripts_bucket.id
   key    = "scripts/minhash-udf_2.12-0.1.jar"
   source = "${path.module}/${var.scripts_source_scala_dir}/minhash-udf_2.12-0.1.jar"
-  
+
   depends_on = [time_sleep.wait_for_bucket]
 }
 
@@ -482,7 +482,7 @@ resource "aws_s3_object" "integration_test_script" {
   bucket = aws_s3_bucket.scripts_bucket.id
   key    = "scripts/spark_deduplication_test.py"
   source = "${path.module}/${var.scripts_source_test_dir}/integration_test/spark_deduplication_test.py"
-  
+
   depends_on = [time_sleep.wait_for_bucket]
 }
 
@@ -512,7 +512,7 @@ variable "instance_strategy" {
   description = "Instance strategy: 'spot' for mixed spot/on-demand, 'on-demand' for all on-demand"
   type        = string
   default     = "spot"
-  
+
   validation {
     condition     = contains(["spot", "on-demand"], var.instance_strategy)
     error_message = "Instance strategy must be either 'spot' or 'on-demand'."
@@ -523,7 +523,7 @@ variable "bid_strategy" {
   description = "Bid strategy: 'default' for optimized pricing, 'peak-event' for maximum availability during high-demand periods"
   type        = string
   default     = "default"
-  
+
   validation {
     condition     = contains(["default", "peak-event"], var.bid_strategy)
     error_message = "Bid strategy must be either 'default' or 'peak-event'."
@@ -533,7 +533,7 @@ variable "bid_strategy" {
 variable "wet_file_scale" {
   description = "WET file processing scale: '1' for validation only, '100' for 100 files, '1k' for 1,000 files, '9k' for 9,000 files, '90k' for 90,000 files"
   type        = string
-  default     = "1k"
+  default     = "1"
 
   validation {
     condition     = contains(["1", "100", "1k", "9k", "90k"], var.wet_file_scale)
@@ -545,38 +545,38 @@ variable "wet_file_scale" {
 locals {
   scale_configs = {
     "1" = {
-      instance_type    = "m5a.xlarge"  # 4 vCPU, 16 GB - for validating EMR, not running application
-      on_demand_spot   = { on_demand = 1, spot = 0 }
-      on_demand_only   = { on_demand = 1, spot = 0 }
+      instance_type  = "m5a.xlarge" # 4 vCPU, 16 GB - for validating EMR, not running application
+      on_demand_spot = { on_demand = 1, spot = 0 }
+      on_demand_only = { on_demand = 1, spot = 0 }
     }
     "100" = {
-      instance_type    = "r5.2xlarge"
-      on_demand_spot   = { on_demand = 2, spot = 2 }
-      on_demand_only   = { on_demand = 4, spot = 0 }
+      instance_type  = "r5.2xlarge"
+      on_demand_spot = { on_demand = 2, spot = 2 }
+      on_demand_only = { on_demand = 4, spot = 0 }
     }
     "1k" = {
-      instance_type    = "r5ad.8xlarge"
-      on_demand_spot   = { on_demand = 2, spot = 2 }
-      on_demand_only   = { on_demand = 9, spot = 0 }
+      instance_type  = "r5ad.8xlarge"
+      on_demand_spot = { on_demand = 2, spot = 2 }
+      on_demand_only = { on_demand = 9, spot = 0 }
     }
     "9k" = {
-       instance_type    = "r5ad.8xlarge"  # 32 vCores, 256 GB, 2×600 GB NVMe (most available)
-       on_demand_spot   = { on_demand = 9, spot = 0 }   # Capacity units: 9 instances × 1 unit = 9
-       on_demand_only   = { on_demand = 9, spot = 0 }   # Capacity units: 9 instances × 1 unit = 9
+      instance_type  = "r5ad.8xlarge"              # 32 vCores, 256 GB, 2×600 GB NVMe (most available)
+      on_demand_spot = { on_demand = 9, spot = 0 } # Capacity units: 9 instances × 1 unit = 9
+      on_demand_only = { on_demand = 9, spot = 0 } # Capacity units: 9 instances × 1 unit = 9
     }
     "90k" = {
-      instance_type    = "r5ad.8xlarge"  # 32 vCores, 256 GB, 2×600 GB NVMe (same as 9k for availability)
-      on_demand_spot   = { on_demand = 64, spot = 62 }   # Capacity units: 32 instances × 2 units = 64, 31 instances × 2 = 62
-      on_demand_only   = { on_demand = 126, spot = 0 }   # Capacity units: 63 instances × 2 units = 126 (2,016 vCPU)
+      instance_type  = "r5ad.8xlarge"                # 32 vCores, 256 GB, 2×600 GB NVMe (same as 9k for availability)
+      on_demand_spot = { on_demand = 64, spot = 62 } # Capacity units: 32 instances × 2 units = 64, 31 instances × 2 = 62
+      on_demand_only = { on_demand = 126, spot = 0 } # Capacity units: 63 instances × 2 units = 126 (2,016 vCPU)
     }
   }
-  
+
   selected_config = local.scale_configs[var.wet_file_scale]
   capacity_config = var.instance_strategy == "on-demand" ? local.selected_config.on_demand_only : local.selected_config.on_demand_spot
 }
 
 resource "aws_emr_cluster" "dedup_cluster" {
-  name          = var.cluster_name
+  name          = "${var.cluster_name}-${var.wet_file_scale}"
   release_label = "emr-7.12.0"
   applications  = ["Spark", "Hadoop", "Hive", "JupyterEnterpriseGateway", "Livy"]
 
@@ -584,7 +584,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
   service_role = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/EMR_DefaultRole"
 
   ec2_attributes {
-    subnet_ids                        = var.subnet_ids  # Multi-AZ support for better capacity availability
+    subnet_ids = var.subnet_ids # Multi-AZ support for better capacity availability
     # emr_managed_master_security_group = aws_security_group.emr_master.id # let EMR manage its own security
     # emr_managed_slave_security_group  = aws_security_group.emr_core.id # let EMR manage its own security
     instance_profile                  = "arn:aws:iam::740959772378:instance-profile/EMR_EC2_DefaultRole"
@@ -596,11 +596,11 @@ resource "aws_emr_cluster" "dedup_cluster" {
   master_instance_fleet {
     name = "Primary"
 
-    target_on_demand_capacity = 1  # On-demand for stability
-    target_spot_capacity      = 0  # No spot for master
+    target_on_demand_capacity = 1 # On-demand for stability
+    target_spot_capacity      = 0 # No spot for master
 
     instance_type_configs {
-      instance_type     = var.wet_file_scale == "1" ? "m5a.xlarge" : "r5.xlarge"  # Cheaper for validation
+      instance_type     = var.wet_file_scale == "1" ? "m5a.xlarge" : "r5.xlarge" # Cheaper for validation
       weighted_capacity = 1
 
       ebs_config {
@@ -615,16 +615,16 @@ resource "aws_emr_cluster" "dedup_cluster" {
   # Core nodes - Mixed spot/on-demand for reliability
   core_instance_fleet {
     name = "Core"
-    
+
     target_on_demand_capacity = local.capacity_config.on_demand
     target_spot_capacity      = local.capacity_config.spot
-    
+
     # Primary choice - dynamically selected based on scale
     instance_type_configs {
       instance_type     = local.selected_config.instance_type
-      weighted_capacity = var.wet_file_scale == "90k" ? 2 : 1  # 8xlarge: 2 units for 90k, 1 unit for 9k and smaller
+      weighted_capacity = var.wet_file_scale == "90k" ? 2 : 1 # 8xlarge: 2 units for 90k, 1 unit for 9k and smaller
 
-      bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80  # Peak events need 100%
+      bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80 # Peak events need 100%
 
       ebs_config {
         size                 = 100
@@ -633,18 +633,18 @@ resource "aws_emr_cluster" "dedup_cluster" {
         volumes_per_instance = 1
       }
     }
-    
+
     # Fallbacks for 1k scale - maintain 128 cores with proper weighted capacity
-    
+
     # Larger instance fallbacks - fewer instances for same 128 cores
     dynamic "instance_type_configs" {
       for_each = var.wet_file_scale == "1k" ? [1] : []
       content {
         instance_type     = "r5d.8xlarge"
         weighted_capacity = 1
-        
+
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
-        
+
         ebs_config {
           size                 = 100
           type                 = "gp3"
@@ -653,15 +653,15 @@ resource "aws_emr_cluster" "dedup_cluster" {
         }
       }
     }
-    
+
     dynamic "instance_type_configs" {
       for_each = var.wet_file_scale == "1k" ? [1] : []
       content {
-        instance_type     = "r6id.8xlarge"  # Same as r6i + 1x 1900GB NVMe SSD
+        instance_type     = "r6id.8xlarge" # Same as r6i + 1x 1900GB NVMe SSD
         weighted_capacity = 1
-        
+
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 75
-        
+
         # Small EBS for OS/logs - shuffle data goes to NVMe (/mnt, /mnt1) instead of EBS automatically
         ebs_config {
           size                 = 100
@@ -671,16 +671,16 @@ resource "aws_emr_cluster" "dedup_cluster" {
         }
       }
     }
-    
+
     # Fallbacks for 100 scale only
     dynamic "instance_type_configs" {
       for_each = var.wet_file_scale == "100" ? [1] : []
       content {
         instance_type     = "r5ad.2xlarge"
         weighted_capacity = 1
-        
+
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 85
-        
+
         ebs_config {
           size                 = 100
           type                 = "gp3"
@@ -695,9 +695,9 @@ resource "aws_emr_cluster" "dedup_cluster" {
       content {
         instance_type     = "r6id.2xlarge"
         weighted_capacity = 1
-        
+
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 85
-        
+
         ebs_config {
           size                 = 100
           type                 = "gp3"
@@ -706,15 +706,15 @@ resource "aws_emr_cluster" "dedup_cluster" {
         }
       }
     }
-    
+
     dynamic "instance_type_configs" {
       for_each = var.wet_file_scale == "100" ? [1] : []
       content {
         instance_type     = "r6gd.2xlarge"
-        weighted_capacity = 1  # ARM alternative to r5.2xlarge
-        
+        weighted_capacity = 1 # ARM alternative to r5.2xlarge
+
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 75
-        
+
         ebs_config {
           size                 = 100
           type                 = "gp3"
@@ -723,14 +723,14 @@ resource "aws_emr_cluster" "dedup_cluster" {
         }
       }
     }
-    
+
     # For 9k/90k scale - NVMe-only fallbacks prioritizing availability (smaller = more available)
     # 9k:  Primary: 9× r5ad.8xlarge (288 vCPU), 1 unit each
     # 90k: Primary: 63× r5ad.8xlarge (2,016 vCPU), 2 units each
     dynamic "instance_type_configs" {
       for_each = contains(["9k", "90k"], var.wet_file_scale) ? [1] : []
       content {
-        instance_type     = "r5d.8xlarge"  # 32 vCPU, Intel, 2×600GB NVMe
+        instance_type     = "r5d.8xlarge" # 32 vCPU, Intel, 2×600GB NVMe
         weighted_capacity = var.wet_file_scale == "90k" ? 2 : 1
 
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
@@ -747,7 +747,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
     dynamic "instance_type_configs" {
       for_each = contains(["9k", "90k"], var.wet_file_scale) ? [1] : []
       content {
-        instance_type     = "r6id.8xlarge"  # 32 vCPU, newer Intel, 2×950GB NVMe
+        instance_type     = "r6id.8xlarge" # 32 vCPU, newer Intel, 2×950GB NVMe
         weighted_capacity = var.wet_file_scale == "90k" ? 2 : 1
 
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
@@ -764,7 +764,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
     dynamic "instance_type_configs" {
       for_each = contains(["9k", "90k"], var.wet_file_scale) ? [1] : []
       content {
-        instance_type     = "r6gd.8xlarge"  # 32 vCPU, Graviton ARM, 1×1900GB NVMe (highly available)
+        instance_type     = "r6gd.8xlarge" # 32 vCPU, Graviton ARM, 1×1900GB NVMe (highly available)
         weighted_capacity = var.wet_file_scale == "90k" ? 2 : 1
 
         bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
@@ -777,7 +777,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
         }
       }
     }
-    
+
   }
 
   bootstrap_action {
@@ -791,48 +791,48 @@ resource "aws_emr_cluster" "dedup_cluster" {
     {
       Classification = "spark-defaults"
       Properties = {
-        "spark.default.parallelism"        = "2000"
-        "spark.memory.fraction"            = "0.8"
-        "spark.memory.storageFraction"     = "0.3"
-        "spark.serializer"                 = "org.apache.spark.serializer.KryoSerializer"
-        "spark.kryoserializer.buffer.max"  = "1024m"
-        "spark.driver.memory"              = "12g"
-        "spark.executor.memory"            = "12g"
-        "spark.executor.cores"             = "4"
-        "spark.dynamicAllocation.enabled"  = "false"
-        "spark.sql.adaptive.enabled"       = "true"
+        "spark.default.parallelism"       = "2000"
+        "spark.memory.fraction"           = "0.8"
+        "spark.memory.storageFraction"    = "0.3"
+        "spark.serializer"                = "org.apache.spark.serializer.KryoSerializer"
+        "spark.kryoserializer.buffer.max" = "1024m"
+        "spark.driver.memory"             = "12g"
+        "spark.executor.memory"           = "12g"
+        "spark.executor.cores"            = "4"
+        "spark.dynamicAllocation.enabled" = "false"
+        "spark.sql.adaptive.enabled"      = "true"
 
-        "spark.sql.catalog.glue_catalog": "org.apache.iceberg.spark.SparkCatalog",
-        
+        "spark.sql.catalog.glue_catalog" : "org.apache.iceberg.spark.SparkCatalog",
+
         # "spark.eventLog.dir": "hdfs:///var/log/spark/apps", # moved logs from hdfs to S3
         # "spark.history.fs.logDirectory": "hdfs:///var/log/spark/apps",
 
-        "spark.eventLog.enabled": "true",
-        "spark.eventLog.dir": "s3://${var.text_dedupe_benchmark_bucket}/spark-history/",
-        "spark.eventLog.compress": "true",
-        "spark.eventLog.compression.codec": "zstd",
-        "spark.history.fs.logDirectory": "s3://${var.text_dedupe_benchmark_bucket}/spark-history/"
+        "spark.eventLog.enabled" : "true",
+        "spark.eventLog.dir" : "s3://${var.text_dedupe_benchmark_bucket}/spark-history/",
+        "spark.eventLog.compress" : "true",
+        "spark.eventLog.compression.codec" : "zstd",
+        "spark.history.fs.logDirectory" : "s3://${var.text_dedupe_benchmark_bucket}/spark-history/"
       }
-    },   
+    },
     {
       Classification = "yarn-site"
       Properties = {
-        "yarn.nodemanager.vmem-check-enabled" = "false"
-        "yarn.nodemanager.pmem-check-enabled" = "false"
-        "yarn.nodemanager.aux-services" = "mapreduce_shuffle,spark_shuffle"
+        "yarn.nodemanager.vmem-check-enabled"               = "false"
+        "yarn.nodemanager.pmem-check-enabled"               = "false"
+        "yarn.nodemanager.aux-services"                     = "mapreduce_shuffle,spark_shuffle"
         "yarn.nodemanager.aux-services.spark_shuffle.class" = "org.apache.spark.network.yarn.YarnShuffleService"
-        "yarn.nodemanager.local-dirs": "/mnt1/yarn,/mnt2/yarn"
-        "yarn.nodemanager.log-dirs": "/mnt1/yarn/logs,/mnt2/yarn/logs"
+        "yarn.nodemanager.local-dirs" : "/mnt1/yarn,/mnt2/yarn"
+        "yarn.nodemanager.log-dirs" : "/mnt1/yarn/logs,/mnt2/yarn/logs"
       }
     },
     {
       Classification = "spark-env"
-      Properties = {}
+      Properties     = {}
       Configurations = [
         {
           Classification = "export"
           Properties = {
-            "PYSPARK_PYTHON" = "/usr/bin/python3"
+            "PYSPARK_PYTHON"      = "/usr/bin/python3"
             "SPARK_DAEMON_MEMORY" = "4g"
           }
         }
@@ -840,9 +840,9 @@ resource "aws_emr_cluster" "dedup_cluster" {
     },
     # ICEBERG setting
     {
-      "Classification": "iceberg-defaults",
-      "Properties": {
-        "iceberg.enabled": "true"
+      "Classification" : "iceberg-defaults",
+      "Properties" : {
+        "iceberg.enabled" : "true"
       }
     }
   ])
@@ -851,10 +851,10 @@ resource "aws_emr_cluster" "dedup_cluster" {
 
   # Enable CloudWatch logging
   log_encryption_kms_key_id = null
-  
+
   # Step concurrency (optional - allows multiple steps)
   step_concurrency_level = 1
-  
+
   # Keep cluster running (set to true for step execution)
   keep_job_flow_alive_when_no_steps = true
 

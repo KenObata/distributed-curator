@@ -172,10 +172,15 @@ if $HAS_TERRAFORM; then
     if command -v terraform &>/dev/null; then
         printf "  Running terraform fmt check ...\n"
 
+        # Phase 1: auto-fix silently, then re-stage
         # -check: Dry run and emit messages if any format is wrong.
         # no -check will auto fix. exit code 0
-        run_step "terraform" "terraform fmt -check -recursive" \
-                 "terraform fmt -recursive" "$STAGED_TERRAFORM"
+        # stderr > stdout
+        terraform fmt -recursive terraform/ 2>&1 | tail -20 || true
+        git add $STAGED_TERRAFORM
+
+        # run_step sets FAILED=1 when the command exits non-zero, which blocks the commit
+        run_step "terraform fmt" terraform fmt -check -recursive terraform/
     else
         printf "  ${SKIP} terraform not found — skipping terraform fmt\n"
     fi
