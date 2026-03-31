@@ -522,26 +522,9 @@ Create config file
 echo "spark.history.fs.logDirectory file:///Users/kenichiobata/src/llm_trainining/spark_history_logs" > /tmp/spark-history.conf
 ```
 
-Check hadoop aws version for direct S3 files access
-```
- ls | grep hadoop
-```
-ex) sample output
-hadoop-client-api-3.4.2.jar
-=> then version is 3.4.2
-
-Download hadoop aws for direct S3 files access
-```
-curl -O https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.4.2/hadoop-aws-3.4.2.jar
-curl -O https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.367/aws-java-sdk-bundle-1.12.367.jar
-```
 #### After one time setup is done:
-Start history server
-```
-$SPARK_HOME/sbin/start-history-server.sh --properties-file /tmp/spark-history.conf
-```
 
-Stop when it's done
+Stop/restart when it's done
 ```
 $SPARK_HOME/sbin/stop-history-server.sh
 ```
@@ -550,6 +533,10 @@ If history server log is too large, then
 # Stop current server
 $SPARK_HOME/sbin/stop-history-server.sh
 
+Download history server files
+```
+aws s3 sync s3://text-dedupe-benchmark/spark-history/ ~/src/llm_trainining/spark_history_logs/
+```
 # Start with more memory (4GB heap)
 ```
 SPARK_DAEMON_MEMORY=4g $SPARK_HOME/sbin/start-history-server.sh --properties-file /tmp/spark-history.conf
