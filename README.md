@@ -501,14 +501,6 @@ where am means application manager and number means attempt.
 
 #### One time setup
 ```
-cat > /tmp/spark-history-s3.conf << 'EOF'
-spark.history.fs.logDirectory s3a://text-dedupe-benchmark/spark-history/
-spark.hadoop.fs.s3a.aws.credentials.provider com.amazonaws.auth.DefaultAWSCredentialsProviderChain
-EOF
-```
-aws sts get-caller-identity
-
-```
 export SPARK_HISTORY_OPTS="-Dspark.history.fs.logDirectory=file:///Users/kenichiobata/src/llm_trainining/spark-history-logs"
 ```
 
@@ -524,22 +516,14 @@ echo "spark.history.fs.logDirectory file:///Users/kenichiobata/src/llm_traininin
 
 #### After one time setup is done:
 
-Stop/restart when it's done
+Stop/restart when it's done or you want to start fresh
 ```
 $SPARK_HOME/sbin/stop-history-server.sh
 ```
-
-If history server log is too large, then
-# Stop current server
-$SPARK_HOME/sbin/stop-history-server.sh
 
 Download history server files
 ```
 aws s3 sync s3://text-dedupe-benchmark/spark-history/ ~/src/llm_trainining/spark_history_logs/
-```
-# Start with more memory (4GB heap)
-```
-SPARK_DAEMON_MEMORY=4g $SPARK_HOME/sbin/start-history-server.sh --properties-file /tmp/spark-history.conf
 ```
 
 Make sure your spark history log shows this before downloading
@@ -547,6 +531,12 @@ Make sure your spark history log shows this before downloading
 yarn application -status <app_id> | grep "Final-State"
 ```
 Should show: Final-State : SUCCEEDED
+
+
+# Start runnign history server with more memory (4GB heap)
+```
+SPARK_DAEMON_MEMORY=4g $SPARK_HOME/sbin/start-history-server.sh --properties-file /tmp/spark-history.conf
+```
 
 ## pyspark common errors
 
