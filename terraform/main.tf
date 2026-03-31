@@ -785,11 +785,17 @@ resource "aws_emr_cluster" "dedup_cluster" {
         "spark.sql.adaptive.enabled"       = "true"
 
         "spark.sql.catalog.glue_catalog": "org.apache.iceberg.spark.SparkCatalog",
+        
+        # "spark.eventLog.dir": "hdfs:///var/log/spark/apps", # moved logs from hdfs to S3
+        # "spark.history.fs.logDirectory": "hdfs:///var/log/spark/apps",
+
         "spark.eventLog.enabled": "true",
-        "spark.eventLog.dir": "hdfs:///var/log/spark/apps",
-        "spark.history.fs.logDirectory": "hdfs:///var/log/spark/apps"
+        "spark.eventLog.dir": "s3://${var.text_dedupe_benchmark_bucket}/spark-history/",
+        "spark.eventLog.compress": "true",
+        "spark.eventLog.compression.codec": "zstd",
+        "spark.history.fs.logDirectory": "s3://${var.text_dedupe_benchmark_bucket}/spark-history/"
       }
-    },
+    },   
     {
       Classification = "yarn-site"
       Properties = {
