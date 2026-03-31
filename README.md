@@ -33,25 +33,12 @@ pip install graphframes
 ```
 graphframes is because on EMR, it's passed as --packages.
 
-# Run Spark locally with 4GB RAM
-
-Note that development is an argument.
-Choose from development, validation, production_proof, scale_proof
-
-if you run this locally, ```cp src/cython_minhash/shingle_hash*.so venv/lib/python3.13/site-packages/``` first
-```
-spark-submit --driver-memory 4g --executor-memory 4g \
---packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
---jars ../../target/scala-2.12/minhash-udf_2.12-0.1.jar \
---py-files ../../src/spark_partition_aware_deduplicattion_v2.py,../../src/spark_utils.py,../../src/udf.py,../../src/shingle_hash_wrapper.py  ../../test/integration_test/spark_deduplication_test.py development
-```
-- spark_deduplication.py - Complete implementation for web-scale deduplication
-- common_crawl_explorer.py: PoC
 
 ### Check common crawl file with curl
 ```
 curl -I https://data.commoncrawl.org/crawl-data/CC-MAIN-2024-22/segments/1715971057216.39/wet/CC-MAIN-20240517233122-20240518023122-00000.warc.wet.gz | head -n 10
 ```
+
 # How to use this library
 setup
 ```
@@ -65,44 +52,10 @@ from spark_llm_dedup import deduplicate_corpus
 deduplicate_corpus("s3://common-crawl/", threshold=0.8)
 ```
 
-Next, run partition aware text de-duplication
-```
-spark-submit \
-  --master yarn \
-  --deploy-mode cluster \
-  --driver-memory 8g \
-  --executor-memory 16g \
-  --num-executors 10 \
-  --conf spark.sql.shuffle.partitions=450 \
-  spark_partition_aware_deduplicattion_v2.py development
-```
-Or run it on a single machine
-```
-spark-submit --driver-memory 4g --executor-memory 4g test/integration_test/spark_deduplication_test.py
-```
-
 
 # How to unit/integration test
-
-## Unit Test
-```
-pytest --log-cli-level=INFO test/spark_partition_aware_deduplicattion_v2_unit_test.py::TestDocumentSimilarity -v
-```
-
-## Integration Test
-
-Run only a sample
-```
-pytest --log-cli-level=INFO test/spark_partition_aware_deduplicattion_v2_integration_test.py::test_integration_small_samples -s
-```
-
-Run only a specific test
-```
-pytest --log-cli-level=INFO test/spark_partition_aware_deduplicattion_v2_integration_test.py::test_integration_commoncrawl_sample -s
-```
-
-## local UI monitoring
-http://192.168.100.130:4040/
+Every thing is part of pre-commit. But if you want to run test manually,
+run ```pytest``` and ```sbt test```
 
 # Terraform
 Note ethat terraform init will create .terraform.locl.hcl file 
