@@ -538,6 +538,12 @@ Should show: Final-State : SUCCEEDED
 SPARK_DAEMON_MEMORY=4g $SPARK_HOME/sbin/start-history-server.sh --properties-file /tmp/spark-history.conf
 ```
 
+On EMR, now we need
+```
+export SPARK_HISTORY_OPTS="$SPARK_HISTORY_OPTS -Dspark.history.fs.logDirectory=s3a://text-dedupe-benchmark/spark-history/"
+export HADOOP_CLASSPATH="/usr/lib/hadoop/share/hadoop/tools/lib/*:$HADOOP_CLASSPATH"
+```
+
 ## pyspark common errors
 
 - suddenly application shutdown manager was called.

@@ -531,19 +531,24 @@ variable "bid_strategy" {
 }
 
 variable "wet_file_scale" {
-  description = "WET file processing scale: '100' for 100 files, '1k' for 1,000 files, '9k' for 9,000 files, '90k' for 90,000 files"
+  description = "WET file processing scale: '1' for validation only, '100' for 100 files, '1k' for 1,000 files, '9k' for 9,000 files, '90k' for 90,000 files"
   type        = string
   default     = "1k"
-  
+
   validation {
-    condition     = contains(["100", "1k", "9k", "90k"], var.wet_file_scale)
-    error_message = "WET file scale must be '100', '1k', '9k', or '90k'."
+    condition     = contains(["1", "100", "1k", "9k", "90k"], var.wet_file_scale)
+    error_message = "WET file scale must be '1', '100', '1k', '9k', or '90k'."
   }
 }
 
 # Scale-specific configurations
 locals {
   scale_configs = {
+    "1" = {
+      instance_type    = "m5a.xlarge"  # 4 vCPU, 16 GB - for validating EMR, not running application
+      on_demand_spot   = { on_demand = 1, spot = 0 }
+      on_demand_only   = { on_demand = 1, spot = 0 }
+    }
     "100" = {
       instance_type    = "r5.2xlarge"
       on_demand_spot   = { on_demand = 2, spot = 2 }
@@ -590,14 +595,14 @@ resource "aws_emr_cluster" "dedup_cluster" {
   # Primary (Master) node - On-Demand
   master_instance_fleet {
     name = "Primary"
-    
+
     target_on_demand_capacity = 1  # On-demand for stability
     target_spot_capacity      = 0  # No spot for master
-    
+
     instance_type_configs {
-      instance_type     = "r5.xlarge"
+      instance_type     = var.wet_file_scale == "1" ? "m5a.xlarge" : "r5.xlarge"  # Cheaper for validation
       weighted_capacity = 1
-      
+
       ebs_config {
         size                 = 100
         type                 = "gp3"
