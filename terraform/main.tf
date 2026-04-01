@@ -849,10 +849,9 @@ resource "aws_emr_cluster" "dedup_cluster" {
               But the History Server daemon doesn't use that classpath by default,
                which is why the explicit SPARK_DAEMON_CLASSPATH is needed.
 
-              $$(ls ...) 's double $ is Terraform escaping for a literal
-              — it renders as $(ls ...) in the actual config. evaluated at startup
             */
-            "SPARK_DAEMON_CLASSPATH" = "$$(ls /usr/share/aws/emr/emrfs/lib/emrfs-hadoop-assembly-*)"
+            "SPARK_DAEMON_CLASSPATH" = "/usr/lib/hadoop/hadoop-aws.jar:/usr/share/aws/aws-java-sdk/aws-java-sdk-bundle-1.12.792.jar:/usr/share/aws/aws-java-sdk-v2/aws-sdk-java-bundle-2.35.5.jar"
+            # 
           }
         }
       ]

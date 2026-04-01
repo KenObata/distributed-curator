@@ -450,7 +450,7 @@ yarn logs -applicationId <app_id> -am 1
 where am means application manager and number means attempt.
 
 
-### How to view downloaded spark history server locally
+## How to view downloaded spark history server locally
 
 #### One time setup
 ```
@@ -486,16 +486,16 @@ yarn application -status <app_id> | grep "Final-State"
 Should show: Final-State : SUCCEEDED
 
 
-# Start runnign history server with more memory (4GB heap)
+Start runnign history server with more memory (4GB heap)
 ```
 SPARK_DAEMON_MEMORY=4g $SPARK_HOME/sbin/start-history-server.sh --properties-file /tmp/spark-history.conf
 ```
 
-On EMR, now we need
+### On EMR, how to debug history server log
 ```
-export SPARK_HISTORY_OPTS="$SPARK_HISTORY_OPTS -Dspark.history.fs.logDirectory=s3a://text-dedupe-benchmark/spark-history/"
-export HADOOP_CLASSPATH="/usr/lib/hadoop/share/hadoop/tools/lib/*:$HADOOP_CLASSPATH"
+cat /var/log/spark/spark-history-server.out
 ```
+
 
 ## pyspark common errors
 

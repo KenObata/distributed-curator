@@ -184,6 +184,16 @@ if $HAS_TERRAFORM; then
     else
         printf "  ${SKIP} terraform not found — skipping terraform fmt\n"
     fi
+
+    # ── 2. Catch bad shell escaping in Terraform ─────────────────────────────────
+    # Terraform only interpolates ${...}, not $(...).
+    # Writing $$(  is a common mistake — it passes literal $$ to the shell.
+    # -rn: recursive and show line number if grep found matches
+
+    # bash -: When $@ expands to ! grep ..., bash tries to run ! as a command,
+    # but ! is a shell keyword, not an executable
+    run_step "terraform: no \$\$( in shell strings" \
+        bash -c  "! grep -rn --include='*.tf' --include='*.tfvars' '\$\$(' terraform/"
 fi
 
 # ==============================================================================
