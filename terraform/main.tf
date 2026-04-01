@@ -448,6 +448,10 @@ resource "aws_s3_object" "bootstrap_script" {
     SITE_PACKAGES=$(python3 -c "import site; print(site.getsitepackages()[0])")
     sudo cp shingle_hash*.so $SITE_PACKAGES/
     echo "Bootstrap complete!"
+
+    echo "Add AWS JARs to Spark classpath for S3-based History Server"
+    sudo ln -sf /usr/share/aws/aws-java-sdk/*.jar /usr/lib/spark/jars/
+    sudo ln -sf /usr/lib/hadoop/share/hadoop/tools/lib/hadoop-aws*.jar /usr/lib/spark/jars/
   EOF
 }
 
