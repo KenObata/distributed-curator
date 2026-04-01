@@ -452,6 +452,13 @@ resource "aws_s3_object" "bootstrap_script" {
     echo "Add AWS JARs to Spark classpath for S3-based History Server"
     sudo ln -sf /usr/share/aws/aws-java-sdk/*.jar /usr/lib/spark/jars/
     sudo ln -sf /usr/lib/hadoop/share/hadoop/tools/lib/hadoop-aws*.jar /usr/lib/spark/jars/
+
+    echo "Validating Spark classpath..."
+    S3A_JAR=$(find /usr/lib/spark/jars/ -name "aws-java-sdk*.jar" | head -1)
+    if [[ -z "$S3A_JAR" ]]; then
+        echo "ERROR: AWS SDK JARs not found in Spark classpath"
+        exit 1
+    fi
   EOF
 }
 
