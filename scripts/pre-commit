@@ -45,17 +45,22 @@ run_step() {
 
 # ── detect which files are staged ─────────────────────────────────────────────
 # ACM: only include files that are Added, Copied, or Modified
+# || : run the next command only if the previous one failed
 # || true — prevent set -e from killing the script if no files match
 STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM -- '*.py' || true)
 STAGED_SCALA=$(git diff --cached --name-only --diff-filter=ACM -- '*.scala' || true)
+STAGED_TERRAFORM=$(git diff --cached --name-only --diff-filter=ACM -- '*.tf' '*.tfvars' || true)
 
 HAS_PY=false
 HAS_SCALA=false
+HAS_TERRAFORM=false
+# -n: true if the string is non-empty
 [[ -n "$STAGED_PY" ]] && HAS_PY=true
 [[ -n "$STAGED_SCALA" ]] && HAS_SCALA=true
+[[ -n "$STAGED_TERRAFORM" ]] && HAS_TERRAFORM=true
 
-if ! $HAS_PY && ! $HAS_SCALA; then
-    printf "${SKIP} No Python or Scala files staged — skipping checks.\n"
+if ! $HAS_PY && ! $HAS_SCALA && ! $HAS_TERRAFORM; then
+    printf "${SKIP} No Python or Scala or Terraform files staged — skipping checks.\n"
     exit 0
 fi
 
@@ -155,6 +160,40 @@ if $HAS_SCALA; then
     else
         printf "  ${SKIP} sbt not found — skipping scalafmt\n"
     fi
+fi
+
+
+# ==============================================================================
+# terraform
+# ==============================================================================
+if $HAS_TERRAFORM; then
+    header "terraform"
+    # ── 1. Format check (terraform fmt) ───────────────────────────────────────────
+    if command -v terraform &>/dev/null; then
+        printf "  Running terraform fmt check ...\n"
+
+        # Phase 1: auto-fix silently, then re-stage
+        # -check: Dry run and emit messages if any format is wrong.
+        # no -check will auto fix. exit code 0
+        # stderr > stdout
+        terraform fmt -recursive terraform/ 2>&1 | tail -20 || true
+        git add $STAGED_TERRAFORM
+
+        # run_step sets FAILED=1 when the command exits non-zero, which blocks the commit
+        run_step "terraform fmt" terraform fmt -check -recursive terraform/
+    else
+        printf "  ${SKIP} terraform not found — skipping terraform fmt\n"
+    fi
+
+    # ── 2. Catch bad shell escaping in Terraform ─────────────────────────────────
+    # Terraform only interpolates ${...}, not $(...).
+    # Writing $$(  is a common mistake — it passes literal $$ to the shell.
+    # -rn: recursive and show line number if grep found matches
+
+    # bash -: When $@ expands to ! grep ..., bash tries to run ! as a command,
+    # but ! is a shell keyword, not an executable
+    run_step "terraform: no \$\$( in shell strings" \
+        bash -c  "! grep -rn --include='*.tf' --include='*.tfvars' '\$\$(' terraform/"
 fi
 
 # ==============================================================================
