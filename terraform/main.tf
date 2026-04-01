@@ -448,28 +448,6 @@ resource "aws_s3_object" "bootstrap_script" {
     SITE_PACKAGES=$(python3 -c "import site; print(site.getsitepackages()[0])")
     sudo cp shingle_hash*.so $SITE_PACKAGES/
     echo "Bootstrap complete!"
-
-    echo "Add AWS JARs to Spark classpath for S3-based History Server"
-    sudo ln -sf /usr/share/aws/aws-java-sdk/*.jar /usr/lib/spark/jars/
-    sudo ln -sf /usr/lib/hadoop/hadoop-aws.jar /usr/lib/spark/jars/
-
-    echo "Validating Spark classpath for S3 History Server..."
-    AWS_SDK_JAR=$(find /usr/lib/spark/jars/ -name "aws-java-sdk*.jar" | head -1)
-    HADOOP_AWS_JAR=$(find /usr/lib/spark/jars/ -name "hadoop-aws*.jar" | head -1)
-    
-    if [[ -z "$AWS_SDK_JAR" ]]; then
-        echo "ERROR: AWS SDK JARs not found in Spark classpath"
-        exit 1
-    fi
-    
-    if [[ -z "$HADOOP_AWS_JAR" ]]; then
-        echo "ERROR: hadoop-aws JAR not found in Spark classpath"
-        exit 1
-    fi
-    
-    echo "Found: $AWS_SDK_JAR"
-    echo "Found: $HADOOP_AWS_JAR"
-    echo "Spark S3 classpath validation complete!"
   EOF
 }
 
@@ -862,7 +840,19 @@ resource "aws_emr_cluster" "dedup_cluster" {
           Classification = "export"
           Properties = {
             "PYSPARK_PYTHON"      = "/usr/bin/python3"
-            "SPARK_DAEMON_MEMORY" = "4g"
+            "SPARK_DAEMON_MEMORY" = "8g"
+            /* Note for SPARK_DAEMON_CLASSPATH:
+              For EMR releases after 6.3 and 5.30, the required JAR file 
+              is added by default to /usr/lib/spark/jars
+              which covers Spark applications (driver/executors).
+
+              But the History Server daemon doesn't use that classpath by default,
+               which is why the explicit SPARK_DAEMON_CLASSPATH is needed.
+
+              $$(ls ...) 's double $ is Terraform escaping for a literal
+              — it renders as $(ls ...) in the actual config. evaluated at startup
+            */
+            "SPARK_DAEMON_CLASSPATH" = "$$(ls /usr/share/aws/emr/emrfs/lib/emrfs-hadoop-assembly-*)"
           }
         }
       ]
