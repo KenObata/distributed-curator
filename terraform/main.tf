@@ -541,8 +541,9 @@ variable "wet_file_scale" {
   }
 }
 
-# Scale-specific configurations
+# Use for cases when these values are computed from other values, not supplied by the user. 
 locals {
+  # Scale-specific configurations
   scale_configs = {
     "1" = {
       instance_type  = "m5a.xlarge" # 4 vCPU, 16 GB - for validating EMR, not running application
@@ -571,8 +572,14 @@ locals {
     }
   }
 
+  # only for instances has suffix of d such as r5ad, it uses NVMe for heavy shuffles.
+  # NVMe has different YARN directories.
+
   selected_config = local.scale_configs[var.wet_file_scale]
   capacity_config = var.instance_strategy == "on-demand" ? local.selected_config.on_demand_only : local.selected_config.on_demand_spot
+  has_nvme        = can(regex("[0-9]a?d\\.", local.selected_config.instance_type)) # contains(["1k", "9k", "90k"], var.wet_file_scale)
+  yarn_local_dirs = local.has_nvme ? "/mnt1/yarn,/mnt2/yarn" : "/mnt/yarn"
+  yarn_log_dirs   = local.has_nvme ? "/mnt1/yarn/logs,/mnt2/yarn/logs" : "/mnt/yarn/logs"
 }
 
 resource "aws_emr_cluster" "dedup_cluster" {
@@ -821,8 +828,8 @@ resource "aws_emr_cluster" "dedup_cluster" {
         "yarn.nodemanager.pmem-check-enabled"               = "false"
         "yarn.nodemanager.aux-services"                     = "mapreduce_shuffle,spark_shuffle"
         "yarn.nodemanager.aux-services.spark_shuffle.class" = "org.apache.spark.network.yarn.YarnShuffleService"
-        "yarn.nodemanager.local-dirs" : "/mnt1/yarn,/mnt2/yarn"
-        "yarn.nodemanager.log-dirs" : "/mnt1/yarn/logs,/mnt2/yarn/logs"
+        "yarn.nodemanager.local-dirs"                       = local.yarn_local_dirs # "/mnt1/yarn,/mnt2/yarn"
+        "yarn.nodemanager.log-dirs"                         = local.yarn_log_dirs   # "/mnt1/yarn/logs,/mnt2/yarn/logs"
       }
     },
     {
