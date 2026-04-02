@@ -3,6 +3,7 @@ package com.partitionAssignment
 import org.apache.spark.sql.functions.udf
 import scala.util.hashing.MurmurHash3
 import scala.collection.mutable
+import org.apache.spark.sql.types._
 
 object ComputePartitionAssignmentsUDF {
 
@@ -15,10 +16,20 @@ object ComputePartitionAssignmentsUDF {
             expr(f"compute_partition_assignments({minhash_signature}, {num_bands}, {rows_per_band}, {num_partitions})")
         )
    */
+  val returnType = StructType(
+    Seq(
+      StructField("target_partitions", ArrayType(IntegerType), false),
+      StructField("band_hashes", ArrayType(IntegerType), false)
+    )
+  )
+
   def registerUdf(spark: org.apache.spark.sql.SparkSession): Unit = spark.udf.register(
     "compute_partition_assignments",
-    (signature: Array[Long], numBands: Int, rowsPerBand: Int, numPartitions: Int) =>
-      ComputePartitionAssignmentsLogic(signature, numBands, rowsPerBand, numPartitions)
+    udf(
+      (signature: Array[Long], numBands: Int, rowsPerBand: Int, numPartitions: Int) =>
+        ComputePartitionAssignmentsLogic(signature, numBands, rowsPerBand, numPartitions),
+      returnType
+    )
   )
 
   /* For DataFrame API users
@@ -54,18 +65,32 @@ object ComputePartitionAssignmentsUDF {
 
     Note: in process_partition_locally(), we compare bandHash to bandHash
     here we don't store bandHash in dataframe to not increase shuffle memory.
-    it's a trade-off between latency gain vs minimizing memory
+    it's a trade-off between latency gain vs minimizing memory.
+
+    - we expose bandHash in the output so that later in step3, we can do
+      deterministic salting for hot partitions.
+
+    - In process_partition_locally(), we compare docs by ${bandId}_${bandHash}
+    but in this function, the purpose is to map bandHash -> partition_id,
+    so no need to create the composite key, ${bandId}_${bandHash}, in return output.
    */
   private[partitionAssignment] def ComputePartitionAssignmentsLogic(
     signature: Array[Long],
     numBands: Int,
     rowsPerBand: Int,
     numPartitions: Int
-  ): Array[Int] =
+  ): (Array[Int], Array[Int]) =
     if (signature == null || signature.isEmpty || signature.forall(_ == 0)) {
-      Array(0)
+      (Array(0), Array(0))
     } else {
-      val partitions = mutable.Set[Int]()
+      val partitions = new Array[Int](numBands)
+      val bandHashes = new Array[Int](numBands)
+
+      /*
+        Use count for Array index access in case signature.length < numBands * rowsPerBand.
+        .take(count) excludes uninitialized trailing positions.
+       */
+      var count = 0
       for (bandId <- 0 until numBands) {
         val start: Int = bandId * rowsPerBand
         val end: Int   = math.min(start + rowsPerBand, signature.length)
@@ -75,12 +100,15 @@ object ComputePartitionAssignmentsUDF {
           val bandValues = signature.slice(start, end)
           val bandHash   = MurmurHash3.arrayHash(bandValues)
 
+          // abs because MurmurHash3.arrayHash returns signed Int.
+          // Here, signed int is okay because we are not deriving MIN().
           val partitionId = math.abs(bandHash) % numPartitions
-          partitions += partitionId
+          partitions(count) = partitionId
+          bandHashes(count) = bandHash
+          count += 1
         }
-
       }
-      partitions.toArray
+      (partitions.take(count), bandHashes.take(count))
     }
 
 }

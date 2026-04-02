@@ -10,20 +10,25 @@ class ComputePartitionAssignmentsTest extends AnyFunSuite {
   val numHashes: Int = 64
 
   test("null signature returns Array(0)") {
-    val result = ComputePartitionAssignmentsUDF.ComputePartitionAssignmentsLogic(null, 8, 8, 1000)
-    assert(result sameElements Array(0))
+    val (partitions, bandHashes) = ComputePartitionAssignmentsUDF.ComputePartitionAssignmentsLogic(null, 8, 8, 1000)
+    assert(partitions sameElements Array(0))
+    assert(bandHashes sameElements Array(0))
   }
 
   test("empty signature returns Array(0)") {
     val signature: Array[Long] = Array.empty[Long]
-    val result                 = ComputePartitionAssignmentsUDF.ComputePartitionAssignmentsLogic(signature, 8, 8, 1000)
-    assert(result sameElements Array(0))
+    val (partitions, bandHashes) =
+      ComputePartitionAssignmentsUDF.ComputePartitionAssignmentsLogic(signature, 8, 8, 1000)
+    assert(partitions sameElements Array(0))
+    assert(bandHashes sameElements Array(0))
   }
 
   test("all-zero signature returns Array(0)") {
     val signature: Array[Long] = Array.fill(numHashes)(0L)
-    val result                 = ComputePartitionAssignmentsUDF.ComputePartitionAssignmentsLogic(signature, 8, 8, 1000)
-    assert(result sameElements Array(0))
+    val (partitions, bandHashes) =
+      ComputePartitionAssignmentsUDF.ComputePartitionAssignmentsLogic(signature, 8, 8, 1000)
+    assert(partitions sameElements Array(0))
+    assert(bandHashes sameElements Array(0))
   }
 
   test("deterministic - same signature always returns same partitions") {
@@ -33,18 +38,25 @@ class ComputePartitionAssignmentsTest extends AnyFunSuite {
           so use & opetration to make it positive.
      */
     val signature: Array[Long] = Array.fill(numHashes)(random_val & 0xffffffffL)
-    val result1                = ComputePartitionAssignmentsUDF.ComputePartitionAssignmentsLogic(signature, 8, 8, 1000)
-    val result2                = ComputePartitionAssignmentsUDF.ComputePartitionAssignmentsLogic(signature, 8, 8, 1000)
-    assert(result1 sameElements result2)
+    val (partitions1, bandHashes1) =
+      ComputePartitionAssignmentsUDF.ComputePartitionAssignmentsLogic(signature, 8, 8, 1000)
+    val (partitions2, bandHashes2) =
+      ComputePartitionAssignmentsUDF.ComputePartitionAssignmentsLogic(signature, 8, 8, 1000)
+
+    for ((partition1, partition2) <- partitions1.zip(partitions2)) assert(partition1 == partition2)
+    for ((bandHash1, bandHash2) <- bandHashes1.zip(bandHashes2)) assert(bandHash1 == bandHash2)
   }
 
   test("identical signatures get same partitions") {
     val random_val              = new Random(42).nextLong()
     val signature1: Array[Long] = Array.fill(numHashes)(random_val & 0xffffffffL)
     val signature2: Array[Long] = signature1.clone()
-    val result1 = ComputePartitionAssignmentsUDF.ComputePartitionAssignmentsLogic(signature1, 8, 8, 1000)
-    val result2 = ComputePartitionAssignmentsUDF.ComputePartitionAssignmentsLogic(signature2, 8, 8, 1000)
-    assert(result1 sameElements result2)
+    val (partitions1, bandHashes1) =
+      ComputePartitionAssignmentsUDF.ComputePartitionAssignmentsLogic(signature1, 8, 8, 1000)
+    val (partitions2, bandHashes2) =
+      ComputePartitionAssignmentsUDF.ComputePartitionAssignmentsLogic(signature2, 8, 8, 1000)
+    for ((partition1, partition2) <- partitions1.zip(partitions2)) assert(partition1 == partition2)
+    for ((bandHash1, bandHash2) <- bandHashes1.zip(bandHashes2)) assert(bandHash1 == bandHash2)
   }
 
 }
