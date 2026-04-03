@@ -26,6 +26,10 @@ pytest process (current process)
     ├── Python worker subprocess 1 → needs PYTHONPATH to find udf.py
     └── Python worker subprocess 2 → needs PYTHONPATH to find udf.py
 """
+# Force PySpark workers to use the same Python as the test runner
+os.environ["PYSPARK_PYTHON"] = sys.executable
+os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
+
 # For pyspark
 os.environ["PYTHONPATH"] = src_dir + ":" + os.environ.get("PYTHONPATH", "")
 

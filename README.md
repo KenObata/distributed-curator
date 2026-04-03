@@ -250,12 +250,12 @@ spark-submit \
   --master yarn \
   --py-files s3://your-scripts-bucket/scripts/dependencies.zip \
   --jars s3://your-scripts-bucket/scripts/minhash-udf_2.12-0.1.jar \
-  --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
+  --conf spark.sql.execution.arrow.maxRecordsPerBatch=30000 \
   --num-executors 63 \
   --executor-cores 4 \
   --executor-memory 27g \
   --driver-memory 16g \
-  --conf spark.sql.shuffle.partitions=9000 \
+  --conf spark.sql.shuffle.partitions=27000 \
   --conf spark.network.timeout=1200s \
   --conf spark.shuffle.io.connectionTimeout=600s \
   --conf spark.executor.extraJavaOptions="-XX:+UseG1GC -XX:MaxGCPauseMillis=200" \
@@ -270,6 +270,9 @@ spark-submit \
   --deploy-mode cluster \
   s3://your-scripts-bucket/scripts/spark_deduplication_test.py scale_proof
 ```
+Note:
+- maxRecordsPerBatch increased from 10k to 30k to make it one round of arrow serialization.
+- partitions increased from 9k to 27k to deal with stragglers
 
 until creating df_with_partition,
 this was fine:
