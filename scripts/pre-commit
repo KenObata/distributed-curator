@@ -70,14 +70,24 @@ fi
 if $HAS_PY; then
     header "Python"
 
+    # ── 0. Setup venv for pytest ────────────────────────────────────────────────
+    PYTEST_CMD=""
+    if [[ -x "./venv39/bin/pytest" ]]; then
+        PYTEST_CMD="./venv39/bin/pytest"
+    elif command -v pytest &>/dev/null; then
+        PYTEST_CMD="pytest"
+    elif [[ -x "./venv/bin/pytest" ]]; then
+        PYTEST_CMD="./venv/bin/pytest"
+    fi
+
     # ── 1. Unit tests (pytest) ────────────────────────────────────────────────
     # &>/dev/null discards both stdout and stderr — we only care about the exit code, not the path
-    if command -v pytest &>/dev/null; then
+    if [[ -n "$PYTEST_CMD" ]]; then
         printf "  Running pytest ...\n"
         # -x — stop on first failure
         # -q — quiet output
         # --tb=short — shorter tracebacks
-        run_step "pytest" pytest test/unit_test -x -q --tb=short --no-header
+        run_step "pytest" $PYTEST_CMD test/unit_test -x -q --tb=short --no-header
     else
         printf "  ${SKIP} pytest not found — skipping Python tests\n"
     fi

@@ -1,8 +1,9 @@
 package com.partitionAssignment
 
 import org.apache.spark.sql.functions.udf
+import org.apache.spark.sql.Row
 import scala.util.hashing.MurmurHash3
-import scala.collection.mutable
+import org.apache.spark.sql.types._
 
 object ComputePartitionAssignmentsUDF {
 
@@ -14,11 +15,34 @@ object ComputePartitionAssignmentsUDF {
             "target_partitions",
             expr(f"compute_partition_assignments({minhash_signature}, {num_bands}, {rows_per_band}, {num_partitions})")
         )
+    Note for Row() conversion within UDF:
+      - with returnType, we tell spark the output schema but Spark doesn't know UDF input types.
+        so if it gets null for a primitive (ex.Int, Long), your closure silently gets 0 instead of null.
+        Spark 3.5 blocks this by default.
+      - without returnType, — Spark infers types
+      - Row maps directly to StructType, no type ambiguity.
    */
+  val returnType = StructType(
+    Seq(
+      StructField("target_partitions", ArrayType(IntegerType), false),
+      StructField("band_hashes", ArrayType(IntegerType), false)
+    )
+  )
+
   def registerUdf(spark: org.apache.spark.sql.SparkSession): Unit = spark.udf.register(
     "compute_partition_assignments",
-    (signature: Array[Long], numBands: Int, rowsPerBand: Int, numPartitions: Int) =>
-      ComputePartitionAssignmentsLogic(signature, numBands, rowsPerBand, numPartitions)
+    udf(
+      // Seq because Spark passes array columns as WrappedArray, not Array[Long]
+      (signature: Seq[Long], numBands: Int, rowsPerBand: Int, numPartitions: Int) => {
+        // box signatureArray because Spark passes WrappedArray[java.lang.Long] (boxed objects),
+        // but Seq[Long] expects Scala primitive longs
+        val signatureArray = signature.map(sig => sig.longValue()).toArray
+        val (partitions, bandHashes) =
+          ComputePartitionAssignmentsLogic(signatureArray, numBands, rowsPerBand, numPartitions)
+        Row(partitions, bandHashes)
+      },
+      returnType
+    )
   )
 
   /* For DataFrame API users
@@ -34,8 +58,14 @@ object ComputePartitionAssignmentsUDF {
             compute_partition_assignments_batch_udf(col("minhash_signature"))
         )
    */
-  val ComputePartitionAssignments = udf((signature: Array[Long], numBands: Int, rowsPerBand: Int, numPartitions: Int) =>
-    ComputePartitionAssignmentsLogic(signature, numBands, rowsPerBand, numPartitions)
+  lazy val ComputePartitionAssignments = udf(
+    (signature: Seq[Long], numBands: Int, rowsPerBand: Int, numPartitions: Int) => {
+      val signatureArray = signature.map(sig => sig.longValue()).toArray
+      val (partitions, bandHashes) =
+        ComputePartitionAssignmentsLogic(signatureArray, numBands, rowsPerBand, numPartitions)
+      Row(partitions, bandHashes)
+    },
+    returnType
   )
 
   /*
@@ -48,24 +78,35 @@ object ComputePartitionAssignmentsUDF {
         - rowsPerBand: numHashes // numBands
         - numPartitions: equivalent to spark.sql.shuffle.partitions
     - Output:
-        - partitions: Array[Int]:
-            - the number of elements is the unique band hash consists from 8 MinHash.
+        - StructType: Array[Int], Array[Int]:
+            - the number of elements equals numBands (one per band).
+              Different bands may map to the same partition_id but with different band_hashes.
             - E.g. If 128 MinHash and 16 bands, then max partitions count is 8.
 
-    Note: in process_partition_locally(), we compare bandHash to bandHash
-    here we don't store bandHash in dataframe to not increase shuffle memory.
-    it's a trade-off between latency gain vs minimizing memory
+    - we expose bandHash in the output so that later in step3, we can do
+      deterministic salting for hot partitions.
+
+    - In process_partition_locally(), we compare docs by ${bandId}_${bandHash}
+    but in this function, the purpose is to map bandHash -> partition_id,
+    so no need to create the composite key, ${bandId}_${bandHash}, in return output.
    */
   private[partitionAssignment] def ComputePartitionAssignmentsLogic(
     signature: Array[Long],
     numBands: Int,
     rowsPerBand: Int,
     numPartitions: Int
-  ): Array[Int] =
+  ): (Array[Int], Array[Int]) =
     if (signature == null || signature.isEmpty || signature.forall(_ == 0)) {
-      Array(0)
+      (Array(0), Array(0))
     } else {
-      val partitions = mutable.Set[Int]()
+      val partitions = new Array[Int](numBands)
+      val bandHashes = new Array[Int](numBands)
+
+      /*
+        Use count for Array index access in case signature.length < numBands * rowsPerBand.
+        .take(count) excludes uninitialized trailing positions.
+       */
+      var count = 0
       for (bandId <- 0 until numBands) {
         val start: Int = bandId * rowsPerBand
         val end: Int   = math.min(start + rowsPerBand, signature.length)
@@ -75,12 +116,15 @@ object ComputePartitionAssignmentsUDF {
           val bandValues = signature.slice(start, end)
           val bandHash   = MurmurHash3.arrayHash(bandValues)
 
+          // abs because MurmurHash3.arrayHash returns signed Int.
+          // Here, signed int is okay because we are not deriving MIN().
           val partitionId = math.abs(bandHash) % numPartitions
-          partitions += partitionId
+          partitions(count) = partitionId
+          bandHashes(count) = bandHash
+          count += 1
         }
-
       }
-      partitions.toArray
+      (partitions.take(count), bandHashes.take(count))
     }
 
 }
