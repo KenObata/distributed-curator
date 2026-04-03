@@ -120,16 +120,23 @@ def partition_aware_deduplicate(
             f"Computing partition assignments with {num_bands} LSH bands and {num_partitions} partitions",
         )
 
+        # Spark may blindly pass null to the Scala closure with primitive-type argument,
+        # and the closure will see the default value of the Java type for the null argument,
+        # e.g. `udf((x: Int) => x, IntegerType)`, the result is 0 for null input
+        spark.conf.set("spark.sql.legacy.allowUntypedScalaUDF", "true")
         spark._jvm.com.partitionAssignment.ComputePartitionAssignmentsUDF.registerUdf(spark._jsparkSession)
 
         df_with_partitions = df_with_signatures.withColumn(
-            "target_partitions",
+            "partition_struct",  # (target_partitions: List[Int], band_hashes: List[Int])
             F.expr(f"compute_partition_assignments(minhash_signature, {num_bands}, {rows_per_band}, {num_partitions})"),
         ).select(
             # Drop text column - not needed for deduplication, reduces cache size and memory
             F.col("doc_id"),
             F.col("minhash_signature"),  # 128 MinHash samples
-            F.col("target_partitions"),  # Array of band hash from 8 MinHash % partition count
+            F.col("partition_struct.target_partitions").alias(
+                "target_partitions"
+            ),  # Array of band hash from 8 MinHash % partition count
+            F.col("partition_struct.band_hashes").alias("band_hashes"),  # hash from 8 MinHash
         )
 
         if is_debug_mode and df_with_partitions_s3_path:
