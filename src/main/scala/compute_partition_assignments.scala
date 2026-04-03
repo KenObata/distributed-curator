@@ -33,7 +33,7 @@ object ComputePartitionAssignmentsUDF {
     "compute_partition_assignments",
     udf(
       // Seq because Spark passes array columns as WrappedArray, not Array[Long]
-      (signature: Seq[java.lang.Long], numBands: Int, rowsPerBand: Int, numPartitions: Int) => {
+      (signature: Seq[Long], numBands: Int, rowsPerBand: Int, numPartitions: Int) => {
         // box signatureArray because Spark passes WrappedArray[java.lang.Long] (boxed objects),
         // but Seq[Long] expects Scala primitive longs
         val signatureArray = signature.map(sig => sig.longValue()).toArray
@@ -59,7 +59,7 @@ object ComputePartitionAssignmentsUDF {
         )
    */
   lazy val ComputePartitionAssignments = udf(
-    (signature: Array[java.lang.Long], numBands: Int, rowsPerBand: Int, numPartitions: Int) => {
+    (signature: Seq[Long], numBands: Int, rowsPerBand: Int, numPartitions: Int) => {
       val signatureArray = signature.map(sig => sig.longValue()).toArray
       val (partitions, bandHashes) =
         ComputePartitionAssignmentsLogic(signatureArray, numBands, rowsPerBand, numPartitions)
