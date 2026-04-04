@@ -28,6 +28,39 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 
+def apply_deterministic_salting(
+    df_exploded: DataFrame,
+    hot_partition_ids: list[int],
+    num_splits: int,
+) -> DataFrame:
+    """Apply deterministic salting to hot partitions.
+
+    Same band_hash always maps to the same sub-partition,
+    preserving co-location of similar documents while
+    splitting hot partitions across multiple physical partitions.
+
+    Args:
+    - df_exploded: dataframe that we will apply deterministic salting
+    - hot_partition_ids: list of partition_id that has skewed data volume
+    - num_splits: number of partitions to split for each hot_partition_ids
+
+    Return:
+    - DataFrame
+    """
+    if not hot_partition_ids:
+        logger.info("hot_partition_ids is empty.")
+        return df_exploded
+    logger.info(f"Applying deterministic salting with {num_splits} splits on {len(hot_partition_ids)} hot partitions")
+    df_exploded = df_exploded.withColumn(
+        "partition_id",
+        F.when(
+            F.col("partition_id").isin(hot_partition_ids),
+            F.col("partition_id") + F.abs(F.col("band_hash")) % num_splits,  # deterministic salting
+        ).otherwise(F.col("partition_id")),
+    )
+    return df_exploded
+
+
 def partition_aware_deduplicate(
     spark: SparkSession,
     input_df: DataFrame,
@@ -189,32 +222,68 @@ def partition_aware_deduplicate(
         spark, "Step 3: Smart Partitioning", f"Co-locating similar documents across {num_partitions} partitions"
     )
 
+    hot_threshold = 300_000
+    num_splits = 100
+
+    hot_partition_ids = []
+    hot_partitions_iter = (
+        df_with_partitions.select(F.explode(F.col("target_partitions")).alias("partition_id"))
+        .groupBy("partition_id")
+        .count()
+        .filter(F.col("count") > hot_threshold)
+        .collect()
+    )
+
+    for row in hot_partitions_iter:
+        hot_partition_ids.append(row.partition_id)
+    logger.info(f"Hot partitions detected: {len(hot_partition_ids)}")
+
+    # Note: we can't persist df_exploded due to limited memory
     df_exploded = df_with_partitions.select(
         F.col("doc_id"),
         # F.col(text_column),  # Removed - not needed for similarity, reduces shuffle size
         F.col("minhash_signature"),
-        F.explode(F.col("target_partitions")).alias("partition_id"),
+        F.explode(
+            # arrays_zip because Spark doesn't allow multiple generators in one query.
+            F.arrays_zip(F.col("target_partitions"), F.col("band_hashes"))
+        ).alias("zip"),
+    ).select(
+        F.col("doc_id"),
+        F.col("minhash_signature"),
+        F.col("zip.target_partitions").alias("partition_id"),
+        F.col("zip.band_hashes").alias("band_hash"),
     )
 
+    """
+    deterministic salting:
+    same band_hashes should get assigned the same partition_id but
+    different band_id can have the same band_hashes which we don't want to compare
+    That is why partition_id + salting will distinguish even if band_hashes is the same.
+
+    With deterministic salting, partition_id value can be greater than num_partition and that's fine.
+    Only step 2 contract is that partition_id value should be withing the num_partition range.
+    """
+    df_exploded = apply_deterministic_salting(df_exploded, hot_partition_ids, num_splits)
+
     # Monitor partition skew before repartitioning
-    partition_distribution = df_exploded.groupBy("partition_id").count().collect()
-    partition_counts = [row["count"] for row in partition_distribution]
+    # partition_distribution = df_exploded.groupBy("partition_id").count().collect()
+    # partition_counts = [row["count"] for row in partition_distribution]
 
-    max_partition_size = builtin_max(partition_counts)
-    min_partition_size = builtin_min(partition_counts)
-    avg_partition_size = builtin_sum(partition_counts) / len(partition_counts)
-    skew_ratio = max_partition_size / avg_partition_size if avg_partition_size > 0 else 0
+    # max_partition_size = builtin_max(partition_counts)
+    # min_partition_size = builtin_min(partition_counts)
+    # avg_partition_size = builtin_sum(partition_counts) / len(partition_counts)
+    # skew_ratio = max_partition_size / avg_partition_size if avg_partition_size > 0 else 0
 
-    logger.info("Partition skew analysis:")
-    logger.info(f"  Max partition size: {max_partition_size:,}")
-    logger.info(f"  Min partition size: {min_partition_size:,}")
-    logger.info(f"  Avg partition size: {avg_partition_size:.0f}")
-    logger.info(f"  Skew ratio (max/avg): {skew_ratio:.2f}")
-    logger.info(f"  Active partitions: {len(partition_counts)} / {num_partitions}")
+    # logger.info("Partition skew analysis:")
+    # logger.info(f"  Max partition size: {max_partition_size:,}")
+    # logger.info(f"  Min partition size: {min_partition_size:,}")
+    # logger.info(f"  Avg partition size: {avg_partition_size:.0f}")
+    # logger.info(f"  Skew ratio (max/avg): {skew_ratio:.2f}")
+    # logger.info(f"  Active partitions: {len(partition_counts)} / {num_partitions}")
 
     # KEY INNOVATION: Repartition based on computed partition assignments
     # This ensures similar documents are in the same partition
-    df_partitioned = df_exploded.repartition(num_partitions, F.col("partition_id"))
+    df_partitioned = df_exploded.drop(F.col("band_hash")).repartition(num_partitions, F.col("partition_id"))
 
     # Step 4: Process each partition locally (no shuffle!)
     logger.info("Step 4: Local deduplication within partitions (NO SHUFFLE)...")
