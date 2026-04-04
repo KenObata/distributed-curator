@@ -234,6 +234,7 @@ def partition_aware_deduplicate(
 
     avg_partition_size = partition_counts.agg(F.avg("count")).collect()[0][0]
     hot_threshold = int(avg_partition_size * 4)  # 4x average = outlier
+    logger.info(f"hot_threshold: {hot_threshold}")
 
     hot_partitions_iter = partition_counts.filter(F.col("count") > hot_threshold).collect()
     for row in hot_partitions_iter:
