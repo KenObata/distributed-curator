@@ -189,6 +189,7 @@ def partition_aware_deduplicate(
                     "minhash_signature", ArrayType(LongType()), True
                 ),  # changed from Int to Long because scala mh3 is signed int, we need unsigned.
                 StructField("target_partitions", ArrayType(IntegerType()), True),
+                StructField("band_hashes", ArrayType(IntegerType()), True),
             ]
         )
 
