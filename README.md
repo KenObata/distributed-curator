@@ -254,8 +254,8 @@ spark-submit \
   --num-executors 63 \
   --executor-cores 4 \
   --executor-memory 27g \
-  --driver-memory 16g \
-  --conf spark.sql.shuffle.partitions=27000 \
+  --driver-memory 32g \
+  --conf spark.sql.shuffle.partitions=54000 \
   --conf spark.network.timeout=1200s \
   --conf spark.shuffle.io.connectionTimeout=600s \
   --conf spark.executor.extraJavaOptions="-XX:+UseG1GC -XX:MaxGCPauseMillis=200" \
@@ -265,6 +265,9 @@ spark-submit \
   --conf spark.shuffle.service.enabled=true \
   --conf spark.dynamicAllocation.enabled=false \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
+  --conf spark.shuffle.io.maxRetries=10 \
+  --conf spark.shuffle.io.retryWait=30s \
+  --conf spark.task.maxFailures=8 \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
   --conf spark.executor.memoryOverhead=5g \
   --deploy-mode cluster \

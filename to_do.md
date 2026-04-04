@@ -41,6 +41,11 @@
     - optimize fetching WET files?
     ☐ 9k WET test after following optimization:
      Step4 in scala (prev. 1 hour), Step5 two phase UnionFind (prev. 1 hour).
+    - Optimize Step4: dropDlicates
+      - Explore deduplicating inside Step 4's Scala mapPartitions across partitions
+      - Actually this won't help because we need global dedupe.
+    ☐ Optimize Step3: implement deterministic partitioning
+     (identity partitioning) instead of hash partitioning. Include unit tests.
     ☐ 90k WET
     ☐ Package as library
     ☐ consume from library

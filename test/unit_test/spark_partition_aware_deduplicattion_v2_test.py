@@ -4,7 +4,7 @@ import pytest
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col
 
-from src.spark_partition_aware_deduplicattion_v2 import partition_aware_deduplicate
+from src.spark_partition_aware_deduplicattion_v2 import apply_deterministic_salting, partition_aware_deduplicate
 
 # Resolve JAR paths relative to repo root
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -145,3 +145,82 @@ class TestPartitionAwareDeduplication:
         assert "representative_id" in result_columns
         assert "is_duplicate" in result_columns
         assert "text" in result_columns
+
+
+class TestDeterministicSalting:
+    # ===============================================================
+    # Test for deterministic_salting() in Step3
+    # ===============================================================
+    def test_cold_partitions_should_be_unchanged(self, spark):
+        data = [
+            ("hot_partition_doc1", 42, 54042),
+            ("hot_partition_doc2", 42, 54042),
+            ("cold_partition_doc1", 100, 99999),  # cold_partitions
+        ]
+        df_exploded = spark.createDataFrame(data, ["doc_id", "partition_id", "band_hash"])
+
+        df_exploded = apply_deterministic_salting(df_exploded, hot_partition_ids=[42], num_splits=100)
+        rows = {row.doc_id: row.partition_id for row in df_exploded.collect()}
+
+        # Cold partition unchanged
+        assert rows["cold_partition_doc1"] == 100
+
+    def test_same_band_hash_should_have_same_partition(self, spark):
+        data = [
+            ("doc1", 42, 54042),
+            ("doc2", 42, 54042),
+        ]
+        df_exploded = spark.createDataFrame(data, ["doc_id", "partition_id", "band_hash"])
+
+        df_exploded = apply_deterministic_salting(df_exploded, hot_partition_ids=[42], num_splits=100)
+        rows = {row.doc_id: row.partition_id for row in df_exploded.collect()}
+
+        # Same band_hash should fall under the same salted partition
+        assert rows["doc1"] == rows["doc2"]
+        # But different from original
+        assert rows["doc1"] != 42 or abs(54042) % 100 == 0  # unless salt happens to be 0
+
+    def test_different_band_hash_should_have_different_partition(self, spark):
+        data = [
+            ("doc1", 42, 42),
+            ("doc2", 42, 99),
+        ]
+        df_exploded = spark.createDataFrame(data, ["doc_id", "partition_id", "band_hash"])
+
+        df_exploded = apply_deterministic_salting(df_exploded, hot_partition_ids=[42], num_splits=100)
+        rows = {row.doc_id: row.partition_id for row in df_exploded.collect()}
+
+        # Different band_hash → different salt (with high probability)
+        salt1 = abs(42) % 100
+        salt2 = abs(99) % 100
+        if salt1 != salt2:
+            assert rows["doc1"] != rows["doc2"]
+
+    def test_no_hot_partitions_returns_no_change(self, spark):
+        data = [
+            ("doc1", 42, 54042),
+            ("doc2", 100, 99999),
+        ]
+        df_exploded = spark.createDataFrame(data, ["doc_id", "partition_id", "band_hash"])
+
+        df_exploded = apply_deterministic_salting(df_exploded, hot_partition_ids=[], num_splits=100)
+        rows = {row.doc_id: row.partition_id for row in df_exploded.collect()}
+
+        assert rows["doc1"] == 42
+        assert rows["doc2"] == 100
+
+    def test_deterministic_salting_is_deterministic(self, spark):
+        data = [
+            ("doc1", 42, 54042),
+            ("doc2", 42, 54042),
+        ]
+        df_exploded = spark.createDataFrame(data, ["doc_id", "partition_id", "band_hash"])
+
+        result1 = {
+            row.doc_id: row.partition_id for row in apply_deterministic_salting(df_exploded, [42], 100).collect()
+        }
+        result2 = {
+            row.doc_id: row.partition_id for row in apply_deterministic_salting(df_exploded, [42], 100).collect()
+        }
+
+        assert result1 == result2
