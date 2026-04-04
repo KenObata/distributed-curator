@@ -223,18 +223,19 @@ def partition_aware_deduplicate(
         spark, "Step 3: Smart Partitioning", f"Co-locating similar documents across {num_partitions} partitions"
     )
 
-    hot_threshold = 300_000
     num_splits = 100
 
     hot_partition_ids = []
-    hot_partitions_iter = (
+    partition_counts = (
         df_with_partitions.select(F.explode(F.col("target_partitions")).alias("partition_id"))
         .groupBy("partition_id")
         .count()
-        .filter(F.col("count") > hot_threshold)
-        .collect()
     )
 
+    avg_partition_size = partition_counts.agg(F.avg("count")).collect()[0][0]
+    hot_threshold = int(avg_partition_size * 4)  # 4x average = outlier
+
+    hot_partitions_iter = partition_counts.filter(F.col("count") > hot_threshold).collect()
     for row in hot_partitions_iter:
         hot_partition_ids.append(row.partition_id)
     logger.info(f"Hot partitions detected: {len(hot_partition_ids)}")
