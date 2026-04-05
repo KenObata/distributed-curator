@@ -157,3 +157,21 @@
   ```
 - import spark.implicits._ because for .as[T] needs to convert DataFrame → Dataset[T].
 - keys vs keySet: keys is iterable for doing for loop, and keySet is to actually get Set data.
+- rdd.partitionBy vs df.repartition
+  - rdd.partitionBy uses https://github.com/apache/spark/blob/master/core/src/main/scala/org/apache/spark/Partitioner.scala#L114
+    - this uses identical mapping if partition key value is less than numPartitions
+  - df.repartition uses https://github.com/apache/spark/blob/master/sql/catalyst/src/main/scala/org/apache/spark/sql/catalyst/plans/physical/partitioning.scala
+    - when you call df.repartition(27000, col("partition_id")), Spark computes:
+      ```physical_partition = pmod(Murmur3Hash(partition_id), 27000)```
+- [Any type] Any is the root of Scala's type hierarchy — every class inherits from it.
+  hashCode is defined on Any
+  Scala type hierarchy:
+    Any                    ← hashCode(), equals(), toString() defined here
+    ├── AnyVal             ← Int, Long, Double, Boolean, etc.
+    └── AnyRef             ← all classes (maps to java.lang.Object)
+        ├── String
+        ├── List
+        ├── your classes
+        └── ...
+- Any.hashCode() 
+  - Scala's Any.hashCode() maps to Java's Object.hashCode() at the JVM level. So when Spark calls key.hashCode, it's calling Java's Integer.hashCode() on a partition_id
