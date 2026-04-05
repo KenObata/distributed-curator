@@ -61,6 +61,34 @@ def apply_deterministic_salting(
     return df_exploded
 
 
+def identity_repartition(df: DataFrame, repartition_col: str, num_partitions: int) -> DataFrame:
+    """
+    This function repartition DataFrame by repartition_col.
+    This is because spark dataframe.repartition does mh3 hash(repartition_col) % num_partitions
+    so even if repartition_col is distributed, it will cause collision due to mh3 hash.
+
+    This function does identity mapping between repartition_col's int value (logical partition id) to
+    physical partition id.
+
+    Arg:
+        - df: DataFrame that this function will repartition
+        - repartition_col: col name to partition by.
+        - num_partitions: number of partitions to split.
+    Return:
+        - DataFrame after repartitioned.
+    """
+    partition_col_index = df.columns.index(repartition_col)
+    schema = df.schema
+
+    df_partitioned_rdd = (
+        df.rdd.map(lambda row: (row[partition_col_index], row))
+        .partitionBy(num_partitions)  # uses HashPartitioner → identity for Int keys
+        .map(lambda kv: kv[1])  # keep only row
+    )
+    df_partitioned = df.sparkSession.createDataFrame(df_partitioned_rdd, schema)
+    return df_partitioned
+
+
 def partition_aware_deduplicate(
     spark: SparkSession,
     input_df: DataFrame,
@@ -286,7 +314,8 @@ def partition_aware_deduplicate(
 
     # KEY INNOVATION: Repartition based on computed partition assignments
     # This ensures similar documents are in the same partition
-    df_partitioned = df_exploded.drop(F.col("band_hash")).repartition(num_partitions, F.col("partition_id"))
+    df_exploded = df_exploded.drop(F.col("band_hash"))
+    df_partitioned = identity_repartition(df=df_exploded, repartition_col="partition_id", num_partitions=num_partitions)
 
     # Step 4: Process each partition locally (no shuffle!)
     logger.info("Step 4: Local deduplication within partitions (NO SHUFFLE)...")

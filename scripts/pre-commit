@@ -144,6 +144,17 @@ if $HAS_PY; then
         done
         FAILED=1
     fi
+
+    # ── 5. Test class name check ────────────────────────────────────────
+    BAD_TEST_CLASSES=$(grep -rn "^class " test/unit_test --include='*_test.py' --exclude='__init__.py' \
+     | grep -v "^.*:class Test" || true)
+    if [[ -n "$BAD_TEST_CLASSES" ]]; then
+        printf "  ${FAIL} Test classes must start with 'Test' (capital T) for pytest discovery:\n"
+        echo "$BAD_TEST_CLASSES" | while read -r line; do
+            printf "       %s\n" "$line"
+        done
+        FAILED=1
+    fi
 fi
 
 # ==============================================================================
