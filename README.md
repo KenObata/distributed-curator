@@ -255,7 +255,7 @@ spark-submit \
   --executor-cores 4 \
   --executor-memory 27g \
   --driver-memory 32g \
-  --conf spark.sql.shuffle.partitions=54000 \
+  --conf spark.sql.shuffle.partitions=27000 \
   --conf spark.network.timeout=1200s \
   --conf spark.shuffle.io.connectionTimeout=600s \
   --conf spark.executor.extraJavaOptions="-XX:+UseG1GC -XX:MaxGCPauseMillis=200" \
