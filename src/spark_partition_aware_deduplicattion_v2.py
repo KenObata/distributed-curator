@@ -294,6 +294,7 @@ def partition_aware_deduplicate(
     With deterministic salting, partition_id value can be greater than num_partition and that's fine.
     Only step 2 contract is that partition_id value should be withing the num_partition range.
     """
+    set_spark_context(spark, "Step 3: apply_deterministic_salting", "Apply deterministic salting to hot partitions")
     df_exploded = apply_deterministic_salting(df_exploded, hot_partition_ids, num_splits)
 
     # Monitor partition skew before repartitioning
@@ -315,6 +316,9 @@ def partition_aware_deduplicate(
     # KEY INNOVATION: Repartition based on computed partition assignments
     # This ensures similar documents are in the same partition
     df_exploded = df_exploded.drop(F.col("band_hash"))
+    set_spark_context(
+        spark, "Step 3: identity_repartition", "Apply identity_repartition for DataFrame by partition_id col"
+    )
     df_partitioned = identity_repartition(df=df_exploded, repartition_col="partition_id", num_partitions=num_partitions)
 
     # Step 4: Process each partition locally (no shuffle!)
