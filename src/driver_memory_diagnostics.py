@@ -19,13 +19,13 @@ Usage:
     spark = SparkSession.builder.getOrCreate()
 
     # Start periodic memory logging (appears in yarn logs -am 1 stdout)
-    start_memory_logger(spark.SparkContext, interval_seconds=30)
+    start_memory_logger(spark.sparkContext, interval_seconds=30)
 
     # ... run pipeline steps ...
 
     # At the very end, capture heap state for the diagnosis script
-    capture_heap_histogram(spark.SparkContext)
-    capture_nmt_summary(spark.SparkContext)     # only works if NMT flag is set
+    capture_heap_histogram(spark.sparkContext)
+    capture_nmt_summary(spark.sparkContext)     # only works if NMT flag is set
 """
 
 import logging
@@ -78,8 +78,8 @@ def start_memory_logger(sc: SparkContext, interval_seconds: int = 30) -> threadi
     - this function runs in-process via py4j, so no need to get driver pid externally.
       Just use getRuntime()
     """
-    runtime = sc._jvm.java.lang.Runtime.getRuntime()
     py4j_obj = sc._jvm
+    # runtime = py4j_obj.java.lang.Runtime.getRuntime()
     # https://docs.oracle.com/en/java/javase/17/docs/api/java.management/java/lang/management/MemoryMXBean.html
     memory_bean = py4j_obj.java.lang.management.ManagementFactory.getMemoryMXBean()
 
@@ -96,13 +96,13 @@ def start_memory_logger(sc: SparkContext, interval_seconds: int = 30) -> threadi
                 non_heap_used = non_heap.getUsed() / (BYTES_PER_MB)
                 non_heap_committed = non_heap.getCommitted() / (BYTES_PER_MB)
 
-                free = runtime.freeMemory() / (BYTES_PER_MB)  # heap_committed - heap_used
+                # redundant: free = heap_committed - heap_used
+                # free = runtime.freeMemory() / (BYTES_PER_MB)
 
                 print(
                     f"[DRIVER MEM] "
                     f"used={heap_used:.0f}MB "
                     f"total={heap_committed:.0f}MB "
-                    f"free_space={free:.0f}MB "
                     f"max={heap_max:.0f}MB "
                     f"| non_heap={non_heap_used:.0f}MB/{non_heap_committed:.0f}MB",
                     flush=True,
