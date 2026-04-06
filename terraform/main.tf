@@ -795,7 +795,9 @@ resource "aws_emr_cluster" "dedup_cluster" {
   bootstrap_action {
     name = "install-heapdump-upload"
     path = "s3://${aws_s3_bucket.scripts_bucket.id}/bootstrap/upload_heapdump_on_shutdown.sh"
-    args = ["s3://${var.text_dedupe_benchmark_bucket}/heapdumps"] # S3_DEST
+    args = ["s3://${var.text_dedupe_benchmark_bucket}/heapdumps",                             # S3_DEST
+      "s3://${aws_s3_bucket.scripts_bucket.id}/bootstrap/translate_driver_diagnostic_logs.py" # DIAG_SCRIPT_S3
+    ]
   }
 
 
