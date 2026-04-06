@@ -90,18 +90,23 @@ class Phase2GlobalTransitivityClosureQuery:
         """)
         return new_rep_components
 
-    def count_changed_edge_for_convergence(self, rep_components: DataFrame, new_rep_components: DataFrame) -> int:
-        # Check convergence - if still componets changed that means no converged yet
-        rep_components.createOrReplaceTempView("rep_components")
+    def count_changed_edge_for_convergence(self, new_rep_components: DataFrame) -> tuple[int, int]:
+        """
+        Check convergence - if still componets changed that means no converged yet
+        We need hash_sum and distinct_components.
+        - distinct_components because hash can have a collision
+        - distinct_components standalone cannot detect convergence
+          when a doc change a parent component but such parent component
+          is already counted by other doc.
+        """
         new_rep_components.createOrReplaceTempView("new_rep_components")
-        changes = self.spark.sql("""
-            SELECT COUNT(*) AS cnt
-            FROM rep_components old
-            JOIN new_rep_components new
-              ON old.local_representative = new.local_representative
-            WHERE old.component != new.component
-        """).collect()[0]["cnt"]
-        return changes
+        row = self.spark.sql("""
+            SELECT
+                SUM(hash(component)) AS hash_sum,
+                COUNT(DISTINCT component) AS distinct_components
+            FROM new_rep_components
+        """).collect()[0]
+        return row["hash_sum"], row["distinct_components"]
 
     def map_final_doc_idto_global_representative(
         self, vertices: DataFrame, local_results: DataFrame, rep_components: DataFrame
@@ -269,6 +274,8 @@ def run_phase2_global_transitivity_closure(
         local_results=local_results
     )
 
+    prev_checksum = None
+    prev_distinct_components = None
     for i in range(max_iterations):
         rep_components.createOrReplaceTempView("rep_components")
 
@@ -278,14 +285,20 @@ def run_phase2_global_transitivity_closure(
         )
 
         # Check convergence - if still componets changed that means no converged yet
-        changes = phase2_global_transitivity_closure_query.count_changed_edge_for_convergence(
-            rep_components=rep_components, new_rep_components=new_rep_components
+        hash_sum, distinct_components = phase2_global_transitivity_closure_query.count_changed_edge_for_convergence(
+            new_rep_components=new_rep_components
         )
-        logger.info(f"Phase 2 iteration {i + 1}: {changes} representatives changed")
+        is_converged = hash_sum == prev_checksum and prev_distinct_components == distinct_components
+        prev_checksum = hash_sum
+        prev_distinct_components = distinct_components
+        logger.info(
+            f"Phase 2 iteration {i + 1}: hash_sum={hash_sum}, \
+         distinct_components={distinct_components}, converged={is_converged}"
+        )
 
         rep_components.unpersist()
 
-        if changes == 0:
+        if is_converged:
             rep_components = new_rep_components.persist(StorageLevel.MEMORY_AND_DISK)
             logger.info(f"Phase 2 converged in {i + 1} iterations")
             break
@@ -299,7 +312,6 @@ def run_phase2_global_transitivity_closure(
     else:
         logger.warning(
             f"Phase 2 did NOT converge after {max_iterations} iterations. "
-            f"{changes} representatives still changing. "
             f"Results may contain unresolved duplicates. Consider increasing max_iterations."
         )
     if not rep_components.is_cached:

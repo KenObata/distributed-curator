@@ -497,7 +497,23 @@ class TestPropagateOneIteration:
 
 
 class TestCountChanges:
-    def test_one_change(self, spark, phase2_global_transitivity_closure_query):
+    def test_output_schema(self, spark, phase2_global_transitivity_closure_query):
+        """Return type is (hash_sum, distinct_components)."""
+        df = spark.createDataFrame(
+            [
+                Row(local_representative="X", component="X"),
+                Row(local_representative="Y", component="Y"),
+                Row(local_representative="Z", component="Y"),
+            ]
+        )
+        result = phase2_global_transitivity_closure_query.count_changed_edge_for_convergence(df)
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        _, distinct_components = result
+        assert distinct_components == 2  # X and Y
+
+    def test_checksum_changes_when_component_changes(self, spark, phase2_global_transitivity_closure_query):
+        """When components change between iterations, checksum must differ."""
         old = spark.createDataFrame(
             [
                 Row(local_representative="X", component="X"),
@@ -510,22 +526,50 @@ class TestCountChanges:
                 Row(local_representative="Y", component="X"),  # changed
             ]
         )
-        assert phase2_global_transitivity_closure_query.count_changed_edge_for_convergence(old, new) == 1
+        old_hash, old_distinct = phase2_global_transitivity_closure_query.count_changed_edge_for_convergence(old)
+        new_hash, new_distinct = phase2_global_transitivity_closure_query.count_changed_edge_for_convergence(new)
+        assert old_hash != new_hash or old_distinct != new_distinct
 
-    def test_zero_changes_means_converged(self, spark, phase2_global_transitivity_closure_query):
-        old = spark.createDataFrame(
+    def test_checksum_unchanged_when_converged(self, spark, phase2_global_transitivity_closure_query):
+        """When no components change, checksum must be identical."""
+        df = spark.createDataFrame(
             [
                 Row(local_representative="X", component="X"),
                 Row(local_representative="Y", component="X"),
             ]
         )
-        new = spark.createDataFrame(
+        hash1, distinct1 = phase2_global_transitivity_closure_query.count_changed_edge_for_convergence(df)
+        hash2, distinct2 = phase2_global_transitivity_closure_query.count_changed_edge_for_convergence(df)
+        assert hash1 == hash2
+        assert distinct1 == distinct2
+
+    def test_distinct_count_alone_insufficient(self, spark, phase2_global_transitivity_closure_query):
+        """Distinct count can stay the same even when components change.
+        hash_sum must catch this case."""
+        before = spark.createDataFrame(
             [
-                Row(local_representative="X", component="X"),
-                Row(local_representative="Y", component="X"),
+                Row(local_representative="V", component="A"),
+                Row(local_representative="W", component="B"),
+                Row(local_representative="X", component="B"),
+                Row(local_representative="Y", component="C"),
             ]
         )
-        assert phase2_global_transitivity_closure_query.count_changed_edge_for_convergence(old, new) == 0
+        after = spark.createDataFrame(
+            [
+                Row(local_representative="V", component="A"),
+                Row(local_representative="W", component="B"),
+                Row(local_representative="X", component="A"),  # changed B -> A
+                Row(local_representative="Y", component="C"),
+            ]
+        )
+        _, before_distinct = phase2_global_transitivity_closure_query.count_changed_edge_for_convergence(before)
+        _, after_distinct = phase2_global_transitivity_closure_query.count_changed_edge_for_convergence(after)
+        # Distinct count is same (3 in both) — this is the false convergence case
+        assert before_distinct == after_distinct == 3
+        # But hash_sum differs
+        before_hash, _ = phase2_global_transitivity_closure_query.count_changed_edge_for_convergence(before)
+        after_hash, _ = phase2_global_transitivity_closure_query.count_changed_edge_for_convergence(after)
+        assert before_hash != after_hash
 
 
 class TestFinalMapping:
