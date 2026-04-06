@@ -283,6 +283,8 @@ def run_phase2_global_transitivity_closure(
         new_rep_components = phase2_global_transitivity_closure_query.propagate_transitive_closure_one_iteration(
             initial_components=rep_components, multiple_reps_edges=multiple_reps_edges
         )
+        new_rep_components = new_rep_components.checkpoint()
+        new_rep_components.count()
 
         # Check convergence - if still componets changed that means no converged yet
         hash_sum, distinct_components = phase2_global_transitivity_closure_query.count_changed_edge_for_convergence(
@@ -306,8 +308,6 @@ def run_phase2_global_transitivity_closure(
         # Checkpoint every iteration to truncate lineage
         # Note: use checkpoint() because persist() keeps the full DAG lineage on the driver
         # which causes driver OOM
-        new_rep_components = new_rep_components.checkpoint()
-        new_rep_components.count()  # force cache materialization — writes to HDFS
         rep_components = new_rep_components
     else:
         logger.warning(
