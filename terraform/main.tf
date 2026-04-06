@@ -792,6 +792,12 @@ resource "aws_emr_cluster" "dedup_cluster" {
     path = "s3://${aws_s3_bucket.scripts_bucket.id}/bootstrap/install_dependencies.sh"
   }
 
+  bootstrap_action {
+    name = "install-heapdump-upload"
+    path = "s3://${aws_s3_bucket.scripts_bucket.id}/bootstrap/upload_heapdump_on_shutdown.sh"
+    args = ["s3://${var.text_dedupe_benchmark_bucket}/heapdumps"] # S3_DEST
+  }
+
 
   # Spark and YARN configurations
   configurations_json = jsonencode([
@@ -819,6 +825,13 @@ resource "aws_emr_cluster" "dedup_cluster" {
         "spark.eventLog.compress" : "true",
         "spark.eventLog.compression.codec" : "zstd",
         "spark.history.fs.logDirectory" : "s3://${var.text_dedupe_benchmark_bucket}/spark-history/"
+
+        "spark.driver.extraJavaOptions" = join(" ", [
+          "-XX:+HeapDumpOnOutOfMemoryError",
+          "-XX:HeapDumpPath=/tmp/driver_heap.hprof",
+          "-Xlog:gc*:file=/tmp/driver_gc.log:time,uptime,level,tags",
+          "-XX:NativeMemoryTracking=summary" # remove if this want to remove 10% offheap overhead.
+        ])
       }
     },
     {

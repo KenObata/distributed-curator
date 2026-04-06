@@ -276,6 +276,7 @@ spark-submit \
 Note:
 - maxRecordsPerBatch increased from 10k to 30k to make it one round of arrow serialization.
 - partitions increased from 9k to 27k to deal with stragglers
+- Do not add spark.driver.extraJavaOptions in this config. Do it in EMR config
 
 until creating df_with_partition,
 this was fine:

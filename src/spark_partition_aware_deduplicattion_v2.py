@@ -15,6 +15,7 @@ try:
     from .spark_utils import does_file_exists, read_parquet_from_s3, set_spark_context, upload_df_to_s3
 except Exception:
     from spark_utils import does_file_exists, read_parquet_from_s3, set_spark_context, upload_df_to_s3
+from driver_memory_diagnostics import capture_heap_histogram, capture_nmt_summary, start_memory_logger
 from shingle_hash_wrapper import compute_minhash_cython_batch
 from udf import compute_minhash_vectorized_batch_only_hash_once
 
@@ -135,6 +136,9 @@ def partition_aware_deduplicate(
     logger.info(f"Spark UI available at: {spark.sparkContext.uiWebUrl}")
     print(f"🚀 Spark UI: {spark.sparkContext.uiWebUrl}")  # Print to console for visibility
     logger.info(f"Using {'Python UDF' if use_python_udf_min_hash else 'Cython UDF'} for MinHash")
+
+    # Start periodic memory logging (appears in yarn logs -am 1 stdout)
+    start_memory_logger(spark.sparkContext, interval_seconds=30)
 
     rows_per_band = num_hashes // num_bands
 
@@ -434,5 +438,9 @@ def partition_aware_deduplicate(
     doc_id_and_representative_doc_id_df_deduped.unpersist()
 
     # Don't unpersist result here because downstream caller function can trigger re-compute.
+
+    # capture heap state for driver diagnosis script
+    capture_heap_histogram(spark.sparkContext)
+    capture_nmt_summary(spark.sparkContext)  # only works if NMT flag is set
 
     return result
