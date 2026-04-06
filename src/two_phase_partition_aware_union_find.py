@@ -270,10 +270,6 @@ def run_phase2_global_transitivity_closure(
     )
 
     for i in range(max_iterations):
-        if i > 0 and i % 3 == 0:
-            rep_components = rep_components.checkpoint()
-
-        rep_components.cache()
         rep_components.createOrReplaceTempView("rep_components")
 
         # Propagate minimum component through meta-edges (both directions)
@@ -285,21 +281,29 @@ def run_phase2_global_transitivity_closure(
         changes = phase2_global_transitivity_closure_query.count_changed_edge_for_convergence(
             rep_components=rep_components, new_rep_components=new_rep_components
         )
+        logger.info(f"Phase 2 iteration {i + 1}: {changes} representatives changed")
 
         rep_components.unpersist()
-        rep_components = new_rep_components
 
-        logger.info(f"Phase 2 iteration {i + 1}: {changes} representatives changed")
         if changes == 0:
+            rep_components = new_rep_components.persist(StorageLevel.MEMORY_AND_DISK)
             logger.info(f"Phase 2 converged in {i + 1} iterations")
             break
+
+        # Checkpoint every iteration to truncate lineage
+        # Note: use checkpoint() because persist() keeps the full DAG lineage on the driver
+        # which causes driver OOM
+        new_rep_components = new_rep_components.checkpoint()
+        new_rep_components.count()  # force cache materialization — writes to HDFS
+        rep_components = new_rep_components
     else:
         logger.warning(
             f"Phase 2 did NOT converge after {max_iterations} iterations. "
             f"{changes} representatives still changing. "
             f"Results may contain unresolved duplicates. Consider increasing max_iterations."
         )
-    rep_components = rep_components.persist(StorageLevel.MEMORY_AND_DISK)
+    if not rep_components.is_cached:
+        rep_components = rep_components.persist(StorageLevel.MEMORY_AND_DISK)
     rep_components.createOrReplaceTempView("rep_components")
 
     # ── Final: Map every doc_id to its global representative ──
