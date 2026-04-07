@@ -37,6 +37,7 @@ from pyspark import SparkContext
 
 logger = logging.getLogger(__name__)
 BYTES_PER_MB = 1024**2
+JAVA_HOME = "/usr/lib/jvm/java-17-amazon-corretto.x86_64"
 
 
 def _get_driver_jvm_pid(sc: SparkContext) -> str:
@@ -156,7 +157,8 @@ def capture_heap_histogram(sc: SparkContext, output_path: str = "/tmp/driver_hea
         logger.info(f"Capturing heap histogram for JVM pid={pid}...")
 
         result = subprocess.run(
-            ["jmap", "-histo", pid],
+            [f"{JAVA_HOME}/bin/jmap", "-histo", pid],
+            # ["jmap", "-histo", pid], # # jmap is symlinked via /etc/alternatives to Java 8 on EMR
             capture_output=True,
             text=True,
             timeout=120,
@@ -199,7 +201,9 @@ def capture_nmt_summary(sc: SparkContext, output_path: str = "/tmp/driver_nmt.tx
         logger.info(f"Capturing NMT summary for JVM pid={pid}...")
 
         result = subprocess.run(
-            ["jcmd", pid, "VM.native_memory", "summary"],
+            [f"{JAVA_HOME}/bin/jcmd", pid, "VM.native_memory", "summary"],  # application needs jdk17
+            # jmap is symlinked via /etc/alternatives to Java 8 on EMR
+            # ["jcmd", pid, "VM.native_memory", "summary"],
             capture_output=True,
             text=True,
             timeout=60,

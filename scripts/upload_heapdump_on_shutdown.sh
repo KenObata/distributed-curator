@@ -18,6 +18,7 @@
 #
 # The JVM flags (-XX:+HeapDumpOnOutOfMemoryError) should be set separately
 # via spark.driver.extraJavaOptions in your Spark config.
+sudo yum install -y java-17-amazon-corretto-devel
 
 set -euo pipefail
 

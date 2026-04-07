@@ -441,6 +441,6 @@ def partition_aware_deduplicate(
 
     # capture heap state for driver diagnosis script
     capture_heap_histogram(spark.sparkContext)
-    capture_nmt_summary(spark.sparkContext)  # only works if NMT flag is set
+    capture_nmt_summary(spark.sparkContext)  # only works if NMT flag is set and application completed successfully
 
     return result
