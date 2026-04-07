@@ -348,7 +348,7 @@ def partition_aware_deduplicate(
     # Don't drop dups because dropDuplicates triggers a shuffle that destroys your partition layout:
     # e.g. similar_pairs_df = similar_pairs_df.dropDuplicates(["doc1", "doc2"]).persist(StorageLevel.MEMORY_AND_DISK)
     # Instead, dropDuplicates after Step5 phase 1 end.
-    similar_pairs_df = similar_pairs_df.persist(StorageLevel.MEMORY_AND_DISK)
+    # similar_pairs_df = similar_pairs_df.persist(StorageLevel.MEMORY_AND_DISK)
 
     # similar_count = similar_pairs_df.count()
     # logger.info(f"Found {similar_count} similar document pairs")

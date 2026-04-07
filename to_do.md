@@ -44,11 +44,20 @@
     - Optimize Step4: dropDlicates
       - Explore deduplicating inside Step 4's Scala mapPartitions across partitions
       - Actually this won't help because we need global dedupe.
-    ☐ Optimize Step3: implement deterministic partitioning
+    - Optimize Step3: implement deterministic partitioning
      (identity partitioning) instead of hash partitioning. Include unit tests.
+    ☐ Reduce shuffle partitions for Phase 2 only 
+    ☐ Disable Spark UI storage 
+      spark.ui.retainedStages=50 and spark.ui.retainedTasks=1000 caps the UI memory footprint
+    ☐ Local checkpoint instead of HDFS
+     — localCheckpoint() writes to executor disk, avoids HDFS overhead, and the driver doesn't track HDFS file metadata. Less durable but Phase 2 iterations are short enough that re-execution on failure is cheap
+    ☐ Scala IdentityPartitioner — eliminates the 6.6 min Python pickle step, which also reduces driver-side serialization metadata
+    ☐ Distributed Union-Find
+     — at 90K, replace the iterative SQL label propagation entirely with an RDD-based Union-Find that runs in a single pass via mapPartitions on the meta-graph edges, similar to Phase 1 but on the cross-partition edges. This eliminates iterations altogether
     ☐ 90k WET
     ☐ Package as library
     ☐ consume from library
+    ☐ [Low priority] Unit test for driver memory diagnoser
 
 # Learning - scala
 
