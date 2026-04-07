@@ -9,6 +9,7 @@ Following functions and spark config heap dunp are in an exclusive relationship:
         - capture_heap_histogram() runs jmap -histo
     - Off-heap killed
         - capture_nmt_summary() runs
+        - Only works on successfully completed runs.
 
 Unlike above functions, start_memory_logger() runs on every case to track free/used memory.
 
@@ -78,6 +79,8 @@ def start_memory_logger(sc: SparkContext, interval_seconds: int = 30) -> threadi
     Note:
     - this function runs in-process via py4j, so no need to get driver pid externally.
       Just use getRuntime()
+    - This outputs in the driver log, meaning if you run this on client mode,
+      then you see it in your terminal. If cluster mode, then yarn logs -am 1 -log_files stdout
     """
     py4j_obj = sc._jvm
     # runtime = py4j_obj.java.lang.Runtime.getRuntime()
@@ -188,6 +191,7 @@ def capture_nmt_summary(sc: SparkContext, output_path: str = "/tmp/driver_nmt.tx
     """
     Capture NativeMemoryTracking summary (off-heap breakdown).
     Only works if JVM was started with -XX:NativeMemoryTracking=summary.
+    Only works on successfully completed runs.
 
     Args:
         sc: SparkContext
