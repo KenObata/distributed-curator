@@ -84,6 +84,11 @@ If above plan fails, then do on-demand.
 terraform apply -var="instance_strategy=on-demand" -var="wet_file_scale=9k"
 ```
 
+If this failed due to bootstrap, do ssh and run the next command:
+```
+cat /mnt/var/log/bootstrap-actions/2/stderr
+```
+
 Note - you need to create your own terraform.tfvars file looks like this:
 ```
 cluster_name   = "" # EMR cluster name
