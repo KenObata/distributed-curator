@@ -441,8 +441,8 @@ yarn logs -applicationId "${APP_ID}" -log_files stdout -am 1 2>/dev/null \
 
 aws s3 cp /tmp/driver_mem.log "${S3_PREFIX}/${INSTANCE_ID}_driver_mem.log"
 
-# 3. Generate histogram from .hprof (if no pre-captured one exists)
-jmap -histo /tmp/driver_heap.hprof > /tmp/driver_heap_histo.txt
+# 3. Generate histogram from .hprof (only if OOMed)
+jmap -histo /tmp/driver_heap.hprof >> /tmp/driver_heap_histo.txt
 
 # 4. Run diagnosis
 python3 /usr/local/bin/translate_driver_diagnostic_logs.py \

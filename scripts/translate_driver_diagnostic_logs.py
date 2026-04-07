@@ -359,11 +359,13 @@ class GCEvent:
 def parse_gc_log(path: str) -> list[GCEvent]:
     """Parse Java 17+ unified GC log (-Xlog:gc*)."""
     events = []
-    # Pattern: [timestamp][uptime][level][gc] GC(N) Pause Young/Full (cause) before->after(heap) time
+    # Pattern: [timestamp][uptime][info][gc] GC(N) Pause Young/Full (cause) [(cause2)] before->after(heap) time
+    # Note: EMR pads tags with spaces e.g. [gc          ] and G1 adds a second cause group
     pattern = re.compile(
-        r"\[([^\]]+)\]\[([^\]]+)\]\[info\]\[gc\]\s*"
+        r"\[([^\]]+)\]\[([^\]]+)\]\[info\]\[gc\s*\]\s*"
         r"GC\(\d+\)\s+Pause\s+(Young|Full)\s+"
         r"\(([^)]+)\)\s+"
+        r"(?:\([^)]+\)\s+)?"
         r"(\d+)M->(\d+)M\((\d+)M\)\s+"
         r"([\d.]+)ms"
     )

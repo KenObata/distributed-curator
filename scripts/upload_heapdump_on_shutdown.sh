@@ -26,8 +26,8 @@ S3_DEST="${1:?Usage: $0 <s3-destination-path>}"
 DIAG_SCRIPT_S3="${2:?Usage: $0 <s3-destination-path> <s3-path-to-diagnose_driver_oom.py>}"
 
 # Download the diagnosis script to a known location
-sudo aws s3 cp "${DIAG_SCRIPT_S3}" /usr/local/bin/diagnose_driver_oom.py --no-progress
-sudo chmod +x /usr/local/bin/diagnose_driver_oom.py
+sudo aws s3 cp "${DIAG_SCRIPT_S3}" /usr/local/bin/translate_driver_diagnostic_logs.py --no-progress
+sudo chmod +x /usr/local/bin/translate_driver_diagnostic_logs.py
 INSTANCE_ID=$(ec2-metadata -i | awk '{print $2}')
 CLUSTER_ID=$(cat /mnt/var/lib/info/job-flow.json | python3 -c "import sys,json; print(json.load(sys.stdin)['jobFlowId'])")
 TIMESTAMP_AT_BOOT=$(date +%Y%m%dT%H%M%S)
@@ -101,7 +101,7 @@ fi
 
 if [ -n "${DIAG_ARGS}" ]; then
     echo "Running diagnosis..."
-    python3 /usr/local/bin/diagnose_driver_oom.py ${DIAG_ARGS} \
+    python3 /usr/local/bin/translate_driver_diagnostic_logs.py ${DIAG_ARGS} \
         > /tmp/diagnosis_report.txt 2>&1
 
     aws s3 cp /tmp/diagnosis_report.txt \
