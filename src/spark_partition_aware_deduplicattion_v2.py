@@ -301,22 +301,6 @@ def partition_aware_deduplicate(
     set_spark_context(spark, "Step 3: apply_deterministic_salting", "Apply deterministic salting to hot partitions")
     df_exploded = apply_deterministic_salting(df_exploded, hot_partition_ids, num_splits)
 
-    # Monitor partition skew before repartitioning
-    # partition_distribution = df_exploded.groupBy("partition_id").count().collect()
-    # partition_counts = [row["count"] for row in partition_distribution]
-
-    # max_partition_size = builtin_max(partition_counts)
-    # min_partition_size = builtin_min(partition_counts)
-    # avg_partition_size = builtin_sum(partition_counts) / len(partition_counts)
-    # skew_ratio = max_partition_size / avg_partition_size if avg_partition_size > 0 else 0
-
-    # logger.info("Partition skew analysis:")
-    # logger.info(f"  Max partition size: {max_partition_size:,}")
-    # logger.info(f"  Min partition size: {min_partition_size:,}")
-    # logger.info(f"  Avg partition size: {avg_partition_size:.0f}")
-    # logger.info(f"  Skew ratio (max/avg): {skew_ratio:.2f}")
-    # logger.info(f"  Active partitions: {len(partition_counts)} / {num_partitions}")
-
     # KEY INNOVATION: Repartition based on computed partition assignments
     # This ensures similar documents are in the same partition
     df_exploded = df_exploded.drop(F.col("band_hash"))
@@ -362,15 +346,16 @@ def partition_aware_deduplicate(
     """
 
     # Don't drop dups because dropDuplicates triggers a shuffle that destroys your partition layout:
-    # similar_pairs_df = similar_pairs_df.dropDuplicates(["doc1", "doc2"]).persist(StorageLevel.MEMORY_AND_DISK)
-    similar_pairs_df = similar_pairs_df.dropDuplicates(["doc1", "doc2"]).persist(StorageLevel.MEMORY_AND_DISK)
+    # e.g. similar_pairs_df = similar_pairs_df.dropDuplicates(["doc1", "doc2"]).persist(StorageLevel.MEMORY_AND_DISK)
+    # Instead, dropDuplicates after Step5 phase 1 end.
+    # similar_pairs_df = similar_pairs_df.persist(StorageLevel.MEMORY_AND_DISK)
 
-    similar_count = similar_pairs_df.count()
-    logger.info(f"Found {similar_count} similar document pairs")
+    # similar_count = similar_pairs_df.count()
+    # logger.info(f"Found {similar_count} similar document pairs")
 
     # Step 5: Build connected components for duplicate groups
     logger.info("Step 5: Build connected components. For each distinct doc_id, it has representative doc_id")
-    set_spark_context(spark, "Step 5 Phase 1", "Partition-local Union-Find (no shuffle)")
+    set_spark_context(spark, "Step 5 Phase 1", "Partition-aware local Union-Find (no shuffle). Dedupe after phase1.")
 
     vertices = input_df.select(F.col("doc_id").alias("id")).distinct().persist(StorageLevel.MEMORY_ONLY)
 
@@ -379,10 +364,16 @@ def partition_aware_deduplicate(
         local_results_jdf = jvm_helper.runPhase1LocalUnionFind(
             similar_pairs_df._jdf,  # Pass the underlying JVM DataFrame
         )
-        local_results = DataFrame(local_results_jdf, spark).persist(StorageLevel.MEMORY_AND_DISK)
+        local_results = (
+            DataFrame(local_results_jdf, spark)
+            .dropDuplicates(["doc_id", "local_representative"])
+            .persist(StorageLevel.MEMORY_AND_DISK)
+        )
     else:
-        local_results = run_phase1_local_union_find(similar_pairs_df=similar_pairs_df).persist(
-            StorageLevel.MEMORY_AND_DISK
+        local_results = (
+            run_phase1_local_union_find(similar_pairs_df=similar_pairs_df)
+            .dropDuplicates(["doc_id", "local_representative"])
+            .persist(StorageLevel.MEMORY_AND_DISK)
         )
     local_count = local_results.count()
     logger.info(f"Phase 1 complete: {local_count} doc -> representative mappings")
@@ -433,7 +424,6 @@ def partition_aware_deduplicate(
     # Only unpersist df_with_signatures if it was created (not from cache)
     if "df_with_signatures" in locals():
         df_with_signatures.unpersist()
-    similar_pairs_df.unpersist()
     vertices.unpersist()
     doc_id_and_representative_doc_id_df_deduped.unpersist()
 

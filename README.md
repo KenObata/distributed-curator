@@ -399,6 +399,11 @@ check application logs
 yarn logs -applicationId
 ```
 
+check driver log without history server
+```
+yarn logs -applicationId application_1775424908785_0001 -log_files stdout -size -10000 2>/dev/null | grep -A5 Step | tail -50
+```
+
 How to kill yarn application
 
 ```
