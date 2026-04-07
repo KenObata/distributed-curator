@@ -32,7 +32,7 @@ CLUSTER_ID=$(cat /mnt/var/lib/info/job-flow.json | python3 -c "import sys,json; 
 TIMESTAMP_AT_BOOT=$(date +%Y%m%dT%H%M%S)
 
 # Create the upload script
-cat > /usr/local/bin/upload-heapdumps.sh << 'UPLOAD_SCRIPT'
+sudo tee /usr/local/bin/upload-heapdumps.sh > /dev/null << 'UPLOAD_SCRIPT'
 #!/bin/bash
 S3_DEST="__S3_DEST__"
 CLUSTER_ID="__CLUSTER_ID__"
@@ -117,14 +117,14 @@ fi
 UPLOAD_SCRIPT
 
 # Substitute variables into the upload script
-sed -i "s|__S3_DEST__|${S3_DEST}|g" /usr/local/bin/upload-heapdumps.sh
-sed -i "s|__CLUSTER_ID__|${CLUSTER_ID}|g" /usr/local/bin/upload-heapdumps.sh
-sed -i "s|__INSTANCE_ID__|${INSTANCE_ID}|g" /usr/local/bin/upload-heapdumps.sh
-sed -i "s|__TIMESTAMP_AT_BOOT__|${TIMESTAMP_AT_BOOT}|g" /usr/local/bin/upload-heapdumps.sh
-chmod +x /usr/local/bin/upload-heapdumps.sh
+sudo sed -i "s|__S3_DEST__|${S3_DEST}|g" /usr/local/bin/upload-heapdumps.sh
+sudo sed -i "s|__CLUSTER_ID__|${CLUSTER_ID}|g" /usr/local/bin/upload-heapdumps.sh
+sudo sed -i "s|__INSTANCE_ID__|${INSTANCE_ID}|g" /usr/local/bin/upload-heapdumps.sh
+sudo sed -i "s|__TIMESTAMP_AT_BOOT__|${TIMESTAMP_AT_BOOT}|g" /usr/local/bin/upload-heapdumps.sh
+sudo chmod +x /usr/local/bin/upload-heapdumps.sh
 
 # Install systemd service that runs before network shutdown
-cat > /etc/systemd/system/upload-heapdumps.service << 'SERVICE'
+sudo cat > /etc/systemd/system/upload-heapdumps.service << 'SERVICE'
 [Unit]
 Description=Upload Spark driver heap dumps to S3
 DefaultDependencies=no
@@ -142,8 +142,8 @@ TimeoutStopSec=300
 WantedBy=multi-user.target
 SERVICE
 
-systemctl daemon-reload
-systemctl enable upload-heapdumps.service
-systemctl start upload-heapdumps.service
+sudo systemctl daemon-reload
+sudo systemctl enable upload-heapdumps.service
+sudo systemctl start upload-heapdumps.service
 
 echo "Heap dump upload service installed successfully."
