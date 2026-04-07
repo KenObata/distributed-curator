@@ -124,7 +124,7 @@ sudo sed -i "s|__TIMESTAMP_AT_BOOT__|${TIMESTAMP_AT_BOOT}|g" /usr/local/bin/uplo
 sudo chmod +x /usr/local/bin/upload-heapdumps.sh
 
 # Install systemd service that runs before network shutdown
-sudo cat > /etc/systemd/system/upload-heapdumps.service << 'SERVICE'
+sudo tee /etc/systemd/system/upload-heapdumps.service > /dev/null << 'SERVICE'
 [Unit]
 Description=Upload Spark driver heap dumps to S3
 DefaultDependencies=no
