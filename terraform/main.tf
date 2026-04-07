@@ -424,6 +424,12 @@ variable "scripts_source_test_dir" {
   default     = "../test"
 }
 
+variable "scripts_source_script_dir" {
+  description = "Path to the directory containing Python scripts"
+  type        = string
+  default     = "../scripts"
+}
+
 # Bootstrap action script
 resource "aws_s3_object" "bootstrap_script" {
   bucket  = "${var.scripts_bucket}-${data.aws_caller_identity.current.account_id}"
@@ -465,6 +471,24 @@ resource "aws_s3_object" "dedup_script" {
   bucket = aws_s3_bucket.scripts_bucket.id
   key    = "scripts/spark_partition_aware_deduplicattion_v2.py"
   source = "${path.module}/${var.scripts_source_src_dir}/spark_partition_aware_deduplicattion_v2.py"
+
+  depends_on = [time_sleep.wait_for_bucket]
+}
+
+# Upload /script files to S3
+locals {
+  script_files = [
+    "translate_driver_diagnostic_logs.py",
+    "upload_heapdump_on_shutdown.sh",
+  ]
+}
+resource "aws_s3_object" "diagnostic_script" {
+  for_each = toset(local.script_files)
+
+  bucket = aws_s3_bucket.scripts_bucket.id
+  key    = "bootstrap/${each.value}"
+  source = "${path.module}/${var.scripts_source_script_dir}/${each.value}"
+  etag   = filemd5("${path.module}/${var.scripts_source_script_dir}/${each.value}")
 
   depends_on = [time_sleep.wait_for_bucket]
 }
@@ -901,7 +925,8 @@ resource "aws_emr_cluster" "dedup_cluster" {
   }
 
   depends_on = [
-    aws_s3_object.bootstrap_script
+    aws_s3_object.bootstrap_script,
+    aws_s3_object.diagnostic_script
   ]
 }
 

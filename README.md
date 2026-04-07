@@ -414,6 +414,44 @@ ssh ip-172-31-37-206.ec2.internal "df -h | grep mnt"
 ```
 
 ## EMR ssh trouble shooting
+
+### How to extract driver memoey stags/logs
+```
+# 1. Upload diagnostic files to S3
+CLUSTER_ID=$(cat /mnt/var/lib/info/job-flow.json | python3 -c "import sys,json; print(json.load(sys.stdin)['jobFlowId'])")
+S3_PREFIX="s3://text-dedupe-benchmark/heapdumps/${CLUSTER_ID}/$(date +%Y%m%dT%H%M%S)"
+INSTANCE_ID=$(ec2-metadata -i | awk '{print $2}')
+
+aws s3 cp /tmp/driver_heap.hprof "${S3_PREFIX}/${INSTANCE_ID}_driver_heap.hprof"
+aws s3 cp /tmp/driver_gc.log "${S3_PREFIX}/${INSTANCE_ID}_driver_gc.log"
+aws s3 cp /tmp/driver_heap_histo.txt "${S3_PREFIX}/${INSTANCE_ID}_driver_heap_histo.txt"
+aws s3 cp /tmp/driver_nmt.txt "${S3_PREFIX}/${INSTANCE_ID}_driver_nmt.txt"
+
+# 2. Extract memory log from YARN AM stdout
+APP_ID=$(yarn application -list -appStates FINISHED,FAILED,KILLED 2>/dev/null \
+    | grep -i spark | tail -1 | awk '{print $1}')
+yarn logs -applicationId "${APP_ID}" -log_files stdout -am 1 2>/dev/null \
+    | grep "\[DRIVER MEM\]\|\[DRIVER DIAG\]\|Setting job description\|Phase [0-9]" \
+    > /tmp/driver_mem.log
+
+aws s3 cp /tmp/driver_mem.log "${S3_PREFIX}/${INSTANCE_ID}_driver_mem.log"
+
+# 3. Generate histogram from .hprof (if no pre-captured one exists)
+jmap -histo /tmp/driver_heap.hprof > /tmp/driver_heap_histo.txt
+
+# 4. Run diagnosis
+python3 /usr/local/bin/translate_driver_diagnostic_logs.py \
+    --heap /tmp/driver_heap_histo.txt \
+    --gc /tmp/driver_gc.log \
+    --mem /tmp/driver_mem.log \
+    > /tmp/diagnosis_report.txt
+
+cat /tmp/diagnosis_report.txt
+
+# 5. Upload report
+aws s3 cp /tmp/diagnosis_report.txt "${S3_PREFIX}/${INSTANCE_ID}_diagnosis_report.txt"
+```
+
 ### How to check HDDS application logs
 ```
 hdfs dfs -ls /var/log/spark/apps/
