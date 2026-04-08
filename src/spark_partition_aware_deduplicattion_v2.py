@@ -307,7 +307,11 @@ def partition_aware_deduplicate(
     set_spark_context(
         spark, "Step 3: identity_repartition", "Apply identity_repartition for DataFrame by partition_id col"
     )
-    df_partitioned = identity_repartition(df=df_exploded, repartition_col="partition_id", num_partitions=num_partitions)
+
+    jvm_helper = spark._jvm.com.partitionAssignment.IdentityRepartition
+    df_partitioned = DataFrame(
+        jvm_helper.repartitionFromPython(df_exploded._jdf, "partition_id", num_partitions), spark
+    )
 
     # Step 4: Process each partition locally (no shuffle!)
     logger.info("Step 4: Local deduplication within partitions (NO SHUFFLE)...")
