@@ -855,7 +855,6 @@ resource "aws_emr_cluster" "dedup_cluster" {
         "spark.driver.extraJavaOptions" = join(" ", [
           "-XX:+HeapDumpOnOutOfMemoryError",
           "-XX:HeapDumpPath=/tmp/driver_heap.hprof",
-          "-Xlog:gc*:file=/tmp/driver_gc.log:time,uptime,level,tags",
           "-XX:NativeMemoryTracking=summary",                           # remove if this want to remove 10% offheap overhead.
           "-Xlog:gc*:file=/tmp/driver_gc_%p.log:time,uptime,level,tags" # clean up left over jvm diagnostic log
         ])
