@@ -378,7 +378,10 @@ def partition_aware_deduplicate(
             ]
         )
 
-        local_results = read_parquet_from_s3(s3_path=local_results_s3_path, spark=spark, schema=local_results_schema)
+        local_results = read_parquet_from_s3(
+            s3_path=local_results_s3_path, spark=spark, schema=local_results_schema
+        ).persist(StorageLevel.MEMORY_AND_DISK)
+        local_count = local_results.count()
     else:
         if use_scala_phase1:
             jvm_helper = spark._jvm.com.unionFind.PartitionAwareUnionFindUDF
@@ -397,11 +400,11 @@ def partition_aware_deduplicate(
                 .persist(StorageLevel.MEMORY_AND_DISK)
             )
         local_count = local_results.count()
-        logger.info(f"Phase 1 complete: {local_count} doc -> representative mappings")
 
         if is_debug_mode and local_results_s3_path:
             upload_df_to_s3(df=local_results, s3_path=local_results_s3_path, row_count=local_count)
 
+    logger.info(f"Phase 1 complete: {local_count} doc -> representative mappings")
     set_spark_context(spark, "Step 5 Phase 2", "Cross-partition component merge")
     doc_id_and_representative_doc_id_df_deduped = run_phase2_global_transitivity_closure(
         spark=spark, local_results=local_results, vertices=vertices, max_iterations=50
