@@ -226,13 +226,19 @@ def run_phase2_global_union_find(
             yield Row(local_representative=node, component=uf.find(node))
 
     # output size: COUNT(DISTINCT src) UNION COUNT(DISTINCT dst) from multiple_reps_edges
+    num_shuffle_partitions = int(spark.conf.get("spark.sql.shuffle.partitions", "27000"))
     global_union_find_result_df = (
         multiple_reps_edges.coalesce(1)  # all edges to one executor for global transitivity
         .rdd.mapPartitions(
             run_union_find_on_meta_edges
         )  # mapPartitions instead of batch UDF because global UF needs all data (stateful)
         .toDF(union_find_schema)
+        .repartition(num_shuffle_partitions)
+        .persist(StorageLevel.MEMORY_AND_DISK)
     )
+    global_union_find_result_df_count = global_union_find_result_df.count()
+    logger.info(f"global_union_find_result_df: {global_union_find_result_df_count} rows")
+
     global_union_find_result_df.createOrReplaceTempView("global_union_find_result_df")
 
     # Also need reps that have NO cross-partition edges (singletons in the local_results)
@@ -255,6 +261,7 @@ def run_phase2_global_union_find(
     rep_components_count = rep_components.count()
     logger.info(f"Phase 2 resolved via single-pass Union-Find: {rep_components_count} representatives")
 
+    global_union_find_result_df.unpersist()
     return rep_components
 
 
