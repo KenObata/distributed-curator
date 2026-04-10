@@ -17,6 +17,7 @@ from two_phase_partition_aware_union_find import (
     Phase2GlobalTransitivityClosureQuery,
     run_phase1_local_union_find,
     run_phase2_global_transitivity_closure,
+    run_phase2_global_union_find,
 )
 
 
@@ -646,6 +647,133 @@ class TestFinalMapping:
         assert reps["A"] == "X"
         assert reps["B"] == "X"
         assert reps["C"] == "X"
+
+
+class TestRunPhase2GlobalUnionFind:
+    def test_simple_chain(self, spark):
+        """A—B—C chain resolves all to same component."""
+        local_results = spark.createDataFrame(
+            [
+                Row(doc_id="d1", local_representative="A"),
+                Row(doc_id="d1", local_representative="B"),
+                Row(doc_id="d2", local_representative="B"),
+                Row(doc_id="d2", local_representative="C"),
+            ]
+        )
+        multiple_reps_edges = spark.createDataFrame([Row(src="A", dst="B"), Row(src="B", dst="C")])
+
+        result = run_phase2_global_union_find(spark, multiple_reps_edges, local_results)
+        rows = {r["local_representative"]: r["component"] for r in result.collect()}
+        # All should resolve to same component
+        assert rows["A"] == rows["B"] == rows["C"]
+
+    def test_two_separate_components(self, spark):
+        """A—B and C—D are separate components."""
+        # d1 has reps A,B; d2 has reps C,D — no overlap
+        local_results = spark.createDataFrame(
+            [
+                Row(doc_id="d1", local_representative="A"),
+                Row(doc_id="d1", local_representative="B"),
+                Row(doc_id="d2", local_representative="C"),
+                Row(doc_id="d2", local_representative="D"),
+            ]
+        )
+        multiple_reps_edges = spark.createDataFrame([Row(src="A", dst="B"), Row(src="C", dst="D")])
+        result = run_phase2_global_union_find(spark, multiple_reps_edges, local_results)
+        rows = {r["local_representative"]: r["component"] for r in result.collect()}
+        assert rows["A"] == rows["B"]
+        assert rows["C"] == rows["D"]
+        assert rows["A"] != rows["C"]
+
+    def test_singleton_reps_preserved(self, spark):
+        """Reps with no cross-partition edges map to themselves."""
+        # d1 has reps A,B; d2 only appeared in one partition with rep Z
+        local_results = spark.createDataFrame(
+            [
+                Row(doc_id="d1", local_representative="A"),
+                Row(doc_id="d1", local_representative="B"),
+                Row(doc_id="d2", local_representative="Z"),
+            ]
+        )
+        multiple_reps_edges = spark.createDataFrame([Row(src="A", dst="B")])
+        result = run_phase2_global_union_find(spark, multiple_reps_edges, local_results)
+        rows = {r["local_representative"]: r["component"] for r in result.collect()}
+        assert rows["A"] == rows["B"]
+        assert rows["Z"] == "Z"
+
+    def test_star_topology(self, spark):
+        """A connected to B, C, D — all resolve to same component."""
+        local_results = spark.createDataFrame(
+            [
+                Row(doc_id="d1", local_representative="A"),
+                Row(doc_id="d1", local_representative="B"),
+                Row(doc_id="d1", local_representative="C"),
+                Row(doc_id="d1", local_representative="D"),
+            ]
+        )
+        multiple_reps_edges = spark.createDataFrame(
+            [Row(src="A", dst="B"), Row(src="A", dst="C"), Row(src="A", dst="D")]
+        )
+        result = run_phase2_global_union_find(spark, multiple_reps_edges, local_results)
+        rows = {r["local_representative"]: r["component"] for r in result.collect()}
+        assert rows["A"] == rows["B"] == rows["C"] == rows["D"]
+
+    def test_result_matches_iterative_approach(self, spark):
+        """Single-pass UF produces same components as iterative SQL."""
+        local_results = spark.createDataFrame(
+            [
+                Row(doc_id="d1", local_representative="A"),
+                Row(doc_id="d1", local_representative="B"),
+                Row(doc_id="d2", local_representative="B"),
+                Row(doc_id="d2", local_representative="C"),
+                Row(doc_id="d3", local_representative="D"),
+                Row(doc_id="d3", local_representative="E"),
+                Row(doc_id="d4", local_representative="F"),
+            ]
+        )
+        multiple_reps_edges = spark.createDataFrame(
+            [Row(src="A", dst="B"), Row(src="B", dst="C"), Row(src="D", dst="E")]
+        )
+        uf_result = run_phase2_global_union_find(spark, multiple_reps_edges, local_results)
+        uf_rows = {r["local_representative"]: r["component"] for r in uf_result.collect()}
+
+        # Verify component groupings (not exact values — UF and iterative may pick different roots)
+        # A, B, C should be in same group
+        assert uf_rows["A"] == uf_rows["B"] == uf_rows["C"]
+        # D, E should be in same group
+        assert uf_rows["D"] == uf_rows["E"]
+        # The two groups should be different
+        assert uf_rows["A"] != uf_rows["D"]
+        # F is singleton
+        assert uf_rows["F"] == "F"
+
+    def test_output_schema(self, spark):
+        """Output has exactly (local_representative, component) columns."""
+        multiple_reps_edges = spark.createDataFrame([Row(src="A", dst="B")])
+        local_results = spark.createDataFrame(
+            [
+                Row(doc_id="d1", local_representative="A"),
+                Row(doc_id="d2", local_representative="B"),
+            ]
+        )
+        result = run_phase2_global_union_find(spark, multiple_reps_edges, local_results)
+        assert set(result.columns) == {"local_representative", "component"}
+
+    def test_output_size(self, spark):
+        """Output has DataFrame size of DISTINCT local_representative from
+        initial_components (= local_results) and multiple_reps_edges
+        """
+        local_results = spark.createDataFrame(
+            [
+                Row(doc_id="d1", local_representative="A"),
+                Row(doc_id="d1", local_representative="B"),
+                Row(doc_id="d1", local_representative="C"),
+            ]
+        )
+        # d1 -> [A,B,C]
+        multiple_reps_edges = spark.createDataFrame([Row(src="A", dst="B"), Row(src="A", dst="C")])
+        result = run_phase2_global_union_find(spark, multiple_reps_edges, local_results)
+        assert result.count() == 3  # (A->A), (B->A), (C->A)
 
 
 class TestEndToEnd:

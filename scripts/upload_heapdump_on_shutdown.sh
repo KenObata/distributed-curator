@@ -43,7 +43,7 @@ TIMESTAMP_AT_BOOT="__TIMESTAMP_AT_BOOT__"
 S3_PREFIX="${S3_DEST}/${CLUSTER_ID}/${TIMESTAMP_AT_BOOT}"
 
 shopt -s nullglob
-DUMP_FILES=(/tmp/*.hprof /tmp/driver_gc.log /tmp/driver_mem.log /tmp/driver_heap_histo.txt /tmp/driver_nmt.txt)
+DUMP_FILES=(/tmp/*.hprof /tmp/driver_gc_*.log /tmp/driver_mem.log /tmp/driver_heap_histo.txt /tmp/driver_nmt.txt)
 
 if [ ${#DUMP_FILES[@]} -eq 0 ]; then
     echo "No diagnostic files found in /tmp. Nothing to upload."
@@ -91,8 +91,11 @@ if command -v yarn &> /dev/null; then
     fi
 fi
 
-if [ -f /tmp/driver_gc.log ] && [ -s /tmp/driver_gc.log ]; then
-    DIAG_ARGS="${DIAG_ARGS} --gc /tmp/driver_gc.log"
+# GC log check
+
+GC_LOG=$(ls -t /tmp/driver_gc_*.log 2>/dev/null | head -1) || true
+if [ -n "${GC_LOG}" ] && [ -s "${GC_LOG}" ]; then
+    DIAG_ARGS="${DIAG_ARGS} --gc ${GC_LOG}"
 fi
 
 if [ -f /tmp/driver_mem.log ] && [ -s /tmp/driver_mem.log ]; then
