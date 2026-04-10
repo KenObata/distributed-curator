@@ -10,11 +10,12 @@ try:
 except Exception:
     from union_find import UnionFind
 
-logger = logging.getLogger(__name__)
+try:
+    from .spark_utils import set_spark_context
+except Exception:
+    from spark_utils import set_spark_context
 
-"""
-This file is now replaced by main/scala/partition_local_union_find.scala
-"""
+logger = logging.getLogger(__name__)
 
 
 class Phase2GlobalTransitivityClosureQuery:
@@ -51,6 +52,14 @@ class Phase2GlobalTransitivityClosureQuery:
         return multiple_reps_edges, doc_with_multiple_local_representatives_count
 
     def initialize_local_representative_component_columns(self, local_results: DataFrame) -> DataFrame:
+        """
+        Args:
+        - local_results: DataFrame
+            - output from Phase1. (doc_id: str, local_representative: str)
+            - local_representative is not array yet. Array happens in Step2-1,2-2
+        returns:
+        - DataFrame: size of local_results
+        """
         local_results.createOrReplaceTempView("local_results")
         rep_components = self.spark.sql("""
             SELECT DISTINCT local_representative, local_representative AS component
@@ -61,6 +70,11 @@ class Phase2GlobalTransitivityClosureQuery:
     def propagate_transitive_closure_one_iteration(
         self, initial_components: DataFrame, multiple_reps_edges: DataFrame
     ) -> DataFrame:
+        """
+        returns:
+        - DataFrame: size of DISTINCT local_representative from
+         initial_components (= local_results) and multiple_reps_edges
+        """
         # Propagate minimum component through meta-edges (both directions)
 
         initial_components.createOrReplaceTempView("initial_components")
@@ -135,6 +149,7 @@ class Phase2GlobalTransitivityClosureQuery:
 
 def run_phase1_local_union_find(similar_pairs_df: DataFrame) -> DataFrame:
     """
+    This function is now replaced by main/scala/partition_local_union_find.scala
     Phase 1: Partition-local Union-Find using Python RDD mapPartitions.
     In phase 1, union-find happens only within each partition so that there is no shuffle.
 
@@ -144,7 +159,7 @@ def run_phase1_local_union_find(similar_pairs_df: DataFrame) -> DataFrame:
     Args:
     - similar_pairs_df: (doc_1, doc_2, similarity, partition_id) from Step 3
 
-    Returns:
+    Return:
     - (doc_id, local_representative) — one per unique doc per partition
       - only subset of input_df that exceeded similarity score are included.
     """
@@ -181,85 +196,118 @@ def run_phase1_local_union_find(similar_pairs_df: DataFrame) -> DataFrame:
     return similar_pairs_df.rdd.mapPartitions(run_local_union_find).toDF(local_uf_schema)
 
 
-def run_phase2_global_transitivity_closure(
-    spark: SparkSession,
-    local_results: DataFrame,
-    vertices: DataFrame,
-    max_iterations: int = 50,
+def run_phase2_global_union_find(
+    spark: SparkSession, multiple_reps_edges: DataFrame, local_results: DataFrame
 ) -> DataFrame:
     """
-    Phase 2: Merge components across partition boundaries.
-    df.join().groupBy().agg()
-
-    A doc appearing in multiple partitions may have different local_reps.
-    Build meta-edges between disagreeing reps, then run label propagation
-    on this much smaller graph.
+    Step 2-3: converge transitive graph
+    this function runs UnionFind on a single executor
+    because global UF requires all data in the same partition.
 
     Args:
-    - local_results: (doc_id, local_representative) from Phase 1
-    - vertices: same as input_df containing all input doc
-    - max_iterations: if this exceeds, it warns.
+    - multiple_reps_edges: (local_representative, component)
+        - this df only has docs with local_representative that appeared more than one
+        - ex) For a doc with reps [A, B, C], emit edges: (A,B), (A,C)
 
-    Returns:
-    - DataFrame: (doc_id, representative_id) for all docs from input_df including singletons
-      output of this function will be joined back to input_df.
-
-    Logic:
-    Step 2-1: for each doc, collect across partitions since phase1 was within a partition.
-        => GROUP BY doc_id, Array(local_representative)
-    Step 2-2: Build transitive graph
-    Step 2-3: iterative converge
-
-    ex) Step 2-1:
-        docA → [rep_X_partition_0, rep_Y_parttion1]
-        docB → [rep_Y_partition_1, rep_Z_partition_2]
-
-        Step2-2:
-        (X,Y)
-        (Y,Z)
-        Y: (rep_X_partition_0, rep_Y_parttion1, rep_Z_partition_2) are connected
-        => must all merge
-
-        Step2-3:
-        iteration1:
-            rep_X: min(X, Y)       = X
-            rep_Y: min(Y, X, Z)    = X
-            rep_Z: min(Z, Y)       = Y
-        iteration2:
-            rep_X: min(X, Y (=X))       = X
-            rep_Y: min(Y (=X), X, Z (=Y))    = X
-            rep_Z: min(Z(=Y), Y ( = X))       = X
+    Return:
+    - DataFrame: size of DISTINCT local_representative doc.
+      multiple_reps_edges is just LEFT JOIN.
     """
-    vertices.createOrReplaceTempView("vertices")
-
-    phase2_global_transitivity_closure_query = Phase2GlobalTransitivityClosureQuery(spark)
-
-    # Step 2-1+2 combined:
-    # - Step 2-1: For each doc_id, collect all distinct local_reps
-    # - Step 2-2: Build transitive graph from docs with multiple representatives
-    multiple_reps_edges, doc_with_multiple_local_representatives_count = (
-        phase2_global_transitivity_closure_query.multiple_reps_edges_query(local_results=local_results)
+    union_find_schema = StructType(
+        [
+            StructField("local_representative", StringType(), False),
+            StructField("component", StringType(), False),
+        ]
     )
-    multiple_reps_edges.createOrReplaceTempView("multiple_reps_edges")
 
-    # early exit
-    if doc_with_multiple_local_representatives_count == 0:
-        logger.info("No cross-partition edges. All components resolved locally.")
-        result = spark.sql("""
-            SELECT
-                v.id AS doc_id,
-                COALESCE(c.representative_id, v.id) AS representative_id
-            FROM vertices v
-            LEFT JOIN (
-                SELECT doc_id, MIN(local_representative) AS representative_id
+    def run_union_find_on_meta_edges(iterator: Iterator[Row]) -> Iterator[Row]:
+        uf = UnionFind()
+        for row in iterator:
+            src, dst = row["src"], row["dst"]
+            uf.initial_setup(src)
+            uf.initial_setup(dst)
+            uf.union(src, dst)
+        for node in uf.parent:
+            yield Row(local_representative=node, component=uf.find(node))
+
+    # output size: COUNT(DISTINCT src) UNION COUNT(DISTINCT dst) from multiple_reps_edges
+    set_spark_context(
+        spark, "Step 5 Phase 2", "mapPartitions run_union_find_on_meta_edges on 1 partition. persist DISK_ONLY"
+    )
+    num_shuffle_partitions = int(spark.conf.get("spark.sql.shuffle.partitions", "27000"))
+    global_union_find_result_df = (
+        multiple_reps_edges.coalesce(1)  # all edges to one executor for global transitivity
+        .rdd.mapPartitions(
+            run_union_find_on_meta_edges
+        )  # mapPartitions instead of batch UDF because global UF needs all data (stateful)
+        .toDF(union_find_schema)
+        .persist(StorageLevel.DISK_ONLY)
+    )
+    global_union_find_result_df_count = global_union_find_result_df.count()
+    logger.info(f"global_union_find_result_df: {global_union_find_result_df_count} rows")
+
+    set_spark_context(
+        spark,
+        "Step 5 Phase 2",
+        f"repartition run_global_union_find_result_df back to {num_shuffle_partitions} partitions",
+    )
+    # Reads rows from disk incrementally (streaming, not all in memory)
+    global_union_find_result_df = global_union_find_result_df.repartition(num_shuffle_partitions).persist(
+        StorageLevel.MEMORY_AND_DISK
+    )
+    global_union_find_result_df_count = global_union_find_result_df.count()
+
+    global_union_find_result_df.createOrReplaceTempView("global_union_find_result_df")
+
+    # Also need reps that have NO cross-partition edges (singletons in the local_results)
+    # They won't appear in multiple_reps_edges but exist in local_results
+    # this is to be consistent with iterative_propagate_transitive_closure_wrapper()
+    set_spark_context(spark, "Step 5 Phase 2", "distinct_local_representative LEFT JOIN global_union_find_result_df")
+    local_results.createOrReplaceTempView("local_results")
+    rep_components = spark.sql("""
+            WITH distinct_local_representative as (
+                SELECT DISTINCT local_representative
                 FROM local_results
-                GROUP BY doc_id
-            ) c ON v.id = c.doc_id
+            )
+            SELECT
+                local.local_representative,
+                COALESCE(global.component, local.local_representative) AS component
+            FROM distinct_local_representative local
+            LEFT JOIN global_union_find_result_df global
+              ON local.local_representative = global.local_representative
         """)
-        multiple_reps_edges.unpersist()
-        return result
+    rep_components = rep_components.persist(StorageLevel.MEMORY_AND_DISK)
+    rep_components_count = rep_components.count()
+    logger.info(f"Phase 2 resolved via single-pass Union-Find: {rep_components_count} representatives")
 
-    # Step 2-3: iterative converge
+    global_union_find_result_df.unpersist()
+    return rep_components
+
+
+def iterative_propagate_transitive_closure_wrapper(
+    spark: SparkSession,
+    phase2_global_transitivity_closure_query: Phase2GlobalTransitivityClosureQuery,
+    max_iterations: int,
+    local_results: DataFrame,
+    multiple_reps_edges: DataFrame,
+) -> DataFrame:
+    """
+    Wrapper for Step 2-3: iterative converge.
+
+    Args:
+    - spark: SparkSession
+    - phase2_global_transitivity_closure_query: Phase2GlobalTransitivityClosureQuery
+    - max_iterations: guardrail of convergence.
+    - local_results: (doc_id: str, local_representative: str) from Phase 1
+        - local_representative is not in array yet
+    - multiple_reps_edges: (local_represent_X, local_represent_Y)
+        - only local_representative appeared in multiple doc_id
+        - For a doc with reps [A, B, C], emit edges: (A,B), (A,C)
+
+    Return:
+    - DataFrame: size of DISTINCT local_representative from
+         initial_components (= local_results) and multiple_reps_edges
+    """
     # Set checkpoint directory for iteration lineage truncation
     if spark.conf.get("spark.master").startswith("yarn"):
         # On EMR (YARN): HDFS is shared across all nodes
@@ -304,7 +352,6 @@ def run_phase2_global_transitivity_closure(
             rep_components = new_rep_components.persist(StorageLevel.MEMORY_AND_DISK)
             logger.info(f"Phase 2 converged in {i + 1} iterations")
             break
-
         # Checkpoint every iteration to truncate lineage
         # Note: use checkpoint() because persist() keeps the full DAG lineage on the driver
         # which causes driver OOM
@@ -316,6 +363,111 @@ def run_phase2_global_transitivity_closure(
         )
     if not rep_components.is_cached:
         rep_components = rep_components.persist(StorageLevel.MEMORY_AND_DISK)
+        rep_components.count()
+    return rep_components
+
+
+def run_phase2_global_transitivity_closure(
+    spark: SparkSession,
+    local_results: DataFrame,
+    vertices: DataFrame,
+    max_iterations: int = 50,
+    use_iterative_transitive_closure: bool = False,
+) -> DataFrame:
+    """
+    Phase 2: Merge components across partition boundaries.
+    df.join().groupBy().agg()
+
+    A doc appearing in multiple partitions may have different local_reps.
+    Build meta-edges between disagreeing reps, then run label propagation
+    on this much smaller graph.
+
+    Args:
+    - local_results: (doc_id, local_representative) from Phase 1
+    - vertices: same as input_df containing all input doc
+    - max_iterations: if this exceeds, it warns.
+
+    Return:
+    - DataFrame: (doc_id, representative_id) for all docs from input_df including singletons
+      output of this function will be joined back to input_df.
+
+    Logic:
+    Step 2-1: for each doc, collect across partitions since phase1 was within a partition.
+        => GROUP BY doc_id, Array(local_representative)
+    Step 2-2: Build transitive graph
+    Step 2-3: iterative converge
+
+    ex) Step 2-1:
+        docA → [rep_X_partition_0, rep_Y_parttion1]
+        docB → [rep_Y_partition_1, rep_Z_partition_2]
+
+        Step2-2:
+        (X,Y)
+        (Y,Z)
+        Y: (rep_X_partition_0, rep_Y_parttion1, rep_Z_partition_2) are connected
+        => must all merge
+
+        Step2-3:
+        iteration1:
+            rep_X: min(X, Y)       = X
+            rep_Y: min(Y, X, Z)    = X
+            rep_Z: min(Z, Y)       = Y
+        iteration2:
+            rep_X: min(X, Y (=X))       = X
+            rep_Y: min(Y (=X), X, Z (=Y))    = X
+            rep_Z: min(Z(=Y), Y ( = X))       = X
+    """
+    vertices.createOrReplaceTempView("vertices")
+
+    phase2_global_transitivity_closure_query = Phase2GlobalTransitivityClosureQuery(spark)
+
+    # Step 2-1+2 combined:
+    # - Step 2-1: For each doc_id, collect all distinct local_reps
+    # - Step 2-2: Build transitive graph from docs with multiple representatives
+    # For a doc with reps [A, B, C], emit edges: (A,B), (A,C)
+    multiple_reps_edges, doc_with_multiple_local_representatives_count = (
+        phase2_global_transitivity_closure_query.multiple_reps_edges_query(local_results=local_results)
+    )
+    multiple_reps_edges.createOrReplaceTempView("multiple_reps_edges")
+
+    # early exit
+    if doc_with_multiple_local_representatives_count == 0:
+        logger.info("No cross-partition edges. All components resolved locally.")
+        result = spark.sql("""
+            SELECT
+                v.id AS doc_id,
+                COALESCE(c.representative_id, v.id) AS representative_id
+            FROM vertices v
+            LEFT JOIN (
+                SELECT doc_id, MIN(local_representative) AS representative_id
+                FROM local_results
+                GROUP BY doc_id
+            ) c ON v.id = c.doc_id
+        """)
+        multiple_reps_edges.unpersist()
+        return result
+
+    # Step 2-3: iterative converge
+    if doc_with_multiple_local_representatives_count > 500 * 1000 * 1000:  # 500M edges
+        use_iterative_transitive_closure = True
+    logger.info(
+        f"Phase 2 Step 2-3: "
+        f"{'single-pass Union-Find' if not use_iterative_transitive_closure else 'iterative SQL (fallback)'} "
+        f"for {doc_with_multiple_local_representatives_count} cross-partition edges"
+    )
+    if use_iterative_transitive_closure:
+        rep_components = iterative_propagate_transitive_closure_wrapper(
+            spark=spark,
+            phase2_global_transitivity_closure_query=phase2_global_transitivity_closure_query,
+            max_iterations=max_iterations,
+            local_results=local_results,
+            multiple_reps_edges=multiple_reps_edges,
+        )
+    else:
+        rep_components = run_phase2_global_union_find(
+            spark=spark, multiple_reps_edges=multiple_reps_edges, local_results=local_results
+        )
+
     rep_components.createOrReplaceTempView("rep_components")
 
     # ── Final: Map every doc_id to its global representative ──

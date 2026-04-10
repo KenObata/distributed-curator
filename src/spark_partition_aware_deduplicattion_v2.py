@@ -307,7 +307,11 @@ def partition_aware_deduplicate(
     set_spark_context(
         spark, "Step 3: identity_repartition", "Apply identity_repartition for DataFrame by partition_id col"
     )
-    df_partitioned = identity_repartition(df=df_exploded, repartition_col="partition_id", num_partitions=num_partitions)
+
+    jvm_helper = spark._jvm.com.partitionAssignment.IdentityRepartition
+    df_partitioned = DataFrame(
+        jvm_helper.repartitionFromPython(df_exploded._jdf, "partition_id", num_partitions), spark
+    )
 
     # Step 4: Process each partition locally (no shuffle!)
     logger.info("Step 4: Local deduplication within partitions (NO SHUFFLE)...")
@@ -356,28 +360,53 @@ def partition_aware_deduplicate(
     # Step 5: Build connected components for duplicate groups
     logger.info("Step 5: Build connected components. For each distinct doc_id, it has representative doc_id")
     set_spark_context(spark, "Step 5 Phase 1", "Partition-aware local Union-Find (no shuffle). Dedupe after phase1.")
-
     vertices = input_df.select(F.col("doc_id").alias("id")).distinct().persist(StorageLevel.MEMORY_ONLY)
+    vertices_count = vertices.count()
+    logger.info(f"vertices cached. vertices_count: {vertices_count}")
 
-    if use_scala_phase1:
-        jvm_helper = spark._jvm.com.unionFind.PartitionAwareUnionFindUDF
-        local_results_jdf = jvm_helper.runPhase1LocalUnionFind(
-            similar_pairs_df._jdf,  # Pass the underlying JVM DataFrame
+    local_results_s3_path = None
+    if df_with_partitions_s3_path is not None:
+        local_results_s3_path = df_with_partitions_s3_path.rsplit("/", 1)[0] + "/local_results"
+    if local_results_s3_path is not None and does_file_exists(local_results_s3_path):
+        set_spark_context(
+            spark,
+            "Loading Cached Data",
+            f"Loading pre-computed signatures and partitions from {local_results_s3_path}",
         )
-        local_results = (
-            DataFrame(local_results_jdf, spark)
-            .dropDuplicates(["doc_id", "local_representative"])
-            .persist(StorageLevel.MEMORY_AND_DISK)
+        local_results_schema = StructType(
+            [
+                StructField("doc_id", StringType(), True),
+                StructField("local_representative", StringType(), True),
+            ]
         )
+
+        local_results = read_parquet_from_s3(
+            s3_path=local_results_s3_path, spark=spark, schema=local_results_schema
+        ).persist(StorageLevel.MEMORY_AND_DISK)
+        local_count = local_results.count()
     else:
-        local_results = (
-            run_phase1_local_union_find(similar_pairs_df=similar_pairs_df)
-            .dropDuplicates(["doc_id", "local_representative"])
-            .persist(StorageLevel.MEMORY_AND_DISK)
-        )
-    local_count = local_results.count()
-    logger.info(f"Phase 1 complete: {local_count} doc -> representative mappings")
+        if use_scala_phase1:
+            jvm_helper = spark._jvm.com.unionFind.PartitionAwareUnionFindUDF
+            local_results_jdf = jvm_helper.runPhase1LocalUnionFind(
+                similar_pairs_df._jdf,  # Pass the underlying JVM DataFrame
+            )
+            local_results = (
+                DataFrame(local_results_jdf, spark)
+                .dropDuplicates(["doc_id", "local_representative"])
+                .persist(StorageLevel.MEMORY_AND_DISK)
+            )
+        else:
+            local_results = (
+                run_phase1_local_union_find(similar_pairs_df=similar_pairs_df)
+                .dropDuplicates(["doc_id", "local_representative"])
+                .persist(StorageLevel.MEMORY_AND_DISK)
+            )
+        local_count = local_results.count()
 
+        if is_debug_mode and local_results_s3_path:
+            upload_df_to_s3(df=local_results, s3_path=local_results_s3_path, row_count=local_count)
+
+    logger.info(f"Phase 1 complete: {local_count} doc -> representative mappings")
     set_spark_context(spark, "Step 5 Phase 2", "Cross-partition component merge")
     doc_id_and_representative_doc_id_df_deduped = run_phase2_global_transitivity_closure(
         spark=spark, local_results=local_results, vertices=vertices, max_iterations=50
@@ -386,7 +415,6 @@ def partition_aware_deduplicate(
     logger.info(
         f"Phase 2 complete: {doc_id_and_representative_doc_id_df_count} doc→representative mappings (includes singletons)"
     )
-    logger.info("vertices cached. doc_id_and_representative_doc_id_df_deduped cached.")
     local_results.unpersist()
 
     # Step 6: Join back with original data
