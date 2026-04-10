@@ -10,6 +10,11 @@ try:
 except Exception:
     from union_find import UnionFind
 
+try:
+    from .spark_utils import set_spark_context
+except Exception:
+    from spark_utils import set_spark_context
+
 logger = logging.getLogger(__name__)
 
 
@@ -226,6 +231,9 @@ def run_phase2_global_union_find(
             yield Row(local_representative=node, component=uf.find(node))
 
     # output size: COUNT(DISTINCT src) UNION COUNT(DISTINCT dst) from multiple_reps_edges
+    set_spark_context(
+        spark, "Step 5 Phase 2", "mapPartitions run_union_find_on_meta_edges on 1 partition. persist DISK_ONLY"
+    )
     num_shuffle_partitions = int(spark.conf.get("spark.sql.shuffle.partitions", "27000"))
     global_union_find_result_df = (
         multiple_reps_edges.coalesce(1)  # all edges to one executor for global transitivity
@@ -233,17 +241,28 @@ def run_phase2_global_union_find(
             run_union_find_on_meta_edges
         )  # mapPartitions instead of batch UDF because global UF needs all data (stateful)
         .toDF(union_find_schema)
-        .repartition(num_shuffle_partitions)
-        .persist(StorageLevel.MEMORY_AND_DISK)
+        .persist(StorageLevel.DISK_ONLY)
     )
     global_union_find_result_df_count = global_union_find_result_df.count()
     logger.info(f"global_union_find_result_df: {global_union_find_result_df_count} rows")
+
+    set_spark_context(
+        spark,
+        "Step 5 Phase 2",
+        f"repartition run_global_union_find_result_df back to {num_shuffle_partitions} partitions",
+    )
+    # Reads rows from disk incrementally (streaming, not all in memory)
+    global_union_find_result_df = global_union_find_result_df.repartition(num_shuffle_partitions).persist(
+        StorageLevel.MEMORY_AND_DISK
+    )
+    global_union_find_result_df_count = global_union_find_result_df.count()
 
     global_union_find_result_df.createOrReplaceTempView("global_union_find_result_df")
 
     # Also need reps that have NO cross-partition edges (singletons in the local_results)
     # They won't appear in multiple_reps_edges but exist in local_results
     # this is to be consistent with iterative_propagate_transitive_closure_wrapper()
+    set_spark_context(spark, "Step 5 Phase 2", "distinct_local_representative LEFT JOIN global_union_find_result_df")
     local_results.createOrReplaceTempView("local_results")
     rep_components = spark.sql("""
             WITH distinct_local_representative as (

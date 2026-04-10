@@ -361,6 +361,8 @@ def partition_aware_deduplicate(
     logger.info("Step 5: Build connected components. For each distinct doc_id, it has representative doc_id")
     set_spark_context(spark, "Step 5 Phase 1", "Partition-aware local Union-Find (no shuffle). Dedupe after phase1.")
     vertices = input_df.select(F.col("doc_id").alias("id")).distinct().persist(StorageLevel.MEMORY_ONLY)
+    vertices_count = vertices.count()
+    logger.info(f"vertices cached. vertices_count: {vertices_count}")
 
     local_results_s3_path = None
     if df_with_partitions_s3_path is not None:
@@ -413,7 +415,6 @@ def partition_aware_deduplicate(
     logger.info(
         f"Phase 2 complete: {doc_id_and_representative_doc_id_df_count} doc→representative mappings (includes singletons)"
     )
-    logger.info("vertices cached. doc_id_and_representative_doc_id_df_deduped cached.")
     local_results.unpersist()
 
     # Step 6: Join back with original data
