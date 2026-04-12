@@ -315,8 +315,8 @@ spark-submit \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=30000 \
   --num-executors 447 \
   --executor-cores 4 \
-  --executor-memory 31g \
-  --driver-memory 32g \
+  --executor-memory 27g \
+  --driver-memory 58g \
   --conf spark.sql.shuffle.partitions=27000 \
   --conf spark.network.timeout=1200s \
   --conf spark.shuffle.io.connectionTimeout=600s \
