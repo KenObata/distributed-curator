@@ -18,7 +18,6 @@
 #
 # The JVM flags (-XX:+HeapDumpOnOutOfMemoryError) should be set separately
 # via spark.driver.extraJavaOptions in your Spark config.
-sudo yum install -y java-17-amazon-corretto-devel
 
 set -euo pipefail
 
@@ -43,7 +42,7 @@ TIMESTAMP_AT_BOOT="__TIMESTAMP_AT_BOOT__"
 S3_PREFIX="${S3_DEST}/${CLUSTER_ID}/${TIMESTAMP_AT_BOOT}"
 
 shopt -s nullglob
-DUMP_FILES=(/tmp/*.hprof /tmp/driver_gc_*.log /tmp/driver_mem.log /tmp/driver_heap_histo.txt /tmp/driver_nmt.txt)
+DUMP_FILES=(/tmp/*.hprof /tmp/driver_gc_*.log /tmp/driver_mem.log /tmp/driver_heap_histo_*.txt /tmp/driver_nmt_*.txt)
 
 if [ ${#DUMP_FILES[@]} -eq 0 ]; then
     echo "No diagnostic files found in /tmp. Nothing to upload."
@@ -74,8 +73,9 @@ if [ ${#HPROF_FILES[@]} -gt 0 ]; then
     fi
 fi
 
-if [ -f /tmp/driver_heap_histo.txt ] && [ -s /tmp/driver_heap_histo.txt ]; then
-    DIAG_ARGS="${DIAG_ARGS} --heap /tmp/driver_heap_histo.txt"
+DRIVER_HEAP_HISTO_FILE=$(ls -t /tmp/driver_heap_histo_*.txt 2>/dev/null | head -1) || true
+if [ -f "${DRIVER_HEAP_HISTO_FILE}" ] && [ -s "${DRIVER_HEAP_HISTO_FILE}" ]; then
+    DIAG_ARGS="${DIAG_ARGS} --heap ${DRIVER_HEAP_HISTO_FILE}"
 fi
 
 # Extract JMX memory log from YARN AM stdout (if deploy-mode cluster)
