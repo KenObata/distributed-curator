@@ -313,7 +313,7 @@ spark-submit \
   --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
   --jars s3://text-deduplication-740959772378/scripts/minhash-udf_2.12-0.1.jar \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=30000 \
-  --num-executors 448 \
+  --num-executors 447 \
   --executor-cores 4 \
   --executor-memory 31g \
   --driver-memory 32g \
