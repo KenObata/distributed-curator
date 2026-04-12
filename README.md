@@ -432,10 +432,10 @@ CLUSTER_ID=$(cat /mnt/var/lib/info/job-flow.json | python3 -c "import sys,json; 
 S3_PREFIX="s3://text-dedupe-benchmark/heapdumps/${CLUSTER_ID}/$(date +%Y%m%dT%H%M%S)"
 INSTANCE_ID=$(ec2-metadata -i | awk '{print $2}')
 
-aws s3 cp /tmp/driver_heap.hprof "${S3_PREFIX}/${INSTANCE_ID}_driver_heap.hprof"
-aws s3 cp /tmp/driver_gc.log "${S3_PREFIX}/${INSTANCE_ID}_driver_gc.log"
-aws s3 cp /tmp/driver_heap_histo.txt "${S3_PREFIX}/${INSTANCE_ID}_driver_heap_histo.txt"
-aws s3 cp /tmp/driver_nmt.txt "${S3_PREFIX}/${INSTANCE_ID}_driver_nmt.txt"
+aws s3 cp /tmp/ "${S3_PREFIX}/" --recursive --exclude "*" --include "driver_heap_*.hprof"
+aws s3 cp /tmp/ "${S3_PREFIX}/" --recursive --exclude "*" --include "driver_gc_*.log"
+aws s3 cp /tmp/ "${S3_PREFIX}/" --recursive --exclude "*" --include "driver_heap_histo_*.log"
+aws s3 cp /tmp/ "${S3_PREFIX}/" --recursive --exclude "*" --include "driver_nmt_*.log"
 
 # 2. Extract memory log from YARN AM stdout
 APP_ID=$(yarn application -list -appStates FINISHED,FAILED,KILLED 2>/dev/null \

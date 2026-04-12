@@ -33,6 +33,7 @@ import logging
 import subprocess
 import threading
 import time
+from typing import Optional
 
 from pyspark import SparkContext
 
@@ -127,7 +128,7 @@ def start_memory_logger(sc: SparkContext, interval_seconds: int = 30) -> threadi
     return t
 
 
-def capture_heap_histogram(sc: SparkContext, output_path: str = "/tmp/driver_heap_histo.txt") -> bool:
+def capture_heap_histogram(sc: SparkContext, output_path: Optional[str] = None) -> bool:
     """
     heap histogram (equivalent to jmap -histo) is something only get it on crash (e.g.OOM).
     To get it on every run, we need subprocess.run(jmap - histo).
@@ -157,6 +158,8 @@ def capture_heap_histogram(sc: SparkContext, output_path: str = "/tmp/driver_hea
     """
     try:
         pid = _get_driver_jvm_pid(sc)
+        if output_path is None:
+            output_path = f"/tmp/driver_heap_histo_{pid}.txt"
         logger.info(f"Capturing heap histogram for JVM pid={pid}...")
 
         result = subprocess.run(
@@ -187,7 +190,7 @@ def capture_heap_histogram(sc: SparkContext, output_path: str = "/tmp/driver_hea
         return False
 
 
-def capture_nmt_summary(sc: SparkContext, output_path: str = "/tmp/driver_nmt.txt") -> bool:
+def capture_nmt_summary(sc: SparkContext, output_path: Optional[str] = None) -> bool:
     """
     Capture NativeMemoryTracking summary (off-heap breakdown).
     Only works if JVM was started with -XX:NativeMemoryTracking=summary.
@@ -202,6 +205,8 @@ def capture_nmt_summary(sc: SparkContext, output_path: str = "/tmp/driver_nmt.tx
     """
     try:
         pid = _get_driver_jvm_pid(sc)
+        if output_path is None:
+            output_path = f"/tmp/driver_nmt_{pid}.txt"
         logger.info(f"Capturing NMT summary for JVM pid={pid}...")
 
         result = subprocess.run(

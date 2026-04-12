@@ -438,6 +438,9 @@ resource "aws_s3_object" "bootstrap_script" {
     #!/bin/bash
     set -e
     
+    echo "Installing JDK dependencies..."
+    sudo yum install -y java-17-amazon-corretto-devel
+
     echo "Installing Python dependencies..."
     sudo yum install -y python3-devel
     sudo /usr/bin/pip3 install numpy mmh3 xxhash cython
@@ -812,7 +815,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
   }
 
   bootstrap_action {
-    name = "Install Python dependencies"
+    name = "Install Python and JDK17 dependencies"
     path = "s3://${aws_s3_bucket.scripts_bucket.id}/bootstrap/install_dependencies.sh"
   }
 
@@ -854,7 +857,7 @@ resource "aws_emr_cluster" "dedup_cluster" {
 
         "spark.driver.extraJavaOptions" = join(" ", [
           "-XX:+HeapDumpOnOutOfMemoryError",
-          "-XX:HeapDumpPath=/tmp/driver_heap.hprof",
+          "-XX:HeapDumpPath=/tmp/driver_heap_%p.hprof",
           "-XX:NativeMemoryTracking=summary",                           # remove if this want to remove 10% offheap overhead.
           "-Xlog:gc*:file=/tmp/driver_gc_%p.log:time,uptime,level,tags" # clean up left over jvm diagnostic log
         ])
