@@ -190,7 +190,7 @@ def capture_heap_histogram(sc: SparkContext, output_path: Optional[str] = None) 
         return False
 
 
-def capture_nmt_summary(sc: SparkContext, output_path: str = "/tmp/driver_nmt.txt") -> bool:
+def capture_nmt_summary(sc: SparkContext, output_path: Optional[str] = None) -> bool:
     """
     Capture NativeMemoryTracking summary (off-heap breakdown).
     Only works if JVM was started with -XX:NativeMemoryTracking=summary.
