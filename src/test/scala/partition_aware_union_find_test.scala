@@ -7,7 +7,8 @@ import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import org.apache.spark.sql.types.{DoubleType, IntegerType, StringType, StructField, StructType}
 import org.apache.spark.sql.Encoders
 import scala.collection.mutable
-
+import org.apache.spark.util.LongAccumulator
+import scala.Tuple2
 class PartitionAwareUnionFindUDFTest extends AnyFunSuite {
 
 // computed once and cached
@@ -36,7 +37,9 @@ class PartitionAwareUnionFindUDFTest extends AnyFunSuite {
     )
 
     val similarPairsDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(1)
-    val resultDf: DataFrame       = PartitionAwareUnionFindUDF.runPhase1LocalUnionFind(similarPairsDf)
+    val result: Tuple2[DataFrame, LongAccumulator]       = PartitionAwareUnionFindUDF.runPhase1LocalUnionFind(similarPairsDf)
+    val resultDf: DataFrame = result._1
+    val pairCountAccumulator: LongAccumulator = result._2
 
     val resultDataset: Dataset[PartitionAwareUnionFindUDF.LocalUnionFindSchema] =
       resultDf.as[PartitionAwareUnionFindUDF.LocalUnionFindSchema]
@@ -62,7 +65,9 @@ class PartitionAwareUnionFindUDFTest extends AnyFunSuite {
     )
 
     val similarPairsDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(1)
-    val resultDf: DataFrame       = PartitionAwareUnionFindUDF.runPhase1LocalUnionFind(similarPairsDf)
+    val result: Tuple2[DataFrame, LongAccumulator]       = PartitionAwareUnionFindUDF.runPhase1LocalUnionFind(similarPairsDf)
+    val resultDf: DataFrame = result._1
+    val pairCountAccumulator: LongAccumulator = result._2
     val resultDataset: Dataset[PartitionAwareUnionFindUDF.LocalUnionFindSchema] =
       resultDf.as[PartitionAwareUnionFindUDF.LocalUnionFindSchema]
     val resultArray: Array[PartitionAwareUnionFindUDF.LocalUnionFindSchema] =
@@ -88,7 +93,9 @@ class PartitionAwareUnionFindUDFTest extends AnyFunSuite {
     )
 
     val similarPairsDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(1)
-    val resultDf: DataFrame       = PartitionAwareUnionFindUDF.runPhase1LocalUnionFind(similarPairsDf)
+    val result: Tuple2[DataFrame, LongAccumulator]       = PartitionAwareUnionFindUDF.runPhase1LocalUnionFind(similarPairsDf)
+    val resultDf: DataFrame = result._1
+    val pairCountAccumulator: LongAccumulator = result._2
     val resultDataset: Dataset[PartitionAwareUnionFindUDF.LocalUnionFindSchema] =
       resultDf.as[PartitionAwareUnionFindUDF.LocalUnionFindSchema]
     val resultArray: Array[PartitionAwareUnionFindUDF.LocalUnionFindSchema] = resultDataset.collect()
@@ -114,7 +121,9 @@ class PartitionAwareUnionFindUDFTest extends AnyFunSuite {
     )
 
     val similarPairsDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(1)
-    val resultDf: DataFrame       = PartitionAwareUnionFindUDF.runPhase1LocalUnionFind(similarPairsDf)
+    val result: Tuple2[DataFrame, LongAccumulator]       = PartitionAwareUnionFindUDF.runPhase1LocalUnionFind(similarPairsDf)
+    val resultDf: DataFrame = result._1
+    val pairCountAccumulator: LongAccumulator = result._2
     val resultDataset: Dataset[PartitionAwareUnionFindUDF.LocalUnionFindSchema] =
       resultDf.as[PartitionAwareUnionFindUDF.LocalUnionFindSchema]
     val resultArray: Array[PartitionAwareUnionFindUDF.LocalUnionFindSchema] = resultDataset.collect()
@@ -144,7 +153,9 @@ class PartitionAwareUnionFindUDFTest extends AnyFunSuite {
     )
 
     val similarPairsDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(2, col("partition_id"))
-    val resultDf: DataFrame       = PartitionAwareUnionFindUDF.runPhase1LocalUnionFind(similarPairsDf)
+    val result: Tuple2[DataFrame, LongAccumulator]       = PartitionAwareUnionFindUDF.runPhase1LocalUnionFind(similarPairsDf)
+    val resultDf: DataFrame = result._1
+    val pairCountAccumulator: LongAccumulator = result._2
     val resultDataset: Dataset[PartitionAwareUnionFindUDF.LocalUnionFindSchema] =
       resultDf.as[PartitionAwareUnionFindUDF.LocalUnionFindSchema]
     val resultArray: Array[PartitionAwareUnionFindUDF.LocalUnionFindSchema] = resultDataset.collect()
@@ -169,7 +180,9 @@ class PartitionAwareUnionFindUDFTest extends AnyFunSuite {
       )
     )
     val similarPairsDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(1)
-    val resultDf: DataFrame       = PartitionAwareUnionFindUDF.runPhase1LocalUnionFind(similarPairsDf)
+    val result: Tuple2[DataFrame, LongAccumulator]       = PartitionAwareUnionFindUDF.runPhase1LocalUnionFind(similarPairsDf)
+    val resultDf: DataFrame = result._1
+    val pairCountAccumulator: LongAccumulator = result._2
     val resultDataset: Dataset[PartitionAwareUnionFindUDF.LocalUnionFindSchema] =
       resultDf.as[PartitionAwareUnionFindUDF.LocalUnionFindSchema]
     val resultArray: Array[PartitionAwareUnionFindUDF.LocalUnionFindSchema] = resultDataset.collect()
@@ -192,7 +205,9 @@ class PartitionAwareUnionFindUDFTest extends AnyFunSuite {
       )
     )
     val similarPairsDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(2, col("partition_id"))
-    val resultDf: DataFrame       = PartitionAwareUnionFindUDF.runPhase1LocalUnionFind(similarPairsDf)
+    val result: Tuple2[DataFrame, LongAccumulator]       = PartitionAwareUnionFindUDF.runPhase1LocalUnionFind(similarPairsDf)
+    val resultDf: DataFrame = result._1
+    val pairCountAccumulator: LongAccumulator = result._2
     val resultDataset: Dataset[PartitionAwareUnionFindUDF.LocalUnionFindSchema] =
       resultDf.as[PartitionAwareUnionFindUDF.LocalUnionFindSchema]
     val resultArray: Array[PartitionAwareUnionFindUDF.LocalUnionFindSchema] = resultDataset.collect()
@@ -202,6 +217,27 @@ class PartitionAwareUnionFindUDFTest extends AnyFunSuite {
 
     val resultDocIdSet: Set[String] = resultArray.map(row => row.doc_id).toSet
     assert(resultDocIdSet == Set("A", "B", "C"))
+  }
+
+  test("test_accumulator_counts_pairs") {
+    /*
+      partition 0 has 2 rows, partition 1 has 1 row.
+      so pairCountAccumulator should be 3.
+    */
+    val rowRDD: RDD[Row] = spark.sparkContext.parallelize(
+      Seq(
+        Row("A", "B", 0.9, 0),
+        Row("B", "C", 0.9, 0),
+        Row("C", "D", 0.9, 1),
+      )
+    )
+    val similarPairsDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(2, col("partition_id"))
+    val result: Tuple2[DataFrame, LongAccumulator]       = PartitionAwareUnionFindUDF.runPhase1LocalUnionFind(similarPairsDf)
+    val resultDf: DataFrame = result._1
+    val pairCountAccumulator: LongAccumulator = result._2
+    
+    resultDf.count()  // trigger mapPartitions
+    assert(pairCountAccumulator.value == 3)
   }
 
 }

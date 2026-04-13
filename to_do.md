@@ -39,20 +39,23 @@
       - DONE. 4 min in Step1. 15 min E2E.
     - Setup mandatory pre-commit script for pytest and sbt test
     - optimize fetching WET files?
-    ☐ 9k WET test after following optimization:
+    - 9k WET test after following optimization:
      Step4 in scala (prev. 1 hour), Step5 two phase UnionFind (prev. 1 hour).
     - Optimize Step4: dropDlicates
       - Explore deduplicating inside Step 4's Scala mapPartitions across partitions
       - Actually this won't help because we need global dedupe.
     - Optimize Step3: implement deterministic partitioning
      (identity partitioning) instead of hash partitioning. Include unit tests.
-    ☐ Reduce shuffle partitions for Phase 2 only 
-    ☐ Disable Spark UI storage 
+    - Reduce shuffle partitions for Phase 2 only 
+      - defer now that we use single pass global union find.
+    - Disable Spark UI storage 
       spark.ui.retainedStages=50 and spark.ui.retainedTasks=1000 caps the UI memory footprint
-    ☐ Local checkpoint instead of HDFS
+      - won't do
+    - Local checkpoint instead of HDFS
      — localCheckpoint() writes to executor disk, avoids HDFS overhead, and the driver doesn't track HDFS file metadata. Less durable but Phase 2 iterations are short enough that re-execution on failure is cheap
-    ☐ Scala IdentityPartitioner — eliminates the 6.6 min Python pickle step, which also reduces driver-side serialization metadata
-    ☐ Distributed Union-Find
+     - defer now that we use single pass global union find. 
+    - Scala IdentityPartitioner — eliminates the 6.6 min Python pickle step, which also reduces driver-side serialization metadata
+    - Distributed Union-Find
      — at 90K, replace the iterative SQL label propagation entirely with an RDD-based Union-Find that runs in a single pass via mapPartitions on the meta-graph edges, similar to Phase 1 but on the cross-partition edges. This eliminates iterations altogether
     ☐ 90k WET
     ☐ Package as library
@@ -184,3 +187,8 @@
         └── ...
 - Any.hashCode() 
   - Scala's Any.hashCode() maps to Java's Object.hashCode() at the JVM level. So when Spark calls key.hashCode, it's calling Java's Integer.hashCode() on a partition_id
+- instead of count, use accumulator (actually not tied to scala at all)
+  - What is accumulator: 
+    Accumulators are write-only on executors, read-only on driver. No synchronization between executors:
+  - Why accumulator:
+    - we can skip df.count()

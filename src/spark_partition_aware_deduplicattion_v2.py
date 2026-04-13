@@ -387,21 +387,27 @@ def partition_aware_deduplicate(
     else:
         if use_scala_phase1:
             jvm_helper = spark._jvm.com.unionFind.PartitionAwareUnionFindUDF
-            local_results_jdf = jvm_helper.runPhase1LocalUnionFind(
+            local_results_jdf_and_accumulator_tuple = jvm_helper.runPhase1LocalUnionFind(
                 similar_pairs_df._jdf,  # Pass the underlying JVM DataFrame
             )
+            local_results_jdf = local_results_jdf_and_accumulator_tuple._1()
+            pair_count_accumulator = local_results_jdf_and_accumulator_tuple._2()
             local_results = (
                 DataFrame(local_results_jdf, spark)
                 .dropDuplicates(["doc_id", "local_representative"])
                 .persist(StorageLevel.MEMORY_AND_DISK)
             )
+            local_count = local_results.count()
+            # Accumulator value available after action triggers mapPartitions
+            pair_count = pair_count_accumulator.value()
+            logger.info(f"Similar pairs processed: {pair_count}")
         else:
             local_results = (
                 run_phase1_local_union_find(similar_pairs_df=similar_pairs_df)
                 .dropDuplicates(["doc_id", "local_representative"])
                 .persist(StorageLevel.MEMORY_AND_DISK)
             )
-        local_count = local_results.count()
+            local_count = local_results.count()
 
         if is_debug_mode and local_results_s3_path:
             upload_df_to_s3(df=local_results, s3_path=local_results_s3_path, row_count=local_count)
