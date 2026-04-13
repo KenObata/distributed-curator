@@ -527,7 +527,7 @@ where am means application manager and number means attempt.
 
 #### One time setup
 ```
-export SPARK_HISTORY_OPTS="-Dspark.history.fs.logDirectory=file:///Users/kenichiobata/src/llm_trainining/spark-history-logs"
+export SPARK_HISTORY_OPTS="-Dspark.history.fs.logDirectory=file:///Users/kenichiobata/src/llm_trainining/spark_history_logs"
 ```
 
 set SPARK_HOME
