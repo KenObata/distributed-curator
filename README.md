@@ -287,24 +287,39 @@ until creating df_with_partition,
 this was fine:
 num-executors=63, memoryOverhead=6g,executor-memory=24g.
 
-Compute resources:
-* 384 vCPU (6 × 64)
-* 3,072 GB RAM (6 × 512 GB)
-* 14,400 GB NVMe SSD (6 × 2 × 1200 GB)
+For 90k WET files, 
+with 64 of r5ad.8xlarge,
+* 2048 vCPU (64 × 32)
+* 16TB GB RAM (64 × 256 GB)
+
+- reserve 1 core per node for YARN/OS overhead:
+  Available cores per node: 32 - 1 = 31
+  Total usable cores: 31 × 64 = 1984
+  Executors at 4 cores: 1984 / 4 = 496 executors
+
+- Also, one node is the master (driver + ResourceManager), 
+  so one node is master + 63 core nodes.
+  Usable cores: 31 cores / 4 = 7 executors (3 cores wasted)
+  For master node: 30 cores / 4 = 7 executors (2 cores wasted)
+  7 executor per node * 64 node = 448 executors
+  
+- For memory
+  - 7 executors × (executor_memory + 5g overhead) ≤ ~254 GB (256 - 2 OS)
+  executor_memory + 5 ≤ 36.3
+  executor_memory ≤ 31g
 ```
 spark-submit \
   --master yarn \
   --py-files s3://your-scripts-bucket/scripts/dependencies.zip \
   --jars s3://your-scripts-bucket/scripts/minhash-udf_2.12-0.1.jar \
-  --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
-  --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
-  --num-executors 84 \
+  --conf spark.sql.execution.arrow.maxRecordsPerBatch=30000 \
+  --num-executors 447 \
   --executor-cores 4 \
-  --executor-memory 26g \
-  --driver-memory 48g \
-  --conf spark.sql.shuffle.partitions=9000 \
+  --executor-memory 27g \
+  --driver-memory 58g \
+  --conf spark.sql.shuffle.partitions=27000 \
   --conf spark.network.timeout=1200s \
-  --conf spark.shuffle.io.connectionTimeout=900s \
+  --conf spark.shuffle.io.connectionTimeout=600s \
   --conf spark.executor.extraJavaOptions="-XX:+UseG1GC -XX:MaxGCPauseMillis=200" \
   --conf spark.memory.offHeap.enabled=true \
   --conf spark.memory.offHeap.size=2g \
@@ -312,12 +327,15 @@ spark-submit \
   --conf spark.shuffle.service.enabled=true \
   --conf spark.dynamicAllocation.enabled=false \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
+  --conf spark.shuffle.io.maxRetries=10 \
+  --conf spark.shuffle.io.retryWait=30s \
+  --conf spark.task.maxFailures=8 \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
-  --conf spark.executor.memoryOverhead=6g \
-  --jars s3://your-scripts-bucket/jars/minhash-udf_2.12-0.1.jar \
+  --conf spark.executor.memoryOverhead=5g \
   --deploy-mode cluster \
-  s3://your-scripts-bucket/scripts/spark_deduplication_test.py scale_proof
+  s3://your-scripts-bucket/scripts/spark_deduplication_test.py full_corpus
 ```
+- partitions=27000 if just processing input data from WET files.
 
 How to save your executor log file.
 ```
@@ -509,7 +527,7 @@ where am means application manager and number means attempt.
 
 #### One time setup
 ```
-export SPARK_HISTORY_OPTS="-Dspark.history.fs.logDirectory=file:///path/to/repo/spark-history-logs"
+export SPARK_HISTORY_OPTS="-Dspark.history.fs.logDirectory=file:///path/to/repo/spark_history_logs"
 ```
 
 set SPARK_HOME
