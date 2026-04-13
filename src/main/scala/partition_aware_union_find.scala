@@ -4,6 +4,7 @@ import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import org.apache.spark.sql.types.{StringType, StructField, StructType}
 import scala.collection.mutable
 import org.apache.spark.util.LongAccumulator
+
 /**
  * Partition-aware local Union-Find with path compression + union by rank. Runs inside mapPartitions — zero shuffle.
  *
@@ -80,8 +81,8 @@ object PartitionAwareUnionFindUDF {
     - (doc_id, localRepresentative) — one per unique doc per partition
       - only subset of input_df that exceeded similarity score are included.
      */
-    val spark = similarPairsDf.sparkSession
-    val sc = spark.sparkContext
+    val spark                      = similarPairsDf.sparkSession
+    val sc                         = spark.sparkContext
     val pairCount: LongAccumulator = sc.longAccumulator("similar_pairs_count")
 
     val resultRDD = similarPairsDf.rdd.mapPartitions { iterator: Iterator[Row] =>
