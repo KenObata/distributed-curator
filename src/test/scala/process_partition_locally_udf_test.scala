@@ -14,6 +14,8 @@ import org.apache.spark.sql.Dataset
 import org.apache.spark.rdd.RDD
 import scala.util.Random
 import java.lang.reflect.Method
+import org.apache.spark.sql.Encoders
+import com.partitionAssignment.IdentityRepartition
 
 class ProcessPartitionLocallyTest extends AnyFunSuite {
 
@@ -33,6 +35,34 @@ class ProcessPartitionLocallyTest extends AnyFunSuite {
   val schema: StructType = StructType(fields)
 
   val numHashes: Int = 64
+
+  test("test_output_schema_and_length") {
+    val minhashSignature1 = Array(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L)
+    val minhashSignature2 = Array(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L)         // same -> similar
+    val minhashSignature3 = Array(99L, 98L, 97L, 96L, 95L, 94L, 93L, 92L) // different
+    val minhashSignature4 = Array(91L, 92L, 93L, 94L, 95L, 96L, 97L, 98L) // different
+    val minhashSignature5 = Array(92L, 93L, 94L, 95L, 96L, 97L, 98L, 99L) // different
+
+    val rows = Seq(
+      Row("doc_1", minhashSignature1, 0),
+      Row("doc_2", minhashSignature2, 0),
+      Row("doc_3", minhashSignature3, 0),
+      Row("doc_4", minhashSignature4, 1),
+      Row("doc_5", minhashSignature5, 1)
+    )
+    val rdd = spark.sparkContext.parallelize(rows)
+    val df  = spark.createDataFrame(rdd, schema).repartition(1)
+    val resultDf = ProcessPartitionLocallyUDF.processPartitions(
+      df = df,
+      numBands = 2,
+      rowsPerBand = 4,
+      similarityThreshold = 0.9
+    )
+
+    val expectedSchema = Encoders.product[ProcessPartitionLocallyUDF.SimilarityPairs].schema
+    assert(resultDf.schema == expectedSchema)
+    assert(resultDf.count() == 1)
+  }
 
   test("empty df returns empty result") {
 
@@ -183,6 +213,48 @@ class ProcessPartitionLocallyTest extends AnyFunSuite {
       .asInstanceOf[Double]
 
     assert(noMatchResult == 0.0)
+  }
+
+  test("test_pair_count_deterministic_across_partition_counts") {
+    /* Goal of this test case is that changing num_partition
+      should NOT change output size, pairCount.
+
+      expected output:
+        - (doc1, doc2, 1.0, 0)
+     */
+    val minhashSignature1 = Array(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L)
+    val minhashSignature2 = Array(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L)         // same -> similar
+    val minhashSignature3 = Array(99L, 98L, 97L, 96L, 95L, 94L, 93L, 92L) // different
+    val minhashSignature4 = Array(91L, 92L, 93L, 94L, 95L, 96L, 97L, 98L) // different
+    val minhashSignature5 = Array(92L, 93L, 94L, 95L, 96L, 97L, 98L, 99L) // different
+
+    val rows = Seq(
+      Row("doc_1", minhashSignature1, 0),
+      Row("doc_2", minhashSignature2, 0),
+      Row("doc_3", minhashSignature3, 0),
+      Row("doc_4", minhashSignature4, 1),
+      Row("doc_5", minhashSignature5, 1)
+    )
+    val rdd = spark.sparkContext.parallelize(rows)
+    val df  = spark.createDataFrame(rdd, schema)
+
+    val df10partitioned  = IdentityRepartition.repartition(df, "partition_id", 10)
+    val df100partitioned = IdentityRepartition.repartition(df, "partition_id", 100)
+    val result10 = ProcessPartitionLocallyUDF.processPartitions(
+      df = df10partitioned,
+      numBands = 2,
+      rowsPerBand = 4,
+      similarityThreshold = 0.9
+    )
+    val result100 = ProcessPartitionLocallyUDF.processPartitions(
+      df = df100partitioned,
+      numBands = 2,
+      rowsPerBand = 4,
+      similarityThreshold = 0.9
+    )
+
+    assert(result10.count() == 1)
+    assert(result10.count() == result100.count())
   }
 
 }
