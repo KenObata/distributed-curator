@@ -3,6 +3,7 @@ package com.unionFind
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import org.apache.spark.sql.types.{StringType, StructField, StructType}
 import scala.collection.mutable
+import org.apache.spark.util.LongAccumulator
 
 /**
  * Partition-aware local Union-Find with path compression + union by rank. Runs inside mapPartitions — zero shuffle.
@@ -65,7 +66,7 @@ object PartitionAwareUnionFindUDF {
 
   def runPhase1LocalUnionFind(
     similarPairsDf: DataFrame
-  ): DataFrame = {
+  ): (DataFrame, LongAccumulator) = {
     /*
     Phase 1: Partition-aware local Union-Find in each partition.
     In phase 1, union-find happens only within each partition so that there is no shuffle.
@@ -80,6 +81,9 @@ object PartitionAwareUnionFindUDF {
     - (doc_id, localRepresentative) — one per unique doc per partition
       - only subset of input_df that exceeded similarity score are included.
      */
+    val spark                      = similarPairsDf.sparkSession
+    val sc                         = spark.sparkContext
+    val pairCount: LongAccumulator = sc.longAccumulator("similar_pairs_count")
 
     val resultRDD = similarPairsDf.rdd.mapPartitions { iterator: Iterator[Row] =>
       /*
@@ -93,7 +97,11 @@ object PartitionAwareUnionFindUDF {
        */
       val unionFindInstance: UnionFind = new UnionFind()
 
+      // for replacing similar_pair_df.count()
+      var localPairCount: Long = 0L
+
       for (row <- iterator) {
+        localPairCount += 1
         val doc1 = row.getAs[String]("doc1")
         val doc2 = row.getAs[String]("doc2")
         unionFindInstance.initialSetup(doc1)
@@ -101,6 +109,7 @@ object PartitionAwareUnionFindUDF {
 
         unionFindInstance.union(doc1, doc2)
       }
+      pairCount.add(localPairCount)
 
       /* unionFindInstance.parent is dict, so one row per unique doc_id (NOT one per pair)
          Note: avoid using ArrayBuffer collects everything into memory then converts to iterator
@@ -110,9 +119,9 @@ object PartitionAwareUnionFindUDF {
         LocalUnionFindSchema(docId, unionFindInstance.find(docId))
       } // keysIterator.map returns Iterator
     }   // End of val resultRDD
-    val spark = similarPairsDf.sparkSession
+
     import spark.implicits._
-    resultRDD.toDF()
+    (resultRDD.toDF(), pairCount)
   } // End of def runPhase1LocalUnionFind()
 
 }
