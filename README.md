@@ -154,7 +154,6 @@ spark-submit \
   --executor-memory 14g \
   --driver-memory 12g \
   --conf spark.sql.shuffle.partitions=1000 \
-  --conf spark.memory.offHeap.size=1g \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
   --deploy-mode client \
@@ -313,16 +312,14 @@ spark-submit \
   --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
   --jars s3://text-deduplication-740959772378/scripts/minhash-udf_2.12-0.1.jar \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=30000 \
-  --num-executors 447 \
+  --num-executors 441 \
   --executor-cores 4 \
   --executor-memory 27g \
   --driver-memory 58g \
-  --conf spark.sql.shuffle.partitions=27000 \
+  --conf spark.sql.shuffle.partitions=90000 \
   --conf spark.network.timeout=1200s \
   --conf spark.shuffle.io.connectionTimeout=600s \
   --conf spark.executor.extraJavaOptions="-XX:+UseG1GC -XX:MaxGCPauseMillis=200" \
-  --conf spark.memory.offHeap.enabled=true \
-  --conf spark.memory.offHeap.size=2g \
   --conf spark.yarn.maxAppAttempts=1 \
   --conf spark.shuffle.service.enabled=true \
   --conf spark.dynamicAllocation.enabled=false \
@@ -331,11 +328,12 @@ spark-submit \
   --conf spark.shuffle.io.retryWait=30s \
   --conf spark.task.maxFailures=8 \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
-  --conf spark.executor.memoryOverhead=5g \
+  --conf spark.executor.memoryOverhead=7g \
   --deploy-mode cluster \
   s3://text-deduplication-740959772378/scripts/spark_deduplication_test.py full_corpus
 ```
 - partitions=27000 if just processing input data from WET files.
+- --conf spark.memory.offHeap.size=2g, --conf spark.memory.offHeap.enabled=true \ removed
 
 How to save your executor log file.
 ```

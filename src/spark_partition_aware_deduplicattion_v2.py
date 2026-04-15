@@ -206,6 +206,7 @@ def partition_aware_deduplicate(
 
         if is_debug_mode and df_with_partitions_s3_path:
             upload_df_to_s3(df=df_with_partitions, s3_path=df_with_partitions_s3_path, row_count=total_docs_count)
+        df_with_signatures.unpersist()
     else:
         # Define schema for df_with_partitions to avoid inference issues
         # Note: text column not included - not needed for deduplication
@@ -233,22 +234,6 @@ def partition_aware_deduplicate(
         total_docs_count = df_with_partitions.count()
         logger.info(f"Loaded {total_docs_count} documents from cache...")
 
-    # Show partition distribution for monitoring
-    partition_stats = (
-        df_with_partitions.select(F.size(F.col("target_partitions")).alias("num_partitions_per_doc"))
-        .agg(
-            F.avg("num_partitions_per_doc").alias("avg_partitions"),
-            F.min("num_partitions_per_doc").alias("min_partitions"),
-            F.max("num_partitions_per_doc").alias("max_partitions"),
-        )
-        .collect()[0]
-    )
-
-    logger.info(
-        f"Partition assignment stats - Avg: {partition_stats['avg_partitions']:.2f}, "
-        f"Min: {partition_stats['min_partitions']}, Max: {partition_stats['max_partitions']}"
-    )
-
     # Step 3: Explode and repartition - documents go to their assigned partitions
     logger.info("Step 3: Smart partitioning - co-locating similar documents...")
     set_spark_context(
@@ -259,19 +244,21 @@ def partition_aware_deduplicate(
 
     hot_partition_ids = []
     partition_counts = (
-        df_with_partitions.select(F.explode(F.col("target_partitions")).alias("partition_id"))
+        df_with_partitions.sample(0.01)
+        .select(F.explode(F.col("target_partitions")).alias("partition_id"))
         .groupBy("partition_id")
         .count()
     )
 
     avg_partition_size = partition_counts.agg(F.avg("count")).collect()[0][0]
-    hot_threshold = int(avg_partition_size * 4)  # 4x average = outlier
-    logger.info(f"hot_threshold: {hot_threshold}")
+    if avg_partition_size is not None:
+        hot_threshold = int(avg_partition_size * 4)  # 4x average = outlier
+        logger.info(f"hot_threshold: {hot_threshold}")
 
-    hot_partitions_iter = partition_counts.filter(F.col("count") > hot_threshold).collect()
-    for row in hot_partitions_iter:
-        hot_partition_ids.append(row.partition_id)
-    logger.info(f"Hot partitions detected: {len(hot_partition_ids)}")
+        hot_partitions_iter = partition_counts.filter(F.col("count") > hot_threshold).collect()
+        for row in hot_partitions_iter:
+            hot_partition_ids.append(row.partition_id)
+        logger.info(f"Hot partitions detected: {len(hot_partition_ids)}")
 
     # Note: we can't persist df_exploded due to limited memory
     df_exploded = df_with_partitions.select(
@@ -360,7 +347,7 @@ def partition_aware_deduplicate(
     # Step 5: Build connected components for duplicate groups
     logger.info("Step 5: Build connected components. For each distinct doc_id, it has representative doc_id")
     set_spark_context(spark, "Step 5 Phase 1", "Partition-aware local Union-Find (no shuffle). Dedupe after phase1.")
-    vertices = input_df.select(F.col("doc_id").alias("id")).distinct().persist(StorageLevel.MEMORY_ONLY)
+    vertices = input_df.select(F.col("doc_id").alias("id")).distinct().persist(StorageLevel.DISK_ONLY)
     vertices_count = vertices.count()
     logger.info(f"vertices cached. vertices_count: {vertices_count}")
 
@@ -382,7 +369,7 @@ def partition_aware_deduplicate(
 
         local_results = read_parquet_from_s3(
             s3_path=local_results_s3_path, spark=spark, schema=local_results_schema
-        ).persist(StorageLevel.MEMORY_AND_DISK)
+        ).persist(StorageLevel.DISK_ONLY)
         local_count = local_results.count()
     else:
         if use_scala_phase1:
@@ -395,7 +382,7 @@ def partition_aware_deduplicate(
             local_results = (
                 DataFrame(local_results_jdf, spark)
                 .dropDuplicates(["doc_id", "local_representative"])
-                .persist(StorageLevel.MEMORY_AND_DISK)
+                .persist(StorageLevel.DISK_ONLY)
             )
             local_count = local_results.count()
             # Accumulator value available after action triggers mapPartitions
@@ -405,18 +392,21 @@ def partition_aware_deduplicate(
             local_results = (
                 run_phase1_local_union_find(similar_pairs_df=similar_pairs_df)
                 .dropDuplicates(["doc_id", "local_representative"])
-                .persist(StorageLevel.MEMORY_AND_DISK)
+                .persist(StorageLevel.DISK_ONLY)
             )
             local_count = local_results.count()
 
         if is_debug_mode and local_results_s3_path:
-            upload_df_to_s3(df=local_results, s3_path=local_results_s3_path, row_count=local_count)
+            try:
+                upload_df_to_s3(df=local_results, s3_path=local_results_s3_path, row_count=local_count)
+            except Exception as e:
+                logger.warning(f"Failed to upload local_results to S3: {e}. Continuing...")
 
     logger.info(f"Phase 1 complete: {local_count} doc -> representative mappings")
     set_spark_context(spark, "Step 5 Phase 2", "Cross-partition component merge")
     doc_id_and_representative_doc_id_df_deduped = run_phase2_global_transitivity_closure(
         spark=spark, local_results=local_results, vertices=vertices, max_iterations=50
-    ).persist(StorageLevel.MEMORY_AND_DISK)
+    ).persist(StorageLevel.DISK_ONLY)
     doc_id_and_representative_doc_id_df_count = doc_id_and_representative_doc_id_df_deduped.count()
     logger.info(
         f"Phase 2 complete: {doc_id_and_representative_doc_id_df_count} doc→representative mappings (includes singletons)"
@@ -436,12 +426,19 @@ def partition_aware_deduplicate(
             F.when(F.col("representative_id").isNull(), F.col("doc_id")).otherwise(F.col("representative_id")),
         )
         .withColumn("is_duplicate", F.col("representative_id") != F.col("doc_id"))
-    ).persist(StorageLevel.MEMORY_AND_DISK)
+    ).persist(StorageLevel.DISK_ONLY)
 
     # Compute statistics
     deduplicate_docs = result.filter(~F.col("is_duplicate"))
     unique_docs_count = deduplicate_docs.count()
     duplicate_docs_count = total_docs_count - unique_docs_count
+
+    if is_debug_mode and df_with_partitions_s3_path:
+        results_s3_path = df_with_partitions_s3_path.rsplit("/", 1)[0] + "/result"
+        try:
+            upload_df_to_s3(df=result, s3_path=results_s3_path, row_count=unique_docs_count)
+        except Exception as e:
+            logger.warning(f"Failed to upload dataframe result to S3: {e}. Continuing...")
 
     logger.info("\n" + "=" * 60)
     logger.info("PARTITION-AWARE DEDUPLICATION COMPLETE")
@@ -455,9 +452,6 @@ def partition_aware_deduplicate(
     # Clean up cached DataFrames to free memory
     logger.info("Cleaning up cached DataFrames...")
     set_spark_context(spark, "Cleanup", "Unpersisting cached DataFrames to free memory")
-    # Only unpersist df_with_signatures if it was created (not from cache)
-    if "df_with_signatures" in locals():
-        df_with_signatures.unpersist()
     vertices.unpersist()
     doc_id_and_representative_doc_id_df_deduped.unpersist()
 
