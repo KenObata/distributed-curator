@@ -5,6 +5,8 @@ from pyspark import StorageLevel
 from pyspark.sql import DataFrame, Row, SparkSession
 from pyspark.sql.types import StringType, StructField, StructType
 
+from spark_utils import plot_python_memory
+
 try:
     from .union_find import UnionFind
 except Exception:
@@ -221,12 +223,14 @@ def run_phase2_global_union_find(
     )
 
     def run_union_find_on_meta_edges(iterator: Iterator[Row]) -> Iterator[Row]:
+        plot_python_memory("Before_global_UnionFind")
         uf = UnionFind()
         for row in iterator:
             src, dst = row["src"], row["dst"]
             uf.initial_setup(src)
             uf.initial_setup(dst)
             uf.union(src, dst)
+        plot_python_memory("After_global_UnionFind")
         for node in uf.parent:
             yield Row(local_representative=node, component=uf.find(node))
 

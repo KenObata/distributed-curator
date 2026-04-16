@@ -1,4 +1,5 @@
 import logging
+import resource
 from typing import Optional
 
 from pyspark.sql import DataFrame, SparkSession
@@ -9,6 +10,14 @@ builtin_max = max
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
+
+def plot_python_memory(label: str = "") -> None:
+    """Log Python worker process memory usage."""
+    # ru_maxrss is in KB on Linux, bytes on macOS
+    rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    rss_mb = rss_kb / 1024  # KB to MB on Linux
+    logger.info(f"[UF MEM] {label}: {rss_mb:.0f} MB")
 
 
 def create_spark_session_partition_aware(
