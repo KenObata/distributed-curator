@@ -328,7 +328,7 @@ spark-submit \
   --conf spark.shuffle.io.retryWait=30s \
   --conf spark.task.maxFailures=8 \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
-  --conf spark.executor.memoryOverhead=7g \
+  --conf spark.executor.memoryOverhead=5g \
   --deploy-mode cluster \
   s3://text-deduplication-740959772378/scripts/spark_deduplication_test.py full_corpus
 ```
