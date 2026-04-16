@@ -199,6 +199,8 @@ object PartitionAwareUnionFindUDF {
       )
     )
     val resultRDD = multipleRepsEdgesDf.coalesce(1).rdd.mapPartitions { iterator =>
+      System.gc()
+      Thread.sleep(100)
       Utils.plotHeapMemory(label = "Before_global_UnionFind")
       val uf = new LongUnionFind()
       for (row <- iterator) {
@@ -209,6 +211,8 @@ object PartitionAwareUnionFindUDF {
         uf.union(src, dst)
       }
 
+      System.gc()
+      Thread.sleep(100)
       Utils.plotHeapMemory(label = "After_global_UnionFind")
 
       uf.parent.keysIterator.map { node =>
