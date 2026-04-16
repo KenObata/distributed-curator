@@ -4,6 +4,7 @@ import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import org.apache.spark.sql.types.{LongType, StringType, StructField, StructType}
 import scala.collection.mutable
 import org.apache.spark.util.LongAccumulator
+import com.utils.Utils
 
 /**
  * Partition-aware local Union-Find with path compression + union by rank. Runs inside mapPartitions — zero shuffle.
@@ -197,8 +198,8 @@ object PartitionAwareUnionFindUDF {
         StructField("component_id", LongType, nullable = false)
       )
     )
-
     val resultRDD = multipleRepsEdgesDf.coalesce(1).rdd.mapPartitions { iterator =>
+      Utils.plotHeapMemory(label = "Before_global_UnionFind")
       val uf = new LongUnionFind()
       for (row <- iterator) {
         val src = row.getLong(0)
@@ -207,6 +208,9 @@ object PartitionAwareUnionFindUDF {
         uf.initialSetup(dst)
         uf.union(src, dst)
       }
+
+      Utils.plotHeapMemory(label = "After_global_UnionFind")
+
       uf.parent.keysIterator.map { node =>
         Row(node, uf.find(node))
       }
