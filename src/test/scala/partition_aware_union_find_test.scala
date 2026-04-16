@@ -370,4 +370,20 @@ class GlobalUnionFindUDFTest extends AnyFunSuite {
     assert(resultMap(2L) == resultMap(3L))
   }
 
+  test("test_output_has_single_partition") {
+    /*
+      runGlobalUnionFind coalesce(1) inside.
+     */
+    val rowRDD: RDD[Row] = spark.sparkContext.parallelize(
+      Seq(
+        Row(1L, 2L),
+        Row(3L, 4L)
+      )
+    )
+    val multipleRepsEdgesDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(10)
+    val resultDf: DataFrame            = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf)
+
+    assert(resultDf.rdd.getNumPartitions == 1)
+  }
+
 }
