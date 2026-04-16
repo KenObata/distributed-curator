@@ -113,6 +113,10 @@ aws s3 cp s3://text-deduplication-740959772378/scripts/requirements.txt .
 sudo pip3 install --ignore-installed --no-cache-dir --no-deps -r requirements.txt
 ```
 
+[optional] upload jar if needed
+```
+aws s3 cp target/scala-2.12/minhash-udf_2.12-0.1.jar s3://text-deduplication-740959772378/scripts/minhash-udf_2.12-0.1.jar
+```
 
 Step4: Exit ssh, and on your macbook, install YARN(8088), Spark UI (4040)
 Find YAN host name - run
