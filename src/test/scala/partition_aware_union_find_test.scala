@@ -4,7 +4,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
-import org.apache.spark.sql.types.{DoubleType, IntegerType, StringType, StructField, StructType}
+import org.apache.spark.sql.types.{DoubleType, IntegerType, LongType, StringType, StructField, StructType}
 import org.apache.spark.sql.Encoders
 import scala.collection.mutable
 import org.apache.spark.util.LongAccumulator
@@ -239,6 +239,91 @@ class PartitionAwareUnionFindUDFTest extends AnyFunSuite {
 
     resultDf.count() // trigger mapPartitions
     assert(pairCountAccumulator.value == 3)
+  }
+
+}
+
+class GlobalUnionFindUDFTest extends AnyFunSuite {
+
+  // ===========================================================
+  //  Phase2 Global Union Find test
+  // ===========================================================
+  // computed once and cached
+  lazy val spark: SparkSession = SparkSession
+    .builder()
+    .master("local[*]")
+    .appName("GlobalUnionFindUDFTest")
+    .getOrCreate()
+
+  import spark.implicits._ // for .as[T] needs to convert DataFrame → Dataset[T].
+
+  val inputFields: Seq[StructField] = Seq(
+    StructField("src", LongType),
+    StructField("dst", LongType)
+  )
+
+  val outputFields: Seq[StructField] = Seq(
+    StructField("node_id", LongType, nullable = false),
+    StructField("component_id", LongType, nullable = false)
+  )
+
+  val inputSchema: StructType  = StructType(inputFields)
+  val outputSchema: StructType = StructType(outputFields)
+
+  test("test_output_schema_and_length") {
+    val rowRDD: RDD[Row] = spark.sparkContext.parallelize(
+      Seq(
+        Row(1L, 2L)
+      )
+    )
+
+    val multipleRepsEdgesDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(1)
+    val resultDf: DataFrame            = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf)
+
+    assert(resultDf.schema == outputSchema)
+    assert(resultDf.count() == 2)
+  }
+
+  test("test_path_compression") {
+    /*
+      (1,2), (2,3) => all three map to same representative.
+     */
+    val rowRDD: RDD[Row] = spark.sparkContext.parallelize(
+      Seq(
+        Row(1L, 2L),
+        Row(2L, 3L)
+      )
+    )
+
+    val multipleRepsEdgesDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(1)
+    val resultDf: DataFrame            = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf)
+
+    val resultMap: Map[Long, Long] =
+      resultDf.collect().map(row => row.getAs[Long]("node_id") -> row.getAs[Long]("component_id")).toMap
+
+    assert(resultDf.count() == 3)
+    assert(resultMap(1) == resultMap(2))
+    assert(resultMap(2) == resultMap(3))
+  }
+
+  test("test_independent_pairs") {
+    val rowRDD: RDD[Row] = spark.sparkContext.parallelize(
+      Seq(
+        Row(1L, 2L),
+        Row(4L, 5L)
+      )
+    )
+
+    val multipleRepsEdgesDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(1)
+    val resultDf: DataFrame            = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf)
+
+    val resultMap: Map[Long, Long] =
+      resultDf.collect().map(row => row.getAs[Long]("node_id") -> row.getAs[Long]("component_id")).toMap
+
+    assert(resultDf.count() == 4)
+    assert(resultMap(1) == resultMap(2))
+    assert(resultMap(4) == resultMap(5))
+    assert(resultMap(1) != resultMap(4))
   }
 
 }

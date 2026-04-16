@@ -1,7 +1,7 @@
 package com.unionFind
 
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
-import org.apache.spark.sql.types.{StringType, StructField, StructType}
+import org.apache.spark.sql.types.{LongType, StringType, StructField, StructType}
 import scala.collection.mutable
 import org.apache.spark.util.LongAccumulator
 
@@ -49,6 +49,55 @@ object PartitionAwareUnionFindUDF {
     def union(doc1: String, doc2: String): Unit = {
       val root1: String = find(doc1)
       val root2: String = find(doc2)
+      if (root1 != root2) { // else, return
+        // Union by rank: attach shorter tree under taller tree
+        if (rank(root1) < rank(root2)) {
+          parent(root1) = root2
+        } else if (rank(root2) < rank(root1)) {
+          parent(root2) = root1
+        } else {
+          parent(root2) = root1
+          rank(root1) = rank(root1) + 1
+        }
+      }
+    }
+
+  } // end of class UnionFind
+
+  private class LongUnionFind {
+    /*
+    Unlike UnionFind, this class is encoded key value into Long value.
+    This is more memory efficient.
+    This class is called from phase2.
+    Reason why this class is only callled from Phase2 is because
+    phase 1 is not deduped yet. Convert from string to Long without dedupe
+    degrades performanece.
+     */
+    val parent: mutable.HashMap[Long, Long] = new mutable.HashMap[Long, Long]()
+    val rank: mutable.HashMap[Long, Int]    = new mutable.HashMap[Long, Int]()
+
+    def initialSetup(node: Long): Unit = if (!parent.contains(node)) {
+      parent(node) = node
+      rank(node) = 0
+    }
+
+    def find(node: Long): Long = {
+      var root = node
+      while (parent(root) != root) root = parent(root)
+
+      var pointer: Long = node
+      // Path compression: point every node on the path directly to root
+      while (parent(pointer) != root) {
+        val nextParent = parent(pointer)
+        parent(pointer) = root
+        pointer = nextParent
+      }
+      root
+    }
+
+    def union(doc1: Long, doc2: Long): Unit = {
+      val root1: Long = find(doc1)
+      val root2: Long = find(doc2)
       if (root1 != root2) { // else, return
         // Union by rank: attach shorter tree under taller tree
         if (rank(root1) < rank(root2)) {
@@ -123,5 +172,46 @@ object PartitionAwareUnionFindUDF {
     import spark.implicits._
     (resultRDD.toDF(), pairCount)
   } // End of def runPhase1LocalUnionFind()
+
+  def runGlobalUnionFind(multipleRepsEdgesDf: DataFrame): DataFrame = {
+    /*
+    Phase 2: Global Union-Find in a single partition.
+    Args:
+    - DataFrame with (src: Long, dst: Long)
+      - ex) For a doc with reps [A, B, C], emit edges: (A,B), (A,C)
+            Note that docId is converted in Long.
+    Retusn:
+    - DataFrame with (node_id: Long, component_id: Long)
+      - node_id is artificially generated.
+
+    Usage from PySpark:
+      jvm_helper = spark._jvm.com.unionFind.GlobalUnionFind
+      result_jdf = jvm_helper.runGlobalUnionFind(encoded_edges._jdf)
+      result = DataFrame(result_jdf, spark)
+     */
+    val spark = multipleRepsEdgesDf.sparkSession
+
+    val resultSchema = StructType(
+      Seq(
+        StructField("node_id", LongType, nullable = false),
+        StructField("component_id", LongType, nullable = false)
+      )
+    )
+
+    val resultRDD = multipleRepsEdgesDf.coalesce(1).rdd.mapPartitions { iterator =>
+      val uf = new LongUnionFind()
+      for (row <- iterator) {
+        val src = row.getLong(0)
+        val dst = row.getLong(1)
+        uf.initialSetup(src)
+        uf.initialSetup(dst)
+        uf.union(src, dst)
+      }
+      uf.parent.keysIterator.map { node =>
+        Row(node, uf.find(node))
+      }
+    } // end of resultRDD
+    spark.createDataFrame(resultRDD, resultSchema)
+  } // enf of def runGlobalUnionFind()
 
 }
