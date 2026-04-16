@@ -326,4 +326,48 @@ class GlobalUnionFindUDFTest extends AnyFunSuite {
     assert(resultMap(1) != resultMap(4))
   }
 
+  test("test_star_topology") {
+    // One node connected to many — all resolve to same component
+    val rowRDD: RDD[Row] = spark.sparkContext.parallelize(
+      Seq(
+        Row(1L, 2L),
+        Row(1L, 3L),
+        Row(1L, 4L)
+      )
+    )
+    val multipleRepsEdgesDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(1)
+    val resultDf: DataFrame            = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf)
+
+    val resultMap: Map[Long, Long] =
+      resultDf.collect().map(row => row.getAs[Long]("node_id") -> row.getAs[Long]("component_id")).toMap
+
+    assert(resultDf.count() == 4)
+    assert(resultMap(1L) == resultMap(2L))
+    assert(resultMap(1L) == resultMap(3L))
+    assert(resultMap(1L) == resultMap(4L))
+  }
+
+  test("test_duplicate_edges_idempotent") {
+    /* Same edge twice should produce same result as once
+       Because parent HashMap deduped key
+     */
+    val rowRDD: RDD[Row] = spark.sparkContext.parallelize(
+      Seq(
+        Row(1L, 2L),
+        Row(1L, 2L),
+        Row(2L, 3L),
+        Row(2L, 3L)
+      )
+    )
+    val multipleRepsEdgesDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(1)
+    val resultDf: DataFrame            = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf)
+
+    val resultMap: Map[Long, Long] =
+      resultDf.collect().map(row => row.getAs[Long]("node_id") -> row.getAs[Long]("component_id")).toMap
+
+    assert(resultDf.count() == 3) // 3 unique nodes, not 4
+    assert(resultMap(1L) == resultMap(2L))
+    assert(resultMap(2L) == resultMap(3L))
+  }
+
 }
