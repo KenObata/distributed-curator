@@ -186,7 +186,7 @@ object PartitionAwareUnionFindUDF {
 
     Usage from PySpark:
       jvm_helper = spark._jvm.com.unionFind.GlobalUnionFind
-      result_jdf = jvm_helper.runGlobalUnionFind(encoded_edges._jdf)
+      result_jdf = jvm_helper.runGlobalUnionFind(multipleRepsEdgesDf._jdf)
       result = DataFrame(result_jdf, spark)
      */
     val spark = multipleRepsEdgesDf.sparkSession

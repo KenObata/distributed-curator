@@ -213,56 +213,72 @@ def run_phase2_global_union_find(
     - DataFrame: size of DISTINCT local_representative doc.
       multiple_reps_edges is just LEFT JOIN.
     """
-    union_find_schema = StructType(
-        [
-            StructField("local_representative", StringType(), False),
-            StructField("component", StringType(), False),
-        ]
-    )
+    # Step 1: prepare bridge table for mapping (URL -> Long)
+    # UNION distinct src and dst nodes
+    multiple_reps_edges.createOrReplaceTempView("multiple_reps_edges")
+    set_spark_context(spark, "Step 5 Phase 2", "Build node ID mapping for integer-encoded UF")
 
-    def run_union_find_on_meta_edges(iterator: Iterator[Row]) -> Iterator[Row]:
-        uf = UnionFind()
-        for row in iterator:
-            src, dst = row["src"], row["dst"]
-            uf.initial_setup(src)
-            uf.initial_setup(dst)
-            uf.union(src, dst)
-        for node in uf.parent:
-            yield Row(local_representative=node, component=uf.find(node))
+    node_mapping = spark.sql("""
+        SELECT node, monotonically_increasing_id() AS node_id
+        FROM (
+            SELECT src AS node FROM multiple_reps_edges
+            UNION
+            SELECT dst AS node FROM multiple_reps_edges
+        )
+    """).persist(StorageLevel.MEMORY_AND_DISK)
+    node_mapping.createOrReplaceTempView("node_mapping")
+    node_count = node_mapping.count()
+    logger.info(f"Node ID mapping: {node_count} unique nodes encoded to Longs")
 
-    # output size: COUNT(DISTINCT src) UNION COUNT(DISTINCT dst) from multiple_reps_edges
-    set_spark_context(
-        spark, "Step 5 Phase 2", "mapPartitions run_union_find_on_meta_edges on 1 partition. persist DISK_ONLY"
-    )
-    num_shuffle_partitions = int(spark.conf.get("spark.sql.shuffle.partitions", "27000"))
-    global_union_find_result_df = (
-        multiple_reps_edges.coalesce(1)  # all edges to one executor for global transitivity
-        .rdd.mapPartitions(
-            run_union_find_on_meta_edges
-        )  # mapPartitions instead of batch UDF because global UF needs all data (stateful)
-        .toDF(union_find_schema)
-        .persist(StorageLevel.DISK_ONLY)
-    )
+    # Step 2: actual convert - Encode edges as (src_id: Long, dst_id: Long)
+    multiple_reps_edges_converted = spark.sql("""
+        SELECT sm.node_id AS src, dm.node_id AS dst
+        FROM multiple_reps_edges e
+        JOIN node_mapping sm
+          ON e.src = sm.node
+        JOIN node_mapping dm
+          ON e.dst = dm.node
+    """).persist(StorageLevel.MEMORY_AND_DISK)
+    multiple_reps_edges_converted.count()
+
+    # Step 3: Run Scala UF on Long-encoded edges (fits in 27g JVM heap)
+    # .coalesce(1) is done inside of runGlobalUnionFind
+    jvm_helper = spark._jvm.com.unionFind.PartitionAwareUnionFindUDF
+    global_union_find_result_jdf = jvm_helper.runGlobalUnionFind(multiple_reps_edges_converted._jdf)
+    global_union_find_result_df = DataFrame(global_union_find_result_jdf, spark).persist(StorageLevel.DISK_ONLY)
     global_union_find_result_df_count = global_union_find_result_df.count()
-    logger.info(f"global_union_find_result_df: {global_union_find_result_df_count} rows")
+    logger.info(f"Global UF result: {global_union_find_result_df_count} nodes resolved")
 
-    set_spark_context(
-        spark,
-        "Step 5 Phase 2",
-        f"repartition run_global_union_find_result_df back to {num_shuffle_partitions} partitions",
-    )
-    # Reads rows from disk incrementally (streaming, not all in memory)
+    # Step 4: Repartition UF result before join
+    set_spark_context(spark, "Step 5 Phase 2", "Repartition UF result back to shuffle partitions")
+    num_shuffle_partitions = int(spark.conf.get("spark.sql.shuffle.partitions", "90000"))
+
     global_union_find_result_df = global_union_find_result_df.repartition(num_shuffle_partitions).persist(
         StorageLevel.MEMORY_AND_DISK
     )
-    global_union_find_result_df_count = global_union_find_result_df.count()
-
+    global_union_find_result_df.count()
     global_union_find_result_df.createOrReplaceTempView("global_union_find_result_df")
+
+    # Step 5: Map Long IDs back to URLs
+    set_spark_context(spark, "Step 5 Phase 2", "Map Long IDs back to URL strings")
+    global_union_find_result_decoded_df = spark.sql("""
+        SELECT
+            nm.node AS local_representative,
+            cm.node AS component
+        FROM global_union_find_result_df uf
+        JOIN node_mapping nm
+          ON uf.node_id = nm.node_id
+        JOIN node_mapping cm
+          ON uf.component_id = cm.node_id
+    """)
+    global_union_find_result_decoded_df.createOrReplaceTempView("global_union_find_result_decoded_df")
 
     # Also need reps that have NO cross-partition edges (singletons in the local_results)
     # They won't appear in multiple_reps_edges but exist in local_results
     # this is to be consistent with iterative_propagate_transitive_closure_wrapper()
-    set_spark_context(spark, "Step 5 Phase 2", "distinct_local_representative LEFT JOIN global_union_find_result_df")
+    set_spark_context(
+        spark, "Step 5 Phase 2", "distinct_local_representative LEFT JOIN global_union_find_result_decoded_df"
+    )
     local_results.createOrReplaceTempView("local_results")
     rep_components = spark.sql("""
             WITH distinct_local_representative as (
@@ -273,13 +289,15 @@ def run_phase2_global_union_find(
                 local.local_representative,
                 COALESCE(global.component, local.local_representative) AS component
             FROM distinct_local_representative local
-            LEFT JOIN global_union_find_result_df global
+            LEFT JOIN global_union_find_result_decoded_df global
               ON local.local_representative = global.local_representative
         """)
     rep_components = rep_components.persist(StorageLevel.MEMORY_AND_DISK)
     rep_components_count = rep_components.count()
     logger.info(f"Phase 2 resolved via single-pass Union-Find: {rep_components_count} representatives")
 
+    node_mapping.unpersist()
+    multiple_reps_edges_converted.unpersist()
     global_union_find_result_df.unpersist()
     return rep_components
 

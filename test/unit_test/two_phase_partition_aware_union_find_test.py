@@ -775,6 +775,23 @@ class TestRunPhase2GlobalUnionFind:
         result = run_phase2_global_union_find(spark, multiple_reps_edges, local_results)
         assert result.count() == 3  # (A->A), (B->A), (C->A)
 
+    def test_url_strings_preserved_through_encoding(self, spark):
+        """URLs must map back to original strings after Long encoding."""
+        multiple_reps_edges = spark.createDataFrame([Row(src="http://example.com/a", dst="http://example.com/b")])
+        local_results = spark.createDataFrame(
+            [
+                Row(doc_id="d1", local_representative="http://example.com/a"),
+                Row(doc_id="d1", local_representative="http://example.com/b"),
+            ]
+        )
+        result = run_phase2_global_union_find(spark, multiple_reps_edges, local_results)
+        rows = {r["local_representative"]: r["component"] for r in result.collect()}
+
+        # Values should be original URL strings, not Longs
+        assert rows["http://example.com/a"] == rows["http://example.com/b"]
+        assert isinstance(rows["http://example.com/a"], str)
+        assert rows["http://example.com/a"].startswith("http://")
+
 
 class TestEndToEnd:
     def test_single_cluster_single_partition(self, spark):
