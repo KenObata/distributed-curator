@@ -57,8 +57,9 @@
     - Scala IdentityPartitioner — eliminates the 6.6 min Python pickle step, which also reduces driver-side serialization metadata
     - Distributed Union-Find
      — at 90K, replace the iterative SQL label propagation entirely with an RDD-based Union-Find that runs in a single pass via mapPartitions on the meta-graph edges, similar to Phase 1 but on the cross-partition edges. This eliminates iterations altogether
+    ☐ 9K: Confirm re-compute in step5,6 
     ☐ Step5 phase2 - convert to Long type for docId.
-       ☐ potentially phase1
+       ☐ Use Eclipse longlongHashMap
     ☐ 90k WET
     ☐ Package as library
     ☐ consume from library

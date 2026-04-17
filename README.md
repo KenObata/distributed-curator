@@ -532,9 +532,10 @@ where am means application manager and number means attempt.
 export SPARK_HISTORY_OPTS="-Dspark.history.fs.logDirectory=file:///Users/kenichiobata/src/llm_trainining/spark_history_logs"
 ```
 
-set SPARK_HOME
+check which spark version
 ```
-export SPARK_HOME=/opt/homebrew/Cellar/apache-spark/4.1.1/libexec
+SPARK_HOME=$(python -c "import pyspark; import os; print(os.path.dirname(pyspark.__file__))")
+echo $SPARK_HOME
 ```
 
 Create config file
