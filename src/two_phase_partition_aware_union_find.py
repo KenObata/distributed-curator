@@ -284,6 +284,8 @@ def run_phase2_global_union_find(
     rep_components_count = rep_components.count()
     logger.info(f"Phase 2 resolved via single-pass Union-Find: {rep_components_count} representatives")
 
+    distinct_components = rep_components.select("component").distinct().count()
+    logger.info(f"Distinct components: {distinct_components}")
     global_union_find_result_df.unpersist()
     return rep_components
 
