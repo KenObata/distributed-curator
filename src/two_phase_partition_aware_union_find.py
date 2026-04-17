@@ -127,9 +127,18 @@ class Phase2GlobalTransitivityClosureQuery:
     ) -> DataFrame:
         # local_results (doc_id, local_representative) is a subset of input_df that exceeded similarity score
         # and rep_components = (local_representative, root)
+
+        # Rename to avoid column ID collision
+        local_results_renamed = local_results.withColumnRenamed("local_representative", "lr_local_representative")
+        rep_components_renamed = rep_components.withColumnRenamed("local_representative", "rc_local_representative")
+
         vertices.createOrReplaceTempView("vertices")  # all docs from input_df
-        local_results.createOrReplaceTempView("local_results")  # candidate pair: (doc1, doc2, 0.9, partiiton1)
-        rep_components.createOrReplaceTempView("rep_components")  # temp checkpoint of (doc_id, local_results)
+        local_results_renamed.createOrReplaceTempView(
+            "local_results_renamed"
+        )  # candidate pair: (doc1, doc2, 0.9, partition1)
+        rep_components_renamed.createOrReplaceTempView(
+            "rep_components_renamed"
+        )  # temp checkpoint of (doc_id, local_results)
 
         result = self.spark.sql("""
             SELECT
@@ -138,9 +147,9 @@ class Phase2GlobalTransitivityClosureQuery:
             FROM vertices v
             LEFT JOIN (
                 SELECT lr.doc_id, MIN(rc.component) AS representative_id
-                FROM local_results lr
-                JOIN rep_components rc
-                ON lr.local_representative = rc.local_representative
+                FROM local_results_renamed lr
+                JOIN rep_components_renamed rc
+                ON lr.lr_local_representative = rc.rc_local_representative
                 GROUP BY lr.doc_id
             ) g ON v.id = g.doc_id
         """)
@@ -218,6 +227,22 @@ def run_phase2_global_union_find(
     multiple_reps_edges.createOrReplaceTempView("multiple_reps_edges")
     set_spark_context(spark, "Step 5 Phase 2", "Build node ID mapping for integer-encoded UF")
 
+    # Use monotonically_increasing_id() for node_id, because any hash() cause collision at scale.
+    # monotonically_increasing_id() is non-deterministic (depends on partition_id at
+    # task execution time). If node_mapping is recomputed (cache eviction, task retry,
+    # or re-reference in a different query plan), it produces DIFFERENT node_ids.
+    #
+    # Step 5 below references node_mapping TWICE (as `nm` and `cm` in JOINs), which
+    # triggers plan re-evaluation even with persist().
+    #
+    # checkpoint() writes the materialized result to HDFS and TRUNCATES the lineage,
+    # so monotonically_increasing_id() can never be re-evaluated. IDs are stable.
+    if spark.conf.get("spark.master").startswith("yarn"):
+        checkpoint_dir = "hdfs:///tmp/phase2-checkpoint"
+    else:
+        checkpoint_dir = "/tmp/phase2-checkpoint"
+    spark.sparkContext.setCheckpointDir(checkpoint_dir)
+
     node_mapping = spark.sql("""
         SELECT node, monotonically_increasing_id() AS node_id
         FROM (
@@ -225,7 +250,7 @@ def run_phase2_global_union_find(
             UNION
             SELECT dst AS node FROM multiple_reps_edges
         )
-    """).persist(StorageLevel.MEMORY_AND_DISK)
+    """).checkpoint()
     node_mapping.createOrReplaceTempView("node_mapping")
     node_count = node_mapping.count()
     logger.info(f"Node ID mapping: {node_count} unique nodes encoded to Longs")
@@ -295,6 +320,9 @@ def run_phase2_global_union_find(
     rep_components = rep_components.persist(StorageLevel.MEMORY_AND_DISK)
     rep_components_count = rep_components.count()
     logger.info(f"Phase 2 resolved via single-pass Union-Find: {rep_components_count} representatives")
+
+    distinct_components = rep_components.select("component").distinct().count()
+    logger.info(f"Distinct components: {distinct_components}")
 
     node_mapping.unpersist()
     multiple_reps_edges_converted.unpersist()
@@ -496,6 +524,7 @@ def run_phase2_global_transitivity_closure(
     )
 
     multiple_reps_edges.unpersist()
-    rep_components.unpersist()
+    # Don't unpersist rep_components in this function — let caller handle it
+    # rep_components.unpersist()
 
     return result
