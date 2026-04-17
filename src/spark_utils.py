@@ -267,3 +267,13 @@ def set_spark_context(spark, short_desc, long_desc=None):
     spark.sparkContext.setLocalProperty("callSite.short", short_desc)
     if long_desc:
         spark.sparkContext.setLocalProperty("callSite.long", long_desc)
+
+
+def get_checkpoint_dir(spark: SparkSession, name: str) -> str:
+    """Return HDFS path on YARN, local path for pytest/dev."""
+    if spark.conf.get("spark.master").startswith("yarn"):
+        checkpoint_dir = f"hdfs:///tmp/{name}"
+    else:
+        checkpoint_dir = f"/tmp/{name}"
+    logger.info(f"Checkpoint dir: {checkpoint_dir}")
+    return checkpoint_dir

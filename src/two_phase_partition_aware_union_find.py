@@ -11,9 +11,9 @@ except Exception:
     from union_find import UnionFind
 
 try:
-    from .spark_utils import set_spark_context
+    from .spark_utils import get_checkpoint_dir, set_spark_context
 except Exception:
-    from spark_utils import set_spark_context
+    from spark_utils import get_checkpoint_dir, set_spark_context
 
 logger = logging.getLogger(__name__)
 
@@ -237,10 +237,7 @@ def run_phase2_global_union_find(
     #
     # checkpoint() writes the materialized result to HDFS and TRUNCATES the lineage,
     # so monotonically_increasing_id() can never be re-evaluated. IDs are stable.
-    if spark.conf.get("spark.master").startswith("yarn"):
-        checkpoint_dir = "hdfs:///tmp/phase2-checkpoint"
-    else:
-        checkpoint_dir = "/tmp/phase2-checkpoint"
+    checkpoint_dir = get_checkpoint_dir(spark=spark, name="phase2-checkpoint-single-pass")
     spark.sparkContext.setCheckpointDir(checkpoint_dir)
 
     node_mapping = spark.sql("""
@@ -355,12 +352,7 @@ def iterative_propagate_transitive_closure_wrapper(
          initial_components (= local_results) and multiple_reps_edges
     """
     # Set checkpoint directory for iteration lineage truncation
-    if spark.conf.get("spark.master").startswith("yarn"):
-        # On EMR (YARN): HDFS is shared across all nodes
-        checkpoint_dir = "hdfs:///tmp/union-find-checkpoints"
-    else:
-        # On local machine: HDFS doesn't exist locally
-        checkpoint_dir = "/tmp/union-find-checkpoints"
+    checkpoint_dir = get_checkpoint_dir(spark=spark, name="iterative-union-find-checkpoints")
     spark.sparkContext.setCheckpointDir(checkpoint_dir)
 
     # Initialize: each representative's component = itself
