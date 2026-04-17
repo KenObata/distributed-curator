@@ -9,8 +9,8 @@ import com.utils.Utils
 /**
  * Partition-aware local Union-Find with path compression + union by rank. Runs inside mapPartitions — zero shuffle.
  *
- * Goal is to replace graphframe becaise it shuffles globally. in this scala, we run phase 1 within partition to map
- * local representative doc id in a pair. phase 2 is written in udf.py
+ * Goal is to replace graphframe becaise it shuffles globally. we run phase 1 within each partition to map local
+ * representative doc id in a pair.
  *
  * Usage from PySpark: this function runs per partition, not per row. This means we directly calls JVM method from
  * similar_pairs_df._jdf
@@ -67,6 +67,10 @@ object PartitionAwareUnionFindUDF {
 
   private class LongUnionFind {
     /*
+    Note: LongUnionFind is intentionally duplicated from UnionFind[String] rather than
+    using generics. mutable.HashMap[T, T] with T=Long would box Long to java.lang.Long,
+    roughly doubling memory per entry. At 200M nodes scale, this matters.
+
     Unlike UnionFind, this class is encoded key value into Long value.
     This is more memory efficient.
     This class is called from phase2.
@@ -181,12 +185,12 @@ object PartitionAwareUnionFindUDF {
     - DataFrame with (src: Long, dst: Long)
       - ex) For a doc with reps [A, B, C], emit edges: (A,B), (A,C)
             Note that docId is converted in Long.
-    Retusn:
+    Return:
     - DataFrame with (node_id: Long, component_id: Long)
       - node_id is artificially generated.
 
     Usage from PySpark:
-      jvm_helper = spark._jvm.com.unionFind.GlobalUnionFind
+      jvm_helper = spark._jvm.com.unionFind.PartitionAwareUnionFindUDF
       result_jdf = jvm_helper.runGlobalUnionFind(multipleRepsEdgesDf._jdf)
       result = DataFrame(result_jdf, spark)
      */
@@ -198,9 +202,11 @@ object PartitionAwareUnionFindUDF {
         StructField("component_id", LongType, nullable = false)
       )
     )
+
+    // coalesce(1): global UF must run on single executor, entire graph must fit in memory
     val resultRDD = multipleRepsEdgesDf.coalesce(1).rdd.mapPartitions { iterator =>
-      System.gc()
-      Thread.sleep(100)
+      System.gc()       // to be removed
+      Thread.sleep(100) // to be removed
       Utils.plotHeapMemory(label = "Before_global_UnionFind")
       val uf = new LongUnionFind()
       for (row <- iterator) {
@@ -211,8 +217,8 @@ object PartitionAwareUnionFindUDF {
         uf.union(src, dst)
       }
 
-      System.gc()
-      Thread.sleep(100)
+      System.gc()       // to be removed
+      Thread.sleep(100) // to be removed
       Utils.plotHeapMemory(label = "After_global_UnionFind")
 
       uf.parent.keysIterator.map { node =>
@@ -220,6 +226,6 @@ object PartitionAwareUnionFindUDF {
       }
     } // end of resultRDD
     spark.createDataFrame(resultRDD, resultSchema)
-  } // enf of def runGlobalUnionFind()
+  } // end of def runGlobalUnionFind()
 
 }

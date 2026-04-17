@@ -436,7 +436,7 @@ def partition_aware_deduplicate(
     if is_debug_mode and df_with_partitions_s3_path:
         results_s3_path = df_with_partitions_s3_path.rsplit("/", 1)[0] + "/result"
         try:
-            upload_df_to_s3(df=result, s3_path=results_s3_path, row_count=unique_docs_count)
+            upload_df_to_s3(df=result, s3_path=results_s3_path, row_count=total_docs_count)
         except Exception as e:
             logger.warning(f"Failed to upload dataframe result to S3: {e}. Continuing...")
 
