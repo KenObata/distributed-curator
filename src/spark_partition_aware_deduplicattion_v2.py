@@ -421,6 +421,10 @@ def partition_aware_deduplicate(
     logger.info(
         f"Phase 2 complete: {doc_id_and_representative_doc_id_df_count} doc→representative mappings (includes singletons)"
     )
+    # After computing doc_id_and_representative_doc_id_df_deduped in both versions:
+    # Count how many docs have representative_id equal to themselves
+    same = doc_id_and_representative_doc_id_df_deduped.filter(F.col("doc_id") == F.col("representative_id")).count()
+    logger.info(f"Docs where doc_id == representative_id: {same}")
     local_results.unpersist()
 
     # Step 6: Join back with original data
