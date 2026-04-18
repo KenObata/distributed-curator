@@ -1,7 +1,6 @@
 import os
 
 import pytest
-from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, spark_partition_id
 
 from src.spark_partition_aware_deduplicattion_v2 import (
@@ -27,22 +26,6 @@ pytestmark = pytest.mark.skipif(
     f"  GraphFrames: {GRAPHFRAMES_JAR} (exists={os.path.exists(GRAPHFRAMES_JAR)})\n"
     f"  Scala UDF:   {SCALA_UDF_JAR} (exists={os.path.exists(SCALA_UDF_JAR)})",
 )
-
-
-@pytest.fixture(scope="session")
-def spark():
-    """Create SparkSession with required JARs for integration testing"""
-    jars = f"{GRAPHFRAMES_JAR},{SCALA_UDF_JAR}"
-    spark = (
-        SparkSession.builder.appName("TestPartitionAwareDedup")
-        .master("local[2]")
-        .config("spark.jars", jars)
-        .config("spark.driver.extraClassPath", jars)
-        .config("spark.sql.shuffle.partitions", "10")
-        .getOrCreate()
-    )
-    yield spark
-    spark.stop()
 
 
 class TestPartitionAwareDeduplication:

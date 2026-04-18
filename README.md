@@ -150,7 +150,7 @@ From SSH session:
 spark-submit \
   --master yarn \
   --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
-  --jars s3://text-deduplication-740959772378/scripts/minhash-udf_2.12-0.1.jar \
+  --jars s3://text-deduplication-740959772378/scripts/minhash-udf-assembly-0.1.jar
   --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
   --num-executors 4 \
@@ -180,7 +180,7 @@ RAM for each node:
 spark-submit \
   --master yarn \
   --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
-  --jars s3://text-deduplication-740959772378/scripts/minhash-udf_2.12-0.1.jar \
+  --jars s3://text-deduplication-740959772378/scripts/minhash-udf-assembly-0.1.jar
   --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
   --num-executors 7 \
@@ -202,7 +202,7 @@ Use 2 nodes of 8xlarge
 spark-submit \
   --master yarn \
   --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
-  --jars s3://text-deduplication-740959772378/scripts/minhash-udf_2.12-0.1.jar \
+  --jars s3://text-deduplication-740959772378/scripts/minhash-udf-assembly-0.1.jar
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=35000 \
   --num-executors 13 \
   --executor-cores 4 \
@@ -241,7 +241,7 @@ with 9 of r5ad.8xlarge,
 spark-submit \
   --master yarn \
   --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
-  --jars s3://text-deduplication-740959772378/scripts/minhash-udf_2.12-0.1.jar \
+  --jars s3://text-deduplication-740959772378/scripts/minhash-udf-assembly-0.1.jar
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
   --num-executors 54 \
   --executor-cores 4 \
@@ -268,7 +268,7 @@ After optimized by scala and Cython:
 spark-submit \
   --master yarn \
   --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
-  --jars s3://text-deduplication-740959772378/scripts/minhash-udf_2.12-0.1.jar \
+  --jars s3://text-deduplication-740959772378/scripts/minhash-udf-assembly-0.1.jar
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=30000 \
   --num-executors 63 \
   --executor-cores 4 \
@@ -325,7 +325,7 @@ with 64 of r5ad.8xlarge,
 spark-submit \
   --master yarn \
   --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
-  --jars s3://text-deduplication-740959772378/scripts/minhash-udf_2.12-0.1.jar \
+  --jars s3://text-deduplication-740959772378/scripts/minhash-udf-assembly-0.1.jar
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=30000 \
   --num-executors 441 \
   --executor-cores 4 \

@@ -504,6 +504,14 @@ resource "aws_s3_object" "scala_script" {
   depends_on = [time_sleep.wait_for_bucket]
 }
 
+resource "aws_s3_object" "scala_assembly_jar" {
+  bucket = aws_s3_bucket.scripts_bucket.id
+  key    = "scripts/minhash-udf-assembly-0.1.jar"
+  source = "${path.module}/${var.scripts_source_scala_dir}/minhash-udf-assembly-0.1.jar"
+
+  depends_on = [time_sleep.wait_for_bucket]
+}
+
 # Upload integration test script to S3
 resource "aws_s3_object" "integration_test_script" {
   bucket = aws_s3_bucket.scripts_bucket.id
