@@ -165,6 +165,17 @@ spark-submit \
 ```
 
 For 100 of WET files, increase partition count
+Cores = 4 node * 8 vCore = 32
+RAM = 4 ndoe * 61 GiB = 240gb
+
+Available cores per node: 8 - 1 = 7
+  Total usable cores: 7 × 4 = 28
+  Executors at 4 cores: 28 / 4 = 7 executors
+
+RAM for each node:
+- 2 executors × (executor_memory + 4g overhead) ≤ ~59 GB (61 - 2 OS)
+  executor_memory + 4 ≤ 29
+  executor_memory ≤ 25g
 ```
 spark-submit \
   --master yarn \
@@ -172,7 +183,7 @@ spark-submit \
   --jars s3://text-deduplication-740959772378/scripts/minhash-udf_2.12-0.1.jar \
   --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
-  --num-executors 8 \
+  --num-executors 7 \
   --executor-cores 4 \
   --executor-memory 24g \
   --driver-memory 12g \
@@ -186,28 +197,28 @@ spark-submit \
 where --deploy-mode cluster is to run the driver on EMR, not laptop.
 
 For 1000 of WET files, increase partition count
+Use 2 nodes of 8xlarge
 ```
 spark-submit \
   --master yarn \
   --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
   --jars s3://text-deduplication-740959772378/scripts/minhash-udf_2.12-0.1.jar \
-  --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
-  --num-executors 28 \
+  --num-executors 13 \
   --executor-cores 4 \
-  --executor-memory 16g \
-  --driver-memory 24g \
+  --executor-memory 27g \
+  --driver-memory 16g \
+  --driver-cores 2
   --conf spark.sql.shuffle.partitions=1000 \
   --conf spark.network.timeout=800s \
   --conf spark.shuffle.io.connectionTimeout=600s \
-  --conf spark.executor.extraJavaOptions="-XX:+UseG1GC -XX:MaxGCPauseMillis=200" \
-  --conf spark.memory.offHeap.size=1g \
+  --conf spark.executor.extraJavaOptions="-XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/executor_heap_%p.hprof" \
   --conf spark.yarn.maxAppAttempts=1 \
   --conf spark.shuffle.service.enabled=true \
   --conf spark.dynamicAllocation.enabled=false \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
-  --conf spark.executor.memoryOverhead=6g \
+  --conf spark.executor.memoryOverhead=5g \
   --deploy-mode cluster \
   s3://text-deduplication-740959772378/scripts/spark_deduplication_test.py production_proof
 ```

@@ -584,8 +584,8 @@ locals {
     }
     "1k" = {
       instance_type  = "r5ad.8xlarge"
-      on_demand_spot = { on_demand = 2, spot = 2 }
-      on_demand_only = { on_demand = 9, spot = 0 }
+      on_demand_spot = { on_demand = 1, spot = 1 }
+      on_demand_only = { on_demand = 2, spot = 0 }
     }
     "9k" = {
       instance_type  = "r5ad.8xlarge"              # 32 vCores, 256 GB, 2×600 GB NVMe (most available)
@@ -668,9 +668,9 @@ resource "aws_emr_cluster" "dedup_cluster" {
       }
     }
 
-    # Fallbacks for 1k scale - maintain 128 cores with proper weighted capacity
+    # Fallbacks for 1k scale - maintain 64 cores with proper weighted capacity
 
-    # Larger instance fallbacks - fewer instances for same 128 cores
+    # Larger instance fallbacks - fewer instances for same 64 cores
     dynamic "instance_type_configs" {
       for_each = var.wet_file_scale == "1k" ? [1] : []
       content {
