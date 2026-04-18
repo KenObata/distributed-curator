@@ -224,10 +224,10 @@ def upload_df_to_s3(df: DataFrame, s3_path: str, row_count: int) -> None:
         if not s3_path.endswith("/"):
             s3_path += "/"
 
-        coalesce_count = calculate_optimal_partitions(df=df, row_count=row_count, target_file_size_mb=256)
+        num_partitions = calculate_optimal_partitions(df=df, row_count=row_count, target_file_size_mb=256)
 
-        # Upload with error handling
-        df.coalesce(coalesce_count).write.mode("overwrite").parquet(s3_path)
+        # repartition forces uniform distribution (with shuffle), coalesce preserves skew
+        df.repartition(num_partitions).write.mode("overwrite").parquet(s3_path)
         print(f"✅ Uploaded DataFrame to S3: {s3_path}")
 
     except Exception as e:

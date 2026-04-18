@@ -61,6 +61,7 @@
     ☐ Step5 phase2 - convert to Long type for docId.
        ☐ Use Eclipse longlongHashMap
     ☐ 90k WET
+      ☐ repartition input S3 data before re-run or put back input_df.repartiiton()
     ☐ Package as library
     ☐ consume from library
     ☐ [Low priority] Unit test for driver memory diagnoser

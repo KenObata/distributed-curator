@@ -12,9 +12,21 @@ from pyspark.sql.types import ArrayType, IntegerType, LongType, StringType, Stru
 from two_phase_partition_aware_union_find import run_phase1_local_union_find, run_phase2_global_transitivity_closure
 
 try:
-    from .spark_utils import does_file_exists, read_parquet_from_s3, set_spark_context, upload_df_to_s3
+    from .spark_utils import (
+        does_file_exists,
+        get_checkpoint_dir,
+        read_parquet_from_s3,
+        set_spark_context,
+        upload_df_to_s3,
+    )
 except Exception:
-    from spark_utils import does_file_exists, read_parquet_from_s3, set_spark_context, upload_df_to_s3
+    from spark_utils import (
+        does_file_exists,
+        get_checkpoint_dir,
+        read_parquet_from_s3,
+        set_spark_context,
+        upload_df_to_s3,
+    )
 from driver_memory_diagnostics import capture_heap_histogram, capture_nmt_summary, start_memory_logger
 from shingle_hash_wrapper import compute_minhash_cython_batch
 from udf import compute_minhash_vectorized_batch_only_hash_once
@@ -150,10 +162,22 @@ def partition_aware_deduplicate(
         f"Computing MinHash signatures for {similarity_threshold} similarity threshold",
     )
 
+    df_with_partitions_schema = StructType(
+        [
+            StructField("doc_id", StringType(), True),
+            StructField(
+                "minhash_signature", ArrayType(LongType()), True
+            ),  # changed from Int to Long because scala mh3 is signed int, we need unsigned.
+            StructField("target_partitions", ArrayType(IntegerType()), True),
+            StructField("band_hashes", ArrayType(IntegerType()), True),
+        ]
+    )
     if df_with_partitions_s3_path is None or not does_file_exists(df_with_partitions_s3_path):
         # Get partition count from Spark config
         num_shuffle_partitions = int(spark.conf.get("spark.sql.shuffle.partitions", "1000"))
-        input_df = input_df.repartition(num_shuffle_partitions)
+        # input_df = input_df.repartition(num_shuffle_partitions)
+        current_partitions = input_df.rdd.getNumPartitions()
+        logger.info(f"Input has {current_partitions} partitions (shuffle_partitions config: {num_shuffle_partitions})")
 
         @F.pandas_udf(ArrayType(LongType()))  # LongType because Step4 expects Long
         def minhash_batch_udf(rows: pd.Series) -> pd.Series:
@@ -168,11 +192,15 @@ def partition_aware_deduplicate(
         # If users really need scala UDF (not recommended)
         # spark._jvm.com.minhash.MinHashUDF.registerUdf(spark._jsparkSession)
 
-        df_with_signatures = input_df.withColumn(
-            "minhash_signature",
-            minhash_batch_udf(F.col(text_column)),
-            # F.expr(f"compute_minhash({text_column}, {num_hashes}, {ngram}, {str(remove_articles).lower()})") # scala UDF
-        ).cache()
+        df_with_signatures = (
+            input_df.withColumn(
+                "minhash_signature",
+                minhash_batch_udf(F.col(text_column)),
+                # F.expr(f"compute_minhash({text_column}, {num_hashes}, {ngram}, {str(remove_articles).lower()})") # scala UDF
+            )
+            .drop(text_column)
+            .cache()
+        )
 
         total_docs_count = df_with_signatures.count()
         logger.info(f"Processing {total_docs_count} documents...")
@@ -206,7 +234,18 @@ def partition_aware_deduplicate(
 
         if is_debug_mode and df_with_partitions_s3_path:
             upload_df_to_s3(df=df_with_partitions, s3_path=df_with_partitions_s3_path, row_count=total_docs_count)
-        df_with_signatures.unpersist()
+            df_with_signatures.unpersist()
+            # Break lineage: re-read from S3 instead of recomputing MinHash
+            df_with_partitions = read_parquet_from_s3(
+                s3_path=df_with_partitions_s3_path, spark=spark, schema=df_with_partitions_schema
+            )
+        else:
+            checkpoint_dir = get_checkpoint_dir(spark=spark, name="checkpoints_dir")
+            spark.sparkContext.setCheckpointDir(checkpoint_dir)
+            df_with_partitions = df_with_partitions.checkpoint()
+            total_docs_count = df_with_partitions.count()
+
+            df_with_signatures.unpersist()
     else:
         # Define schema for df_with_partitions to avoid inference issues
         # Note: text column not included - not needed for deduplication
@@ -214,16 +253,6 @@ def partition_aware_deduplicate(
             spark,
             "Loading Cached Data",
             f"Loading pre-computed signatures and partitions from {df_with_partitions_s3_path}",
-        )
-        df_with_partitions_schema = StructType(
-            [
-                StructField("doc_id", StringType(), True),
-                StructField(
-                    "minhash_signature", ArrayType(LongType()), True
-                ),  # changed from Int to Long because scala mh3 is signed int, we need unsigned.
-                StructField("target_partitions", ArrayType(IntegerType()), True),
-                StructField("band_hashes", ArrayType(IntegerType()), True),
-            ]
         )
 
         df_with_partitions = read_parquet_from_s3(
