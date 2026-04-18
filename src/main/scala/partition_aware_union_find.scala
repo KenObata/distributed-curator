@@ -5,6 +5,7 @@ import org.apache.spark.sql.types.{LongType, StringType, StructField, StructType
 import scala.collection.mutable
 import org.apache.spark.util.LongAccumulator
 import com.utils.Utils
+import org.eclipse.collections.impl.map.mutable.primitive.{LongIntHashMap, LongLongHashMap}
 
 /**
  * Partition-aware local Union-Find with path compression + union by rank. Runs inside mapPartitions — zero shuffle.
@@ -78,23 +79,23 @@ object PartitionAwareUnionFindUDF {
     phase 1 is not deduped yet. Convert from string to Long without dedupe
     degrades performanece.
      */
-    val parent: mutable.HashMap[Long, Long] = new mutable.HashMap[Long, Long]()
-    val rank: mutable.HashMap[Long, Int]    = new mutable.HashMap[Long, Int]()
+    val parent: LongLongHashMap = new LongLongHashMap()
+    val rank: LongIntHashMap    = new LongIntHashMap()
 
-    def initialSetup(node: Long): Unit = if (!parent.contains(node)) {
-      parent(node) = node
-      rank(node) = 0
+    def initialSetup(node: Long): Unit = if (!parent.containsKey(node)) {
+      parent.put(node, node)
+      rank.put(node, 0)
     }
 
     def find(node: Long): Long = {
       var root = node
-      while (parent(root) != root) root = parent(root)
+      while (parent.get(root) != root) root = parent.get(root)
 
       var pointer: Long = node
       // Path compression: point every node on the path directly to root
-      while (parent(pointer) != root) {
-        val nextParent = parent(pointer)
-        parent(pointer) = root
+      while (parent.get(pointer) != root) {
+        val nextParent = parent.get(pointer)
+        parent.put(pointer, root)
         pointer = nextParent
       }
       root
@@ -104,14 +105,16 @@ object PartitionAwareUnionFindUDF {
       val root1: Long = find(doc1)
       val root2: Long = find(doc2)
       if (root1 != root2) { // else, return
+        val rank1: Int = rank.get(root1)
+        val rank2: Int = rank.get(root2)
         // Union by rank: attach shorter tree under taller tree
-        if (rank(root1) < rank(root2)) {
-          parent(root1) = root2
-        } else if (rank(root2) < rank(root1)) {
-          parent(root2) = root1
+        if (rank1 < rank2) {
+          parent.put(root1, root2)
+        } else if (rank2 < rank1) {
+          parent.put(root2, root1)
         } else {
-          parent(root2) = root1
-          rank(root1) = rank(root1) + 1
+          parent.put(root2, root1)
+          rank.put(root1, rank1 + 1)
         }
       }
     }
@@ -221,8 +224,16 @@ object PartitionAwareUnionFindUDF {
       Thread.sleep(100) // to be removed
       Utils.plotHeapMemory(label = "After_global_UnionFind")
 
-      uf.parent.keysIterator.map { node =>
-        Row(node, uf.find(node))
+      // Wrap Eclipse's LongIterator (primitive) into Scala's Iterator[Row],
+      // required by mapPartitions.
+      // Verbose but avoids boxing 200M Longs or allocating a 1.6GB long[] upfront.
+      val keysIterator = uf.parent.keySet().longIterator()
+      new Iterator[Row] {
+        def hasNext: Boolean = keysIterator.hasNext
+        def next(): Row = {
+          val node: Long = keysIterator.next()
+          Row(node, uf.find(node))
+        }
       }
     } // end of resultRDD
     spark.createDataFrame(resultRDD, resultSchema)
