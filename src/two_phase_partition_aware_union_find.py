@@ -46,7 +46,7 @@ class Phase2GlobalTransitivityClosureQuery:
                 HAVING size(collect_set(local_representative)) > 1
             ) multi_rep_docs
             LATERAL VIEW explode(slice(reps, 2, 100)) t AS dst
-        """).persist(StorageLevel.MEMORY_AND_DISK)
+        """).persist(StorageLevel.DISK_ONLY)
         doc_with_multiple_local_representatives_count = multiple_reps_edges.count()
         logger.info(f"doc_with_multiple_local_representatives: {doc_with_multiple_local_representatives_count} edges")
         return multiple_reps_edges, doc_with_multiple_local_representatives_count
@@ -250,7 +250,7 @@ def run_phase2_global_union_find(
     """).checkpoint()
     node_mapping.createOrReplaceTempView("node_mapping")
     node_count = node_mapping.count()
-    logger.info(f"Node ID mapping: {node_count} unique nodes encoded to Longs")
+    logger.info(f"Node ID mapping: {node_count} unique nodes encoded to Longs (does not include singleton.)")
 
     # Step 2: actual convert - Encode edges as (src_id: Long, dst_id: Long)
     multiple_reps_edges_converted = spark.sql("""
@@ -260,7 +260,7 @@ def run_phase2_global_union_find(
           ON e.src = sm.node
         JOIN node_mapping dm
           ON e.dst = dm.node
-    """).persist(StorageLevel.MEMORY_AND_DISK)
+    """).persist(StorageLevel.DISK_ONLY)
     multiple_reps_edges_converted.count()
 
     # Step 3: Run Scala UF on Long-encoded edges (fits in 27g JVM heap)
@@ -269,14 +269,14 @@ def run_phase2_global_union_find(
     global_union_find_result_jdf = jvm_helper.runGlobalUnionFind(multiple_reps_edges_converted._jdf)
     global_union_find_result_df = DataFrame(global_union_find_result_jdf, spark).persist(StorageLevel.DISK_ONLY)
     global_union_find_result_df_count = global_union_find_result_df.count()
-    logger.info(f"Global UF result: {global_union_find_result_df_count} nodes resolved")
+    logger.info(f"Global UF result: {global_union_find_result_df_count} nodes resolved (does not include singleton.)")
 
     # Step 4: Repartition UF result before join
     set_spark_context(spark, "Step 5 Phase 2", "Repartition UF result back to shuffle partitions")
     num_shuffle_partitions = int(spark.conf.get("spark.sql.shuffle.partitions", "90000"))
 
     global_union_find_result_df = global_union_find_result_df.repartition(num_shuffle_partitions).persist(
-        StorageLevel.MEMORY_AND_DISK
+        StorageLevel.DISK_ONLY
     )
     global_union_find_result_df.count()
     global_union_find_result_df.createOrReplaceTempView("global_union_find_result_df")
@@ -316,7 +316,9 @@ def run_phase2_global_union_find(
         """)
     rep_components = rep_components.persist(StorageLevel.DISK_ONLY)
     rep_components_count = rep_components.count()
-    logger.info(f"Phase 2 resolved via single-pass Union-Find: {rep_components_count} local_representative")
+    logger.info(
+        f"Phase 2 resolved via single-pass Union-Find: {rep_components_count} local_representative, includes singleton"
+    )
 
     node_mapping.unpersist()
     multiple_reps_edges_converted.unpersist()
@@ -384,7 +386,7 @@ def iterative_propagate_transitive_closure_wrapper(
         rep_components.unpersist()
 
         if is_converged:
-            rep_components = new_rep_components.persist(StorageLevel.MEMORY_AND_DISK)
+            rep_components = new_rep_components.persist(StorageLevel.DISK_ONLY)
             logger.info(f"Phase 2 converged in {i + 1} iterations")
             break
         # Checkpoint every iteration to truncate lineage
@@ -397,7 +399,7 @@ def iterative_propagate_transitive_closure_wrapper(
             f"Results may contain unresolved duplicates. Consider increasing max_iterations."
         )
     if not rep_components.is_cached:
-        rep_components = rep_components.persist(StorageLevel.MEMORY_AND_DISK)
+        rep_components = rep_components.persist(StorageLevel.DISK_ONLY)
         rep_components.count()
     return rep_components
 
