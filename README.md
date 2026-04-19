@@ -435,6 +435,10 @@ check driver log without history server
 yarn logs -applicationId application_1775424908785_0001 -log_files stdout -size -10000 2>/dev/null | grep -A5 Step | tail -50
 ```
 
+check executor logs from log4j
+```
+yarn logs -applicationId application_1776565573341_0001 -log_files stderr | grep "Executor MEM"
+```
 How to kill yarn application
 
 ```
