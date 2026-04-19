@@ -314,9 +314,9 @@ def run_phase2_global_union_find(
             LEFT JOIN global_union_find_result_decoded_df global
               ON local.local_representative = global.local_representative
         """)
-    rep_components = rep_components.persist(StorageLevel.MEMORY_AND_DISK)
+    rep_components = rep_components.persist(StorageLevel.DISK_ONLY)
     rep_components_count = rep_components.count()
-    logger.info(f"Phase 2 resolved via single-pass Union-Find: {rep_components_count} representatives")
+    logger.info(f"Phase 2 resolved via single-pass Union-Find: {rep_components_count} local_representative")
 
     node_mapping.unpersist()
     multiple_reps_edges_converted.unpersist()
