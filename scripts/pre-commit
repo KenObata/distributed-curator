@@ -181,6 +181,25 @@ if $HAS_SCALA; then
     else
         printf "  ${SKIP} sbt not found — skipping scalafmt\n"
     fi
+
+    # ── 3. Stale JAR check ───────────────────────────────────────────────
+    SCALA_JAR="target/scala-2.12/minhash-udf-assembly-0.1.jar"
+    if [[ -f "$SCALA_JAR" ]]; then
+        STALE=false
+        for f in $STAGED_SCALA; do
+            if [[ "$f" -nt "$SCALA_JAR" ]]; then
+                STALE=true
+                break
+            fi
+        done
+        if $STALE; then
+            printf "  ${FAIL} Scala source changed but JAR is stale. Run: ${YELLOW}sbt assembly${NC}\n"
+            FAILED=1
+        fi
+    else
+        printf "  ${FAIL} Scala JAR not found. Run: ${YELLOW}sbt assembly${NC}\n"
+        FAILED=1
+    fi
 fi
 
 
