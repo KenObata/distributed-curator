@@ -350,6 +350,34 @@ spark-submit \
 - partitions=27000 if just processing input data from WET files.
 - --conf spark.memory.offHeap.size=2g, --conf spark.memory.offHeap.enabled=true \ removed
 
+only from phase 2
+```
+spark-submit \
+  --master yarn \
+  --py-files s3://text-deduplication-740959772378/scripts/dependencies.zip \
+  --jars s3://text-deduplication-740959772378/scripts/minhash-udf-assembly-0.1.jar \
+  --conf spark.sql.execution.arrow.maxRecordsPerBatch=30000 \
+  --num-executors 252 \
+  --executor-cores 4 \
+  --executor-memory g \
+  --driver-memory 58g \
+  --conf spark.sql.shuffle.partitions=90000 \
+  --conf spark.network.timeout=1200s \
+  --conf spark.shuffle.io.connectionTimeout=600s \
+  --conf spark.executor.extraJavaOptions="-XX:+UseG1GC -XX:MaxGCPauseMillis=200" \
+  --conf spark.yarn.maxAppAttempts=1 \
+  --conf spark.shuffle.service.enabled=true \
+  --conf spark.dynamicAllocation.enabled=false \
+  --conf spark.hadoop.fs.s3a.signing-algorithm="" \
+  --conf spark.shuffle.io.maxRetries=10 \
+  --conf spark.shuffle.io.retryWait=30s \
+  --conf spark.task.maxFailures=8 \
+  --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
+  --conf spark.executor.memoryOverhead=5g \
+  --deploy-mode cluster \
+  s3://text-deduplication-740959772378/scripts/spark_deduplication_test.py full_corpus
+```
+
 How to save your executor log file.
 ```
 yarn logs -applicationId application_1770437151065_0002 > /tmp/application_1770437151065_0002_executor.txt
