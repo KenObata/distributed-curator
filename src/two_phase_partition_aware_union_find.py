@@ -485,7 +485,7 @@ def run_phase2_global_transitivity_closure(
         return result
 
     # Step 2-3: iterative converge
-    if doc_with_multiple_local_representatives_count > 500 * 1000 * 1000:  # 500M edges
+    if doc_with_multiple_local_representatives_count > 600 * 1000 * 1000:  # 600M edges
         use_iterative_transitive_closure = True
     logger.info(
         f"Phase 2 Step 2-3: "
