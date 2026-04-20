@@ -613,8 +613,8 @@ locals {
   selected_config = local.scale_configs[var.wet_file_scale]
   capacity_config = var.instance_strategy == "on-demand" ? local.selected_config.on_demand_only : local.selected_config.on_demand_spot
   has_nvme        = can(regex("[0-9][a-z]?d\\.", local.selected_config.instance_type)) # contains(["1k", "9k", "90k"], var.wet_file_scale)
-  yarn_local_dirs = local.has_nvme ? "/mnt/yarn,/mnt1/yarn" : "/mnt/yarn"
-  yarn_log_dirs   = local.has_nvme ? "/mnt/yarn/logs,/mnt1/yarn/logs" : "/mnt/yarn/logs"
+  yarn_local_dirs = local.has_nvme ? "/mnt1/yarn" : "/mnt/yarn"
+  yarn_log_dirs   = local.has_nvme ? "/mnt1/yarn/logs" : "/mnt/yarn/logs"
 }
 
 resource "aws_emr_cluster" "dedup_cluster" {
