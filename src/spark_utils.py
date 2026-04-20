@@ -28,8 +28,8 @@ def create_spark_session_partition_aware(
         .config("spark.sql.adaptive.skewJoin.enabled", "true")
         .config("spark.sql.shuffle.partitions", "1000")
         .config("spark.default.parallelism", "1000")
-        .config("spark.memory.offHeap.enabled", "true")
-        .config("spark.memory.offHeap.size", "2g")
+        # .config("spark.memory.offHeap.enabled", "true")
+        # .config("spark.memory.offHeap.size", "2g")
         .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
         .config("spark.ui.enabled", "true")
         .config("spark.ui.port", "4040")
@@ -88,8 +88,8 @@ def create_spark_session_partition_aware_emr(app_name: str = "PartitionAwareDedu
         .config("spark.sql.adaptive.skewJoin.enabled", "true")
         .config("spark.sql.adaptive.advisoryPartitionSizeInBytes", "134217728")
         .config("spark.default.parallelism", "1000")
-        .config("spark.memory.offHeap.enabled", "true")
-        .config("spark.memory.offHeap.size", "2g")
+        # .config("spark.memory.offHeap.enabled", "true")
+        # .config("spark.memory.offHeap.size", "2g")
         .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
         .config("spark.ui.enabled", "true")
         .config("spark.sql.execution.arrow.pyspark.enabled", "true")
@@ -224,10 +224,10 @@ def upload_df_to_s3(df: DataFrame, s3_path: str, row_count: int) -> None:
         if not s3_path.endswith("/"):
             s3_path += "/"
 
-        coalesce_count = calculate_optimal_partitions(df=df, row_count=row_count, target_file_size_mb=256)
+        num_partitions = calculate_optimal_partitions(df=df, row_count=row_count, target_file_size_mb=256)
 
-        # Upload with error handling
-        df.coalesce(coalesce_count).write.mode("overwrite").parquet(s3_path)
+        # repartition forces uniform distribution (with shuffle), coalesce preserves skew
+        df.repartition(num_partitions).write.mode("overwrite").parquet(s3_path)
         print(f"✅ Uploaded DataFrame to S3: {s3_path}")
 
     except Exception as e:
@@ -267,3 +267,13 @@ def set_spark_context(spark, short_desc, long_desc=None):
     spark.sparkContext.setLocalProperty("callSite.short", short_desc)
     if long_desc:
         spark.sparkContext.setLocalProperty("callSite.long", long_desc)
+
+
+def get_checkpoint_dir(spark: SparkSession, name: str) -> str:
+    """Return HDFS path on YARN, local path for pytest/dev."""
+    if spark.conf.get("spark.master").startswith("yarn"):
+        checkpoint_dir = f"hdfs:///tmp/{name}"
+    else:
+        checkpoint_dir = f"/tmp/{name}"
+    logger.info(f"Checkpoint dir: {checkpoint_dir}")
+    return checkpoint_dir

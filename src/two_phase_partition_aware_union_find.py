@@ -11,9 +11,9 @@ except Exception:
     from union_find import UnionFind
 
 try:
-    from .spark_utils import set_spark_context
+    from .spark_utils import get_checkpoint_dir, set_spark_context
 except Exception:
-    from spark_utils import set_spark_context
+    from spark_utils import get_checkpoint_dir, set_spark_context
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ class Phase2GlobalTransitivityClosureQuery:
                 HAVING size(collect_set(local_representative)) > 1
             ) multi_rep_docs
             LATERAL VIEW explode(slice(reps, 2, 100)) t AS dst
-        """).persist(StorageLevel.MEMORY_AND_DISK)
+        """).persist(StorageLevel.DISK_ONLY)
         doc_with_multiple_local_representatives_count = multiple_reps_edges.count()
         logger.info(f"doc_with_multiple_local_representatives: {doc_with_multiple_local_representatives_count} edges")
         return multiple_reps_edges, doc_with_multiple_local_representatives_count
@@ -127,9 +127,18 @@ class Phase2GlobalTransitivityClosureQuery:
     ) -> DataFrame:
         # local_results (doc_id, local_representative) is a subset of input_df that exceeded similarity score
         # and rep_components = (local_representative, root)
+
+        # Rename to avoid column ID collision
+        local_results_renamed = local_results.withColumnRenamed("local_representative", "lr_local_representative")
+        rep_components_renamed = rep_components.withColumnRenamed("local_representative", "rc_local_representative")
+
         vertices.createOrReplaceTempView("vertices")  # all docs from input_df
-        local_results.createOrReplaceTempView("local_results")  # candidate pair: (doc1, doc2, 0.9, partiiton1)
-        rep_components.createOrReplaceTempView("rep_components")  # temp checkpoint of (doc_id, local_results)
+        local_results_renamed.createOrReplaceTempView(
+            "local_results_renamed"
+        )  # candidate pair: (doc1, doc2, 0.9, partition1)
+        rep_components_renamed.createOrReplaceTempView(
+            "rep_components_renamed"
+        )  # temp checkpoint of (doc_id, local_results)
 
         result = self.spark.sql("""
             SELECT
@@ -138,9 +147,9 @@ class Phase2GlobalTransitivityClosureQuery:
             FROM vertices v
             LEFT JOIN (
                 SELECT lr.doc_id, MIN(rc.component) AS representative_id
-                FROM local_results lr
-                JOIN rep_components rc
-                ON lr.local_representative = rc.local_representative
+                FROM local_results_renamed lr
+                JOIN rep_components_renamed rc
+                ON lr.lr_local_representative = rc.rc_local_representative
                 GROUP BY lr.doc_id
             ) g ON v.id = g.doc_id
         """)
@@ -213,56 +222,85 @@ def run_phase2_global_union_find(
     - DataFrame: size of DISTINCT local_representative doc.
       multiple_reps_edges is just LEFT JOIN.
     """
-    union_find_schema = StructType(
-        [
-            StructField("local_representative", StringType(), False),
-            StructField("component", StringType(), False),
-        ]
-    )
+    # Step 1: prepare bridge table for mapping (URL -> Long)
+    # UNION distinct src and dst nodes
+    multiple_reps_edges.createOrReplaceTempView("multiple_reps_edges")
+    set_spark_context(spark, "Step 5 Phase 2", "Build node ID mapping for integer-encoded UF")
 
-    def run_union_find_on_meta_edges(iterator: Iterator[Row]) -> Iterator[Row]:
-        uf = UnionFind()
-        for row in iterator:
-            src, dst = row["src"], row["dst"]
-            uf.initial_setup(src)
-            uf.initial_setup(dst)
-            uf.union(src, dst)
-        for node in uf.parent:
-            yield Row(local_representative=node, component=uf.find(node))
+    # Use monotonically_increasing_id() for node_id, because any hash() cause collision at scale.
+    # monotonically_increasing_id() is non-deterministic (depends on partition_id at
+    # task execution time). If node_mapping is recomputed (cache eviction, task retry,
+    # or re-reference in a different query plan), it produces DIFFERENT node_ids.
+    #
+    # Step 5 below references node_mapping TWICE (as `nm` and `cm` in JOINs), which
+    # triggers plan re-evaluation even with persist().
+    #
+    # checkpoint() writes the materialized result to HDFS and TRUNCATES the lineage,
+    # so monotonically_increasing_id() can never be re-evaluated. IDs are stable.
+    checkpoint_dir = get_checkpoint_dir(spark=spark, name="phase2-checkpoint-single-pass")
+    spark.sparkContext.setCheckpointDir(checkpoint_dir)
 
-    # output size: COUNT(DISTINCT src) UNION COUNT(DISTINCT dst) from multiple_reps_edges
-    set_spark_context(
-        spark, "Step 5 Phase 2", "mapPartitions run_union_find_on_meta_edges on 1 partition. persist DISK_ONLY"
-    )
-    num_shuffle_partitions = int(spark.conf.get("spark.sql.shuffle.partitions", "27000"))
-    global_union_find_result_df = (
-        multiple_reps_edges.coalesce(1)  # all edges to one executor for global transitivity
-        .rdd.mapPartitions(
-            run_union_find_on_meta_edges
-        )  # mapPartitions instead of batch UDF because global UF needs all data (stateful)
-        .toDF(union_find_schema)
-        .persist(StorageLevel.DISK_ONLY)
-    )
+    node_mapping = spark.sql("""
+        SELECT node, monotonically_increasing_id() AS node_id
+        FROM (
+            SELECT src AS node FROM multiple_reps_edges
+            UNION
+            SELECT dst AS node FROM multiple_reps_edges
+        )
+    """).checkpoint()
+    node_mapping.createOrReplaceTempView("node_mapping")
+    node_count = node_mapping.count()
+    logger.info(f"Node ID mapping: {node_count} unique nodes encoded to Longs (does not include singleton.)")
+
+    # Step 2: actual convert - Encode edges as (src_id: Long, dst_id: Long)
+    multiple_reps_edges_converted = spark.sql("""
+        SELECT sm.node_id AS src, dm.node_id AS dst
+        FROM multiple_reps_edges e
+        JOIN node_mapping sm
+          ON e.src = sm.node
+        JOIN node_mapping dm
+          ON e.dst = dm.node
+    """).persist(StorageLevel.DISK_ONLY)
+    multiple_reps_edges_converted.count()
+
+    # Step 3: Run Scala UF on Long-encoded edges (fits in 27g JVM heap)
+    # .coalesce(1) is done inside of runGlobalUnionFind
+    jvm_helper = spark._jvm.com.unionFind.PartitionAwareUnionFindUDF
+    global_union_find_result_jdf = jvm_helper.runGlobalUnionFind(multiple_reps_edges_converted._jdf)
+    global_union_find_result_df = DataFrame(global_union_find_result_jdf, spark).persist(StorageLevel.DISK_ONLY)
     global_union_find_result_df_count = global_union_find_result_df.count()
-    logger.info(f"global_union_find_result_df: {global_union_find_result_df_count} rows")
+    logger.info(f"Global UF result: {global_union_find_result_df_count} nodes resolved (does not include singleton.)")
 
-    set_spark_context(
-        spark,
-        "Step 5 Phase 2",
-        f"repartition run_global_union_find_result_df back to {num_shuffle_partitions} partitions",
-    )
-    # Reads rows from disk incrementally (streaming, not all in memory)
+    # Step 4: Repartition UF result before join
+    set_spark_context(spark, "Step 5 Phase 2", "Repartition UF result back to shuffle partitions")
+    num_shuffle_partitions = int(spark.conf.get("spark.sql.shuffle.partitions", "90000"))
+
     global_union_find_result_df = global_union_find_result_df.repartition(num_shuffle_partitions).persist(
-        StorageLevel.MEMORY_AND_DISK
+        StorageLevel.DISK_ONLY
     )
-    global_union_find_result_df_count = global_union_find_result_df.count()
-
+    global_union_find_result_df.count()
     global_union_find_result_df.createOrReplaceTempView("global_union_find_result_df")
+
+    # Step 5: Map Long IDs back to URLs
+    set_spark_context(spark, "Step 5 Phase 2", "Map Long IDs back to URL strings")
+    global_union_find_result_decoded_df = spark.sql("""
+        SELECT
+            nm.node AS local_representative,
+            cm.node AS component
+        FROM global_union_find_result_df uf
+        JOIN node_mapping nm
+          ON uf.node_id = nm.node_id
+        JOIN node_mapping cm
+          ON uf.component_id = cm.node_id
+    """)
+    global_union_find_result_decoded_df.createOrReplaceTempView("global_union_find_result_decoded_df")
 
     # Also need reps that have NO cross-partition edges (singletons in the local_results)
     # They won't appear in multiple_reps_edges but exist in local_results
     # this is to be consistent with iterative_propagate_transitive_closure_wrapper()
-    set_spark_context(spark, "Step 5 Phase 2", "distinct_local_representative LEFT JOIN global_union_find_result_df")
+    set_spark_context(
+        spark, "Step 5 Phase 2", "distinct_local_representative LEFT JOIN global_union_find_result_decoded_df"
+    )
     local_results.createOrReplaceTempView("local_results")
     rep_components = spark.sql("""
             WITH distinct_local_representative as (
@@ -273,13 +311,17 @@ def run_phase2_global_union_find(
                 local.local_representative,
                 COALESCE(global.component, local.local_representative) AS component
             FROM distinct_local_representative local
-            LEFT JOIN global_union_find_result_df global
+            LEFT JOIN global_union_find_result_decoded_df global
               ON local.local_representative = global.local_representative
         """)
-    rep_components = rep_components.persist(StorageLevel.MEMORY_AND_DISK)
+    rep_components = rep_components.persist(StorageLevel.DISK_ONLY)
     rep_components_count = rep_components.count()
-    logger.info(f"Phase 2 resolved via single-pass Union-Find: {rep_components_count} representatives")
+    logger.info(
+        f"Phase 2 resolved via single-pass Union-Find: {rep_components_count} local_representative, includes singleton"
+    )
 
+    node_mapping.unpersist()
+    multiple_reps_edges_converted.unpersist()
     global_union_find_result_df.unpersist()
     return rep_components
 
@@ -309,12 +351,7 @@ def iterative_propagate_transitive_closure_wrapper(
          initial_components (= local_results) and multiple_reps_edges
     """
     # Set checkpoint directory for iteration lineage truncation
-    if spark.conf.get("spark.master").startswith("yarn"):
-        # On EMR (YARN): HDFS is shared across all nodes
-        checkpoint_dir = "hdfs:///tmp/union-find-checkpoints"
-    else:
-        # On local machine: HDFS doesn't exist locally
-        checkpoint_dir = "/tmp/union-find-checkpoints"
+    checkpoint_dir = get_checkpoint_dir(spark=spark, name="iterative-union-find-checkpoints")
     spark.sparkContext.setCheckpointDir(checkpoint_dir)
 
     # Initialize: each representative's component = itself
@@ -349,7 +386,7 @@ def iterative_propagate_transitive_closure_wrapper(
         rep_components.unpersist()
 
         if is_converged:
-            rep_components = new_rep_components.persist(StorageLevel.MEMORY_AND_DISK)
+            rep_components = new_rep_components.persist(StorageLevel.DISK_ONLY)
             logger.info(f"Phase 2 converged in {i + 1} iterations")
             break
         # Checkpoint every iteration to truncate lineage
@@ -362,7 +399,7 @@ def iterative_propagate_transitive_closure_wrapper(
             f"Results may contain unresolved duplicates. Consider increasing max_iterations."
         )
     if not rep_components.is_cached:
-        rep_components = rep_components.persist(StorageLevel.MEMORY_AND_DISK)
+        rep_components = rep_components.persist(StorageLevel.DISK_ONLY)
         rep_components.count()
     return rep_components
 
@@ -448,7 +485,7 @@ def run_phase2_global_transitivity_closure(
         return result
 
     # Step 2-3: iterative converge
-    if doc_with_multiple_local_representatives_count > 500 * 1000 * 1000:  # 500M edges
+    if doc_with_multiple_local_representatives_count > 600 * 1000 * 1000:  # 600M edges
         use_iterative_transitive_closure = True
     logger.info(
         f"Phase 2 Step 2-3: "
@@ -478,6 +515,7 @@ def run_phase2_global_transitivity_closure(
     )
 
     multiple_reps_edges.unpersist()
-    rep_components.unpersist()
+    # Don't unpersist rep_components in this function — let caller handle it
+    # rep_components.unpersist()
 
     return result
