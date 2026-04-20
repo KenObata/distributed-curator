@@ -11,7 +11,7 @@ the UnionFind class in isolation (no Spark needed).
 """
 
 import pytest
-from pyspark.sql import Row, SparkSession
+from pyspark.sql import Row
 
 from two_phase_partition_aware_union_find import (
     Phase2GlobalTransitivityClosureQuery,
@@ -19,19 +19,6 @@ from two_phase_partition_aware_union_find import (
     run_phase2_global_transitivity_closure,
     run_phase2_global_union_find,
 )
-
-
-@pytest.fixture(scope="module")
-def spark():
-    session = (
-        SparkSession.builder.master("local[2]")
-        .appName("TwoPhaseUnionFindTest")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.jars", "lib/graphframes-0.8.3-spark3.5-s_2.12.jar")  # <- add this
-        .getOrCreate()
-    )
-    yield session
-    session.stop()
 
 
 @pytest.fixture
@@ -774,6 +761,23 @@ class TestRunPhase2GlobalUnionFind:
         multiple_reps_edges = spark.createDataFrame([Row(src="A", dst="B"), Row(src="A", dst="C")])
         result = run_phase2_global_union_find(spark, multiple_reps_edges, local_results)
         assert result.count() == 3  # (A->A), (B->A), (C->A)
+
+    def test_url_strings_preserved_through_encoding(self, spark):
+        """URLs must map back to original strings after Long encoding."""
+        multiple_reps_edges = spark.createDataFrame([Row(src="http://example.com/a", dst="http://example.com/b")])
+        local_results = spark.createDataFrame(
+            [
+                Row(doc_id="d1", local_representative="http://example.com/a"),
+                Row(doc_id="d1", local_representative="http://example.com/b"),
+            ]
+        )
+        result = run_phase2_global_union_find(spark, multiple_reps_edges, local_results)
+        rows = {r["local_representative"]: r["component"] for r in result.collect()}
+
+        # Values should be original URL strings, not Longs
+        assert rows["http://example.com/a"] == rows["http://example.com/b"]
+        assert isinstance(rows["http://example.com/a"], str)
+        assert rows["http://example.com/a"].startswith("http://")
 
 
 class TestEndToEnd:

@@ -167,16 +167,17 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development", cc
             print("Applying filters...")
             df_filtered = df_parsed.filter(col("text").isNotNull())
 
+            df_filtered = df_filtered.cache()
+            test_count = df_filtered.count()
+            print(f"Test dataset size: {test_count:,} documents")
+            upload_df_to_s3(df=df_filtered, s3_path=s3_path, row_count=test_count)
+            df_filtered.unpersist()
+
+            # to avoid re-computing of df_filtered, read from s3.
+            df_filtered = read_parquet_from_s3(s3_path=s3_path, spark=spark)
         except Exception as e:
             print("Common Crawl access requires AWS credentials or has connectivity issues.")
             raise Exception(f"Error reading WET files: {e!s}") from e
-
-    # Cache for performance - runs regardless of branch above
-    df_filtered = df_filtered.cache()
-    test_count = df_filtered.count()
-    print(f"Test dataset size: {test_count:,} documents")
-    if not has_common_crawl_df_filtered:
-        upload_df_to_s3(df=df_filtered, s3_path=s3_path, row_count=test_count)
 
     # Performance monitoring
     start_time = time.time()

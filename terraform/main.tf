@@ -504,6 +504,14 @@ resource "aws_s3_object" "scala_script" {
   depends_on = [time_sleep.wait_for_bucket]
 }
 
+resource "aws_s3_object" "scala_assembly_jar" {
+  bucket = aws_s3_bucket.scripts_bucket.id
+  key    = "scripts/minhash-udf-assembly-0.1.jar"
+  source = "${path.module}/${var.scripts_source_scala_dir}/minhash-udf-assembly-0.1.jar"
+
+  depends_on = [time_sleep.wait_for_bucket]
+}
+
 # Upload integration test script to S3
 resource "aws_s3_object" "integration_test_script" {
   bucket = aws_s3_bucket.scripts_bucket.id
@@ -584,8 +592,8 @@ locals {
     }
     "1k" = {
       instance_type  = "r5ad.8xlarge"
-      on_demand_spot = { on_demand = 2, spot = 2 }
-      on_demand_only = { on_demand = 9, spot = 0 }
+      on_demand_spot = { on_demand = 1, spot = 1 }
+      on_demand_only = { on_demand = 2, spot = 0 }
     }
     "9k" = {
       instance_type  = "r5ad.8xlarge"              # 32 vCores, 256 GB, 2×600 GB NVMe (most available)
@@ -593,7 +601,7 @@ locals {
       on_demand_only = { on_demand = 9, spot = 0 } # Capacity units: 9 instances × 1 unit = 9
     }
     "90k" = {
-      instance_type  = "r5ad.8xlarge"                # 32 vCores, 256 GB, 2×600 GB NVMe (same as 9k for availability)
+      instance_type  = "r6gd.8xlarge"                # 32 vCores, 256 GB, 1×1.9 TB NVMe (cheapest, $1.84/hr)
       on_demand_spot = { on_demand = 64, spot = 62 } # Capacity units: 32 instances × 2 units = 64, 31 instances × 2 = 62
       on_demand_only = { on_demand = 126, spot = 0 } # Capacity units: 63 instances × 2 units = 126 (2,016 vCPU)
     }
@@ -604,9 +612,9 @@ locals {
 
   selected_config = local.scale_configs[var.wet_file_scale]
   capacity_config = var.instance_strategy == "on-demand" ? local.selected_config.on_demand_only : local.selected_config.on_demand_spot
-  has_nvme        = can(regex("[0-9]a?d\\.", local.selected_config.instance_type)) # contains(["1k", "9k", "90k"], var.wet_file_scale)
-  yarn_local_dirs = local.has_nvme ? "/mnt1/yarn,/mnt2/yarn" : "/mnt/yarn"
-  yarn_log_dirs   = local.has_nvme ? "/mnt1/yarn/logs,/mnt2/yarn/logs" : "/mnt/yarn/logs"
+  has_nvme        = can(regex("[0-9][a-z]?d\\.", local.selected_config.instance_type)) # contains(["1k", "9k", "90k"], var.wet_file_scale)
+  yarn_local_dirs = local.has_nvme ? "/mnt1/yarn" : "/mnt/yarn"
+  yarn_log_dirs   = local.has_nvme ? "/mnt1/yarn/logs" : "/mnt/yarn/logs"
 }
 
 resource "aws_emr_cluster" "dedup_cluster" {
@@ -668,9 +676,9 @@ resource "aws_emr_cluster" "dedup_cluster" {
       }
     }
 
-    # Fallbacks for 1k scale - maintain 128 cores with proper weighted capacity
+    # Fallbacks for 1k scale - maintain 64 cores with proper weighted capacity
 
-    # Larger instance fallbacks - fewer instances for same 128 cores
+    # Larger instance fallbacks - fewer instances for same 64 cores
     dynamic "instance_type_configs" {
       for_each = var.wet_file_scale == "1k" ? [1] : []
       content {
@@ -795,22 +803,22 @@ resource "aws_emr_cluster" "dedup_cluster" {
       }
     }
 
-    dynamic "instance_type_configs" {
-      for_each = contains(["9k", "90k"], var.wet_file_scale) ? [1] : []
-      content {
-        instance_type     = "r6gd.8xlarge" # 32 vCPU, Graviton ARM, 1×1900GB NVMe (highly available)
-        weighted_capacity = var.wet_file_scale == "90k" ? 2 : 1
+    # dynamic "instance_type_configs" {
+    #   for_each = contains(["9k"], var.wet_file_scale) ? [1] : []
+    #   content {
+    #     instance_type     = "r6gd.8xlarge" # 32 vCPU, Graviton ARM, 1×1900GB NVMe (highly available)
+    #     weighted_capacity = var.wet_file_scale == "90k" ? 2 : 1
 
-        bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
+    #     bid_price_as_percentage_of_on_demand_price = var.bid_strategy == "peak-event" ? 100 : 80
 
-        ebs_config {
-          size                 = 100
-          type                 = "gp3"
-          iops                 = 3000
-          volumes_per_instance = 1
-        }
-      }
-    }
+    #     ebs_config {
+    #       size                 = 100
+    #       type                 = "gp3"
+    #       iops                 = 3000
+    #       volumes_per_instance = 1
+    #     }
+    #   }
+    # }
 
   }
 

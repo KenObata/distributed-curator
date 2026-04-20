@@ -1,15 +1,17 @@
 package com.unionFind
 
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
-import org.apache.spark.sql.types.{StringType, StructField, StructType}
+import org.apache.spark.sql.types.{LongType, StringType, StructField, StructType}
 import scala.collection.mutable
 import org.apache.spark.util.LongAccumulator
+import com.utils.Utils
+import org.eclipse.collections.impl.map.mutable.primitive.{LongIntHashMap, LongLongHashMap}
 
 /**
  * Partition-aware local Union-Find with path compression + union by rank. Runs inside mapPartitions — zero shuffle.
  *
- * Goal is to replace graphframe becaise it shuffles globally. in this scala, we run phase 1 within partition to map
- * local representative doc id in a pair. phase 2 is written in udf.py
+ * Goal is to replace graphframe becaise it shuffles globally. we run phase 1 within each partition to map local
+ * representative doc id in a pair.
  *
  * Usage from PySpark: this function runs per partition, not per row. This means we directly calls JVM method from
  * similar_pairs_df._jdf
@@ -58,6 +60,61 @@ object PartitionAwareUnionFindUDF {
         } else {
           parent(root2) = root1
           rank(root1) = rank(root1) + 1
+        }
+      }
+    }
+
+  } // end of class UnionFind
+
+  private class LongUnionFind {
+    /*
+    Note: LongUnionFind is intentionally duplicated from UnionFind[String] rather than
+    using generics. mutable.HashMap[T, T] with T=Long would box Long to java.lang.Long,
+    roughly doubling memory per entry. At 200M nodes scale, this matters.
+
+    Unlike UnionFind, this class is encoded key value into Long value.
+    This is more memory efficient.
+    This class is called from phase2.
+    Reason why this class is only callled from Phase2 is because
+    phase 1 is not deduped yet. Convert from string to Long without dedupe
+    degrades performanece.
+     */
+    val parent: LongLongHashMap = new LongLongHashMap()
+    val rank: LongIntHashMap    = new LongIntHashMap()
+
+    def initialSetup(node: Long): Unit = if (!parent.containsKey(node)) {
+      parent.put(node, node)
+      rank.put(node, 0)
+    }
+
+    def find(node: Long): Long = {
+      var root = node
+      while (parent.get(root) != root) root = parent.get(root)
+
+      var pointer: Long = node
+      // Path compression: point every node on the path directly to root
+      while (parent.get(pointer) != root) {
+        val nextParent = parent.get(pointer)
+        parent.put(pointer, root)
+        pointer = nextParent
+      }
+      root
+    }
+
+    def union(doc1: Long, doc2: Long): Unit = {
+      val root1: Long = find(doc1)
+      val root2: Long = find(doc2)
+      if (root1 != root2) { // else, return
+        val rank1: Int = rank.get(root1)
+        val rank2: Int = rank.get(root2)
+        // Union by rank: attach shorter tree under taller tree
+        if (rank1 < rank2) {
+          parent.put(root1, root2)
+        } else if (rank2 < rank1) {
+          parent.put(root2, root1)
+        } else {
+          parent.put(root2, root1)
+          rank.put(root1, rank1 + 1)
         }
       }
     }
@@ -123,5 +180,63 @@ object PartitionAwareUnionFindUDF {
     import spark.implicits._
     (resultRDD.toDF(), pairCount)
   } // End of def runPhase1LocalUnionFind()
+
+  def runGlobalUnionFind(multipleRepsEdgesDf: DataFrame): DataFrame = {
+    /*
+    Phase 2: Global Union-Find in a single partition.
+    Args:
+    - DataFrame with (src: Long, dst: Long)
+      - ex) For a doc with reps [A, B, C], emit edges: (A,B), (A,C)
+            Note that docId is converted in Long.
+    Return:
+    - DataFrame with (node_id: Long, component_id: Long)
+      - node_id is artificially generated.
+
+    Usage from PySpark:
+      jvm_helper = spark._jvm.com.unionFind.PartitionAwareUnionFindUDF
+      result_jdf = jvm_helper.runGlobalUnionFind(multipleRepsEdgesDf._jdf)
+      result = DataFrame(result_jdf, spark)
+     */
+    val spark = multipleRepsEdgesDf.sparkSession
+
+    val resultSchema = StructType(
+      Seq(
+        StructField("node_id", LongType, nullable = false),
+        StructField("component_id", LongType, nullable = false)
+      )
+    )
+
+    // coalesce(1): global UF must run on single executor, entire graph must fit in memory
+    val resultRDD = multipleRepsEdgesDf.coalesce(1).rdd.mapPartitions { iterator =>
+      System.gc()       // to be removed
+      Thread.sleep(100) // to be removed
+      Utils.plotHeapMemory(label = "Before_global_UnionFind")
+      val uf = new LongUnionFind()
+      for (row <- iterator) {
+        val src = row.getLong(0)
+        val dst = row.getLong(1)
+        uf.initialSetup(src)
+        uf.initialSetup(dst)
+        uf.union(src, dst)
+      }
+
+      System.gc()       // to be removed
+      Thread.sleep(100) // to be removed
+      Utils.plotHeapMemory(label = "After_global_UnionFind")
+
+      // Wrap Eclipse's LongIterator (primitive) into Scala's Iterator[Row],
+      // required by mapPartitions.
+      // Verbose but avoids boxing 200M Longs or allocating a 1.6GB long[] upfront.
+      val keysIterator = uf.parent.keySet().longIterator()
+      new Iterator[Row] {
+        def hasNext: Boolean = keysIterator.hasNext
+        def next(): Row = {
+          val node: Long = keysIterator.next()
+          Row(node, uf.find(node))
+        }
+      }
+    } // end of resultRDD
+    spark.createDataFrame(resultRDD, resultSchema)
+  } // end of def runGlobalUnionFind()
 
 }

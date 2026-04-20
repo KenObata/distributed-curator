@@ -113,6 +113,10 @@ aws s3 cp s3://your-scripts-bucket/scripts/requirements.txt .
 sudo pip3 install --ignore-installed --no-cache-dir --no-deps -r requirements.txt
 ```
 
+[optional] upload jar if needed
+```
+aws s3 cp target/scala-2.12/minhash-udf_2.12-0.1.jar s3://your-scripts-bucket/scripts/minhash-udf_2.12-0.1.jar
+```
 
 Step4: Exit ssh, and on your macbook, install YARN(8088), Spark UI (4040)
 Find YAN host name - run
@@ -146,7 +150,7 @@ From SSH session:
 spark-submit \
   --master yarn \
   --py-files s3://your-scripts-bucket/scripts/dependencies.zip \
-  --jars s3://your-scripts-bucket/scripts/minhash-udf_2.12-0.1.jar \
+  --jars s3://your-scripts-bucket/scripts/minhash-udf-assembly-0.1.jar \
   --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
   --num-executors 4 \
@@ -154,7 +158,6 @@ spark-submit \
   --executor-memory 14g \
   --driver-memory 12g \
   --conf spark.sql.shuffle.partitions=1000 \
-  --conf spark.memory.offHeap.size=1g \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
   --deploy-mode client \
@@ -162,14 +165,25 @@ spark-submit \
 ```
 
 For 100 of WET files, increase partition count
+Cores = 4 node * 8 vCore = 32
+RAM = 4 ndoe * 61 GiB = 240gb
+
+Available cores per node: 8 - 1 = 7
+  Total usable cores: 7 × 4 = 28
+  Executors at 4 cores: 28 / 4 = 7 executors
+
+RAM for each node:
+- 2 executors × (executor_memory + 4g overhead) ≤ ~59 GB (61 - 2 OS)
+  executor_memory + 4 ≤ 29
+  executor_memory ≤ 25g
 ```
 spark-submit \
   --master yarn \
   --py-files s3://your-scripts-bucket/scripts/dependencies.zip \
-  --jars s3://your-scripts-bucket/scripts/minhash-udf_2.12-0.1.jar \
+  --jars s3://your-scripts-bucket/scripts/minhash-udf-assembly-0.1.jar \
   --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
-  --num-executors 8 \
+  --num-executors 7 \
   --executor-cores 4 \
   --executor-memory 24g \
   --driver-memory 12g \
@@ -183,28 +197,28 @@ spark-submit \
 where --deploy-mode cluster is to run the driver on EMR, not laptop.
 
 For 1000 of WET files, increase partition count
+Use 2 nodes of 8xlarge
 ```
 spark-submit \
   --master yarn \
   --py-files s3://your-scripts-bucket/scripts/dependencies.zip \
-  --jars s3://your-scripts-bucket/scripts/minhash-udf_2.12-0.1.jar \
-  --packages graphframes:graphframes:0.8.3-spark3.5-s_2.12 \
-  --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
-  --num-executors 28 \
+  --jars s3://your-scripts-bucket/scripts/minhash-udf-assembly-0.1.jar \
+  --conf spark.sql.execution.arrow.maxRecordsPerBatch=35000 \
+  --num-executors 13 \
   --executor-cores 4 \
-  --executor-memory 16g \
-  --driver-memory 24g \
+  --executor-memory 27g \
+  --driver-memory 16g \
+  --driver-cores 2 \
   --conf spark.sql.shuffle.partitions=1000 \
   --conf spark.network.timeout=800s \
   --conf spark.shuffle.io.connectionTimeout=600s \
-  --conf spark.executor.extraJavaOptions="-XX:+UseG1GC -XX:MaxGCPauseMillis=200" \
-  --conf spark.memory.offHeap.size=1g \
+  --conf spark.executor.extraJavaOptions="-XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/executor_heap_%p.hprof" \
   --conf spark.yarn.maxAppAttempts=1 \
   --conf spark.shuffle.service.enabled=true \
   --conf spark.dynamicAllocation.enabled=false \
   --conf spark.hadoop.fs.s3a.signing-algorithm="" \
   --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
-  --conf spark.executor.memoryOverhead=6g \
+  --conf spark.executor.memoryOverhead=5g \
   --deploy-mode cluster \
   s3://your-scripts-bucket/scripts/spark_deduplication_test.py production_proof
 ```
@@ -227,7 +241,7 @@ with 9 of r5ad.8xlarge,
 spark-submit \
   --master yarn \
   --py-files s3://your-scripts-bucket/scripts/dependencies.zip \
-  --jars s3://your-scripts-bucket/scripts/minhash-udf_2.12-0.1.jar \
+  --jars s3://your-scripts-bucket/scripts/minhash-udf-assembly-0.1.jar \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
   --num-executors 54 \
   --executor-cores 4 \
@@ -254,7 +268,7 @@ After optimized by scala and Cython:
 spark-submit \
   --master yarn \
   --py-files s3://your-scripts-bucket/scripts/dependencies.zip \
-  --jars s3://your-scripts-bucket/scripts/minhash-udf_2.12-0.1.jar \
+  --jars s3://your-scripts-bucket/scripts/minhash-udf-assembly-0.1.jar \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=30000 \
   --num-executors 63 \
   --executor-cores 4 \
@@ -311,18 +325,16 @@ with 64 of r5ad.8xlarge,
 spark-submit \
   --master yarn \
   --py-files s3://your-scripts-bucket/scripts/dependencies.zip \
-  --jars s3://your-scripts-bucket/scripts/minhash-udf_2.12-0.1.jar \
+  --jars s3://your-scripts-bucket/scripts/minhash-udf-assembly-0.1.jar \
   --conf spark.sql.execution.arrow.maxRecordsPerBatch=30000 \
-  --num-executors 447 \
+  --num-executors 441 \
   --executor-cores 4 \
   --executor-memory 27g \
   --driver-memory 58g \
-  --conf spark.sql.shuffle.partitions=27000 \
+  --conf spark.sql.shuffle.partitions=90000 \
   --conf spark.network.timeout=1200s \
   --conf spark.shuffle.io.connectionTimeout=600s \
   --conf spark.executor.extraJavaOptions="-XX:+UseG1GC -XX:MaxGCPauseMillis=200" \
-  --conf spark.memory.offHeap.enabled=true \
-  --conf spark.memory.offHeap.size=2g \
   --conf spark.yarn.maxAppAttempts=1 \
   --conf spark.shuffle.service.enabled=true \
   --conf spark.dynamicAllocation.enabled=false \
@@ -336,6 +348,35 @@ spark-submit \
   s3://your-scripts-bucket/scripts/spark_deduplication_test.py full_corpus
 ```
 - partitions=27000 if just processing input data from WET files.
+- --conf spark.memory.offHeap.size=2g, --conf spark.memory.offHeap.enabled=true \ removed
+
+only from phase 2
+```
+spark-submit \
+  --master yarn \
+  --py-files s3://your-scripts-bucket/scripts/dependencies.zip \
+  --jars s3://your-scripts-bucket/scripts/minhash-udf-assembly-0.1.jar \
+  --conf spark.sql.execution.arrow.maxRecordsPerBatch=30000 \
+  --num-executors 252 \
+  --executor-cores 4 \
+  --executor-memory g \
+  --driver-memory 58g \
+  --conf spark.sql.shuffle.partitions=90000 \
+  --conf spark.network.timeout=1200s \
+  --conf spark.shuffle.io.connectionTimeout=600s \
+  --conf spark.executor.extraJavaOptions="-XX:+UseG1GC -XX:MaxGCPauseMillis=200" \
+  --conf spark.yarn.maxAppAttempts=1 \
+  --conf spark.shuffle.service.enabled=true \
+  --conf spark.dynamicAllocation.enabled=false \
+  --conf spark.hadoop.fs.s3a.signing-algorithm="" \
+  --conf spark.shuffle.io.maxRetries=10 \
+  --conf spark.shuffle.io.retryWait=30s \
+  --conf spark.task.maxFailures=8 \
+  --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
+  --conf spark.executor.memoryOverhead=5g \
+  --deploy-mode cluster \
+  s3://your-scripts-bucket/scripts/spark_deduplication_test.py full_corpus
+```
 
 How to save your executor log file.
 ```
@@ -422,6 +463,10 @@ check driver log without history server
 yarn logs -applicationId application_1775424908785_0001 -log_files stdout -size -10000 2>/dev/null | grep -A5 Step | tail -50
 ```
 
+check executor logs from log4j
+```
+yarn logs -applicationId application_1776565573341_0001 -log_files stderr | grep "Executor MEM"
+```
 How to kill yarn application
 
 ```
@@ -530,9 +575,10 @@ where am means application manager and number means attempt.
 export SPARK_HISTORY_OPTS="-Dspark.history.fs.logDirectory=file:///path/to/repo/spark_history_logs"
 ```
 
-set SPARK_HOME
+check which spark version
 ```
-export SPARK_HOME=/opt/homebrew/Cellar/apache-spark/4.1.1/libexec
+SPARK_HOME=$(python -c "import pyspark; import os; print(os.path.dirname(pyspark.__file__))")
+echo $SPARK_HOME
 ```
 
 Create config file
