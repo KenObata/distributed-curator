@@ -57,7 +57,7 @@ def spark():
         SparkSession.builder.master("local[2]")
         .appName("UnitTests")
         .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.jars", f"lib/graphframes-0.8.3-spark3.5-s_2.12.jar,{assembly_jar}")  # <- add this
+        .config("spark.jars", f"lib/graphframes-0.8.3-spark3.5-s_2.12.jar,{assembly_jar}")
         .getOrCreate()
     )
     yield session
