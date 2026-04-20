@@ -247,8 +247,6 @@ def partition_aware_deduplicate(
 
             df_with_signatures.unpersist()
     else:
-        # Define schema for df_with_partitions to avoid inference issues
-        # Note: text column not included - not needed for deduplication
         set_spark_context(
             spark,
             "Loading Cached Data",
