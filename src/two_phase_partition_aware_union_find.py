@@ -266,7 +266,7 @@ def run_phase2_global_union_find(
     # Step 3: Run Scala UF on Long-encoded edges (fits in 27g JVM heap)
     # .coalesce(1) is done inside of runGlobalUnionFind
     jvm_helper = spark._jvm.com.unionFind.PartitionAwareUnionFindUDF
-    global_union_find_result_jdf = jvm_helper.runGlobalUnionFind(multiple_reps_edges_converted._jdf)
+    global_union_find_result_jdf = jvm_helper.runGlobalUnionFindFromDriver(multiple_reps_edges_converted._jdf)
     global_union_find_result_df = DataFrame(global_union_find_result_jdf, spark).persist(StorageLevel.DISK_ONLY)
     global_union_find_result_df_count = global_union_find_result_df.count()
     logger.info(f"Global UF result: {global_union_find_result_df_count} nodes resolved (does not include singleton.)")

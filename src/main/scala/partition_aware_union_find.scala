@@ -1,5 +1,6 @@
 package com.unionFind
 
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import org.apache.spark.sql.types.{LongType, StringType, StructField, StructType}
 import scala.collection.mutable
@@ -238,5 +239,90 @@ object PartitionAwareUnionFindUDF {
     } // end of resultRDD
     spark.createDataFrame(resultRDD, resultSchema)
   } // end of def runGlobalUnionFind()
+
+  def runGlobalUnionFindFromDriver(multipleRepsEdgesDf: DataFrame): DataFrame = {
+    /*
+    Phase 2: Global Union-Find in a single partition.
+    Unlike runGlobalUnionFind, which runs on executors,
+    this function runs on driver memory.
+    This is because multipleRepsEdgesDf can exceed executor memory due to single executor.
+     and if driver has more memory, use this function.
+    Args:
+    - DataFrame with (src: Long, dst: Long)
+      - ex) For a doc with reps [A, B, C], emit edges: (A,B), (A,C)
+            Note that docId is converted in Long.
+    Return:
+    - DataFrame with (node_id: Long, component_id: Long)
+      - node_id is artificially generated.
+
+    Usage from PySpark:
+      jvm_helper = spark._jvm.com.unionFind.PartitionAwareUnionFindUDF
+      result_jdf = jvm_helper.runGlobalUnionFindFromDriver(multipleRepsEdgesDf._jdf)
+      result = DataFrame(result_jdf, spark)
+      )
+     */
+
+    val spark = multipleRepsEdgesDf.sparkSession
+
+    val (nodeIds, componentIds) = {
+      System.gc()       // to be removed
+      Thread.sleep(100) // to be removed
+      Utils.plotHeapMemory(label = "Before_global_UnionFind")
+      // Collect stays in driver JVM — no Python roundtrip
+      val edges = multipleRepsEdgesDf.collect() // Array[Row], stays in JVM
+
+      System.gc()       // to be removed
+      Thread.sleep(100) // to be removed
+      Utils.plotHeapMemory(label = "After_multipleRepsEdgesDf_collect")
+
+      val uf = new LongUnionFind()
+      for (row <- edges) {
+        val src = row.getLong(0)
+        val dst = row.getLong(1)
+        uf.initialSetup(src)
+        uf.initialSetup(dst)
+        uf.union(src, dst)
+      }
+
+      System.gc()       // to be removed
+      Thread.sleep(100) // to be removed
+      Utils.plotHeapMemory(label = "After_global_UnionFind")
+
+      val size             = uf.parent.size()
+      val tempNodeIds      = new Array[Long](size)
+      val tempComponentIds = new Array[Long](size)
+
+      var i            = 0
+      val keysIterator = uf.parent.keySet().longIterator()
+      while (keysIterator.hasNext) {
+        val node = keysIterator.next()
+        tempNodeIds(i) = node
+        tempComponentIds(i) = uf.find(node)
+        i += 1
+      }
+      (tempNodeIds, tempComponentIds)
+    } // End of UnionFind
+
+    // Free UF hash maps before creating Rows
+    System.gc()
+    Thread.sleep(100)
+    Utils.plotHeapMemory(label = "After_nodeIdscomponentIds_created")
+
+    // create DataFrame to return
+    val numSlices = 1000
+    val rdd: RDD[Row] = spark.sparkContext.parallelize(0 until nodeIds.length, numSlices).map { i =>
+      Row(nodeIds(i), componentIds(i))
+    }
+
+    Utils.plotHeapMemory(label = "After_rows_created")
+
+    val resultSchema = StructType(
+      Seq(
+        StructField("node_id", LongType, nullable = false),
+        StructField("component_id", LongType, nullable = false)
+      )
+    )
+    spark.createDataFrame(rdd, resultSchema)
+  }
 
 }
