@@ -386,4 +386,32 @@ class GlobalUnionFindUDFTest extends AnyFunSuite {
     assert(resultDf.rdd.getNumPartitions == 1)
   }
 
+  test("test_driver_matches_executor") {
+    val rowRDD: RDD[Row] = spark.sparkContext.parallelize(
+      Seq(
+        Row(1L, 2L),
+        Row(2L, 3L),
+        Row(4L, 5L)
+      )
+    )
+    val multipleRepsEdgesDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(1)
+
+    val executorResult: DataFrame = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf)
+    val driverResult: DataFrame   = PartitionAwareUnionFindUDF.runGlobalUnionFindFromDriver(multipleRepsEdgesDf)
+
+    val executorMap: Map[Long, Long] =
+      executorResult.collect().map(row => row.getAs[Long]("node_id") -> row.getAs[Long]("component_id")).toMap
+    val driverMap: Map[Long, Long] =
+      driverResult.collect().map(row => row.getAs[Long]("node_id") -> row.getAs[Long]("component_id")).toMap
+
+    // Same node count
+    assert(executorMap.size == driverMap.size)
+
+    // Same component groupings
+    assert(driverMap(1L) == driverMap(2L))
+    assert(driverMap(2L) == driverMap(3L))
+    assert(driverMap(4L) == driverMap(5L))
+    assert(driverMap(1L) != driverMap(4L))
+  }
+
 }
