@@ -465,7 +465,7 @@ yarn logs -applicationId application_1775424908785_0001 -log_files stdout -size 
 
 check executor logs from log4j
 ```
-yarn logs -applicationId application_1776565573341_0001 -log_files stderr | grep "Executor MEM"
+yarn logs -applicationId application_1776847171772_0001 -log_files stderr -am 1 | grep "MB"
 ```
 How to kill yarn application
 
@@ -497,8 +497,8 @@ INSTANCE_ID=$(ec2-metadata -i | awk '{print $2}')
 
 aws s3 cp /tmp/ "${S3_PREFIX}/" --recursive --exclude "*" --include "driver_heap_*.hprof"
 aws s3 cp /tmp/ "${S3_PREFIX}/" --recursive --exclude "*" --include "driver_gc_*.log"
-aws s3 cp /tmp/ "${S3_PREFIX}/" --recursive --exclude "*" --include "driver_heap_histo_*.log"
-aws s3 cp /tmp/ "${S3_PREFIX}/" --recursive --exclude "*" --include "driver_nmt_*.log"
+aws s3 cp /tmp/ "${S3_PREFIX}/" --recursive --exclude "*" --include "driver_heap_histo_*.txt"
+aws s3 cp /tmp/ "${S3_PREFIX}/" --recursive --exclude "*" --include "driver_nmt_*.txt"
 
 # 2. Extract memory log from YARN AM stdout
 APP_ID=$(yarn application -list -appStates FINISHED,FAILED,KILLED 2>/dev/null \

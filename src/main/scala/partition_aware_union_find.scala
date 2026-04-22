@@ -263,25 +263,27 @@ object PartitionAwareUnionFindUDF {
      */
 
     val spark = multipleRepsEdgesDf.sparkSession
+    import spark.implicits._
 
     val (nodeIds, componentIds) = {
       System.gc()       // to be removed
       Thread.sleep(100) // to be removed
       Utils.plotHeapMemory(label = "Before_global_UnionFind")
       // Collect stays in driver JVM — no Python roundtrip
-      val edges = multipleRepsEdgesDf.collect() // Array[Row], stays in JVM
+      val srcArray = multipleRepsEdgesDf.select("src").as[Long].collect()
+      val dstArray = multipleRepsEdgesDf.select("dst").as[Long].collect()
 
       System.gc()       // to be removed
       Thread.sleep(100) // to be removed
       Utils.plotHeapMemory(label = "After_multipleRepsEdgesDf_collect")
 
       val uf = new LongUnionFind()
-      for (row <- edges) {
-        val src = row.getLong(0)
-        val dst = row.getLong(1)
-        uf.initialSetup(src)
-        uf.initialSetup(dst)
-        uf.union(src, dst)
+      var j  = 0
+      while (j < srcArray.length) {
+        uf.initialSetup(srcArray(j))
+        uf.initialSetup(dstArray(j))
+        uf.union(srcArray(j), dstArray(j))
+        j += 1
       }
 
       System.gc()       // to be removed
