@@ -387,6 +387,10 @@ class GlobalUnionFindUDFTest extends AnyFunSuite {
   }
 
   test("test_driver_matches_executor") {
+    /*
+      runGlobalUnionFind and runGlobalUnionFindFromDriver should
+      produce the same component groupings
+     */
     val rowRDD: RDD[Row] = spark.sparkContext.parallelize(
       Seq(
         Row(1L, 2L),
