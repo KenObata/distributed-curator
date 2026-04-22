@@ -8,7 +8,7 @@ object Utils {
   def plotHeapMemory(label: String = ""): Unit = {
     val runtime       = Runtime.getRuntime
     val usageMB: Long = (runtime.totalMemory - runtime.freeMemory) / (1024 * 1024)
-    logger.info(s"[Executor MEM] $label: $usageMB MB")
+    System.out.println(s"[MEM] $label: $usageMB MB")
 
   }
 
