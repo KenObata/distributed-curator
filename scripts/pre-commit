@@ -187,6 +187,10 @@ if $HAS_SCALA; then
     if [[ -f "$SCALA_JAR" ]]; then
         STALE=false
         for f in $STAGED_SCALA; do
+            # Skip test files — sbt assembly doesn't include them
+            if [[ "$f" == *"/test/"* ]]; then
+                continue
+            fi
             if [[ "$f" -nt "$SCALA_JAR" ]]; then
                 STALE=true
                 break
