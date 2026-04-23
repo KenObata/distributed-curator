@@ -119,18 +119,7 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development", cc
             "--driver-java-options '--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.misc=ALL-UNNAMED' pyspark-shell"
         )
 
-        # Try to find GraphFrames JAR locally
-        jar_path = os.path.join(os.getcwd(), "graphframes-0.8.3-spark3.5-s_2.12.jar")
-        if not os.path.exists(jar_path):
-            # Try relative path from test directory
-            jar_path = os.path.join(os.path.dirname(__file__), "../../terraform/graphframes-0.8.3-spark3.5-s_2.12.jar")
-
-        if os.path.exists(jar_path):
-            print(f"Found GraphFrames JAR at: {jar_path}")
-            spark = create_spark_session_partition_aware("CommonCrawlStressTest", graphframes_jar_path=jar_path)
-        else:
-            print("GraphFrames JAR not found - using basic Spark session")
-            spark = create_spark_session_partition_aware("CommonCrawlStressTest")
+        spark = create_spark_session_partition_aware("CommonCrawlStressTest")
 
     has_common_crawl_df_filtered = does_file_exists(s3_path=s3_path)
     if has_common_crawl_df_filtered:
