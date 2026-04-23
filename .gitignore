@@ -3,6 +3,7 @@
 venv/
 env/
 .env
+src/venv39/
 
 # Python
 __pycache__/
@@ -41,8 +42,13 @@ sagemaker_config.json
 data/*.csv
 data/*.json
 data/*.parquet
+data/
 
 src/minhash_implementation.py
+
+# build related
+build/
+distributed_curator.egg-info/
 
 # scala build related
 target/
@@ -73,3 +79,4 @@ distributed_curator/cython_minhash/build/
 distributed_curator/cython_minhash/build/
 # result of build
 distributed_curator/cython_minhash/shingle_hash.c 
+distributed_curator/jars/*.jar
