@@ -83,6 +83,7 @@ def partition_aware_deduplicate(
     num_partitions: int = 1000,
     ngram: int = 9,
     checkpoint_path: str | None = None,
+    enable_diagnostics: bool = False,
 ) -> DataFrame:
     """
     Partition-aware deduplication that scales to 1TB+
@@ -103,6 +104,8 @@ def partition_aware_deduplicate(
         num_partitions: Number of partitions for processing
         checkpoint_path: When checkpoint_path is provided,
           intermediate results get saved there and reused on subsequent runs.
+        enable_diagnostics: eabled periodic memory logging.
+          (Currently only support driver mem, appears in yarn logs -am 1 stdout)
 
     Returns:
         DataFrame with duplicates marked
@@ -116,8 +119,9 @@ def partition_aware_deduplicate(
     logger.info(f"Spark UI available at: {spark.sparkContext.uiWebUrl}")
     print(f"🚀 Spark UI: {spark.sparkContext.uiWebUrl}")  # Print to console for visibility
 
-    # Start periodic memory logging (appears in yarn logs -am 1 stdout)
-    start_memory_logger(spark.sparkContext, interval_seconds=30)
+    if enable_diagnostics:
+        # Start periodic memory logging (appears in yarn logs -am 1 stdout)
+        start_memory_logger(spark.sparkContext, interval_seconds=30)
 
     rows_per_band = num_hashes // num_bands
 
@@ -417,8 +421,9 @@ def partition_aware_deduplicate(
 
     # Don't unpersist result here because downstream caller function can trigger re-compute.
 
-    # capture heap state for driver diagnosis script
-    capture_heap_histogram(spark.sparkContext)
-    capture_nmt_summary(spark.sparkContext)  # only works if NMT flag is set and application completed successfully
+    if enable_diagnostics:
+        # capture heap state for driver diagnosis script
+        capture_heap_histogram(spark.sparkContext)
+        capture_nmt_summary(spark.sparkContext)  # only works if NMT flag is set and application completed successfully
 
     return result
