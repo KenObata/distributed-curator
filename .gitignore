@@ -46,7 +46,9 @@ src/minhash_implementation.py
 
 # scala build related
 target/
-project/
+project/*
+# plugins.sbt is needed for pre-commit
+!project/plugins.sbt
 project/target/
 project/project/
 .bsp/
@@ -54,8 +56,6 @@ project/project/
 .scala-build/
 .bloop/
 
-# plugins.sbt is needed for pre-commit
-!project/plugins.sbt
 
 # pyspark build
 src/dependencies.zip
