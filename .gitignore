@@ -59,7 +59,7 @@ project/project/
 
 
 # pyspark build
-src/dependencies.zip
+distributed_curator/dependencies.zip
 
 # logs
 logs/
@@ -67,9 +67,9 @@ to_do.md
 spark_history_logs/
 
 # Cython downloaded code
-src/cython_minhash/mmh3-5.2.1/
-src/cython_minhash/*.so
-src/cython_minhash/build/
-src/cython_minhash/build/
+distributed_curator/cython_minhash/mmh3-5.2.1/
+distributed_curator/cython_minhash/*.so
+distributed_curator/cython_minhash/build/
+distributed_curator/cython_minhash/build/
 # result of build
-src/cython_minhash/shingle_hash.c 
+distributed_curator/cython_minhash/shingle_hash.c 

@@ -6,17 +6,11 @@ from pyspark.sql import DataFrame, Row, SparkSession
 from pyspark.sql.types import StringType, StructField, StructType
 
 try:
-    from .union_find import UnionFind
-except Exception:
-    from union_find import UnionFind
-
-try:
     from .spark_utils import get_checkpoint_dir, set_spark_context
 except Exception:
     from spark_utils import get_checkpoint_dir, set_spark_context
 
 logger = logging.getLogger(__name__)
-
 
 class Phase2GlobalTransitivityClosureQuery:
     """
@@ -154,55 +148,6 @@ class Phase2GlobalTransitivityClosureQuery:
             ) g ON v.id = g.doc_id
         """)
         return result
-
-
-def run_phase1_local_union_find(similar_pairs_df: DataFrame) -> DataFrame:
-    """
-    This function is now replaced by main/scala/partition_local_union_find.scala
-    Phase 1: Partition-local Union-Find using Python RDD mapPartitions.
-    In phase 1, union-find happens only within each partition so that there is no shuffle.
-
-    Reads all pairs within each Spark partition, runs true Union-Find with
-    path compression + union by rank, emits (doc_id, local_representative) per unique doc.
-
-    Args:
-    - similar_pairs_df: (doc_1, doc_2, similarity, partition_id) from Step 3
-
-    Return:
-    - (doc_id, local_representative) — one per unique doc per partition
-      - only subset of input_df that exceeded similarity score are included.
-    """
-    local_uf_schema = StructType(
-        [
-            StructField("doc_id", StringType(), False),
-            StructField("local_representative", StringType(), False),
-        ]
-    )
-
-    def run_local_union_find(iterator: Iterator[Row]) -> Iterator[Row]:
-        """Run partition-local Union-Find using shared UnionFind class.
-
-        Args:
-        - iterator: Iterator[Row]
-          - this function receives each partition in a batch,
-            that is why there is a for row in iterator loop.
-            so this function is per partition, not per row.
-        """
-        uf = UnionFind()
-
-        # Consuming phase: iterate all pairs, update in-memory HashMap
-        for row in iterator:
-            doc1, doc2 = row["doc1"], row["doc2"]
-            uf.initial_setup(doc1)
-            uf.initial_setup(doc2)
-            uf.union(doc1, doc2)
-
-        # uf.parent is dict, so one row per unique doc_id (NOT one per pair)
-        for doc_id in uf.parent:
-            yield Row(doc_id=doc_id, local_representative=uf.find(doc_id))
-
-    # mapPartitions = narrow transformation, no shuffle in phase1
-    return similar_pairs_df.rdd.mapPartitions(run_local_union_find).toDF(local_uf_schema)
 
 
 def run_phase2_global_union_find(

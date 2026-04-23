@@ -7,7 +7,7 @@ import pytest
 from pyspark.sql import SparkSession
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-src_dir = os.path.join(REPO_ROOT, "src")
+src_dir = os.path.join(REPO_ROOT, "distributed_curator")
 test_dir = os.path.join(REPO_ROOT, "test")
 integration_test_dir = os.path.join(test_dir, "integration_test")
 assembly_jar = os.path.join(REPO_ROOT, "target/scala-2.12/minhash-udf-assembly-0.1.jar")
