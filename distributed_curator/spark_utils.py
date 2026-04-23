@@ -1,4 +1,7 @@
+import glob
+import importlib.resources
 import logging
+import os
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import StructType
@@ -53,6 +56,7 @@ def create_spark_session_partition_aware(app_name: str = "PartitionAwareDedup") 
             "spark.executor.extraJavaOptions",
             "--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.misc=ALL-UNNAMED",
         )
+        .config("spark.jars", get_jar_path())
     )
 
     spark = builder.getOrCreate()
@@ -87,6 +91,7 @@ def create_spark_session_partition_aware_emr(app_name: str = "PartitionAwareDedu
             "spark.executor.extraJavaOptions",
             "--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.misc=ALL-UNNAMED",
         )
+        .config("spark.jars", get_jar_path())
         .getOrCreate()
     )
 
@@ -263,3 +268,21 @@ def get_checkpoint_dir(spark: SparkSession, name: str) -> str:
         checkpoint_dir = f"/tmp/{name}"
     logger.info(f"Checkpoint dir: {checkpoint_dir}")
     return checkpoint_dir
+
+
+def get_jar_path() -> str:
+    """
+    Bundle scala jar inside the Python package as package data.
+    pip install drops the JAR into site-packages/distributed_curator/jars/
+    Return the filesystem path to the bundled Scala assembly JAR.
+    """
+    jar_dir = str(importlib.resources.files("distributed_curator.jars"))
+    jars = glob.glob(os.path.join(jar_dir, "*-assembly-*.jar"))
+    if not jars:
+        raise FileNotFoundError(
+            f"Scala JAR not found at {jar_dir}. Build it with 'sbt assembly' and copy to distributed_curator/jars/"
+        )
+    # Contract: there should only be one JAR in the directory.
+    if len(jars) > 1:
+        raise RuntimeError(f"Multiple assembly JARs found in {jar_dir}: {jars}. Keep only one version.")
+    return jars[0]

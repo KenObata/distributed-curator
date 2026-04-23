@@ -78,6 +78,9 @@ include = ["distributed_curator*"]
 [tool.setuptools.package-data]
 "distributed_curator.cython_minhash" = ["*.pyx", "*.c", "*.h"]
 
+# bundle jar inside of pip - users don't need manual download from github
+"distributed_curator.jars" = ["*.jar"]
+
 # ==============================================================================
 # ruff lint
 # ==============================================================================
