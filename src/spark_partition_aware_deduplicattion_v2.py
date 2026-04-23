@@ -158,7 +158,6 @@ def partition_aware_deduplicate(
             input_df.withColumn(
                 "minhash_signature",
                 minhash_batch_udf(F.col(text_column)),
-                # F.expr(f"compute_minhash({text_column}, {num_hashes}, {ngram}, {str(remove_articles).lower()})") # scala UDF
             )
             .drop(text_column)
             .cache()
@@ -304,26 +303,6 @@ def partition_aware_deduplicate(
         similarity_threshold,
     )
     similar_pairs_df = DataFrame(similar_pairs_jdf, spark)
-
-    # PySpark version: Convert back to DataFrame
-    """
-    similar_pairs_schema = StructType([
-        StructField("doc1", StringType(), False),
-        StructField("doc2", StringType(), False),
-        StructField("similarity", FloatType(), False),
-        StructField("partition_id", IntegerType(), False)
-    ])
-    from udf import process_partition_locally
-    # mapPartitions acccepts only one function pointer, so either pass process_partition_locally
-    # or pass lambda and use other params.
-    similar_pairs_rdd = df_partitioned.rdd.mapPartitions(lambda iterator:
-            process_partition_locally,
-            num_bands,
-            rows_per_band,
-            similarity_threshold
-         )
-    similar_pairs_df = spark.createDataFrame(similar_pairs_rdd, similar_pairs_schema)
-    """
 
     # Don't drop dups because dropDuplicates triggers a shuffle that destroys your partition layout:
     # e.g. similar_pairs_df = similar_pairs_df.dropDuplicates(["doc1", "doc2"]).persist(StorageLevel.MEMORY_AND_DISK)
