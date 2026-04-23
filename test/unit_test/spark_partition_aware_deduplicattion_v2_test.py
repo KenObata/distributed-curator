@@ -1,11 +1,10 @@
 import os
 
 import pytest
-from pyspark.sql.functions import col, spark_partition_id
+from pyspark.sql.functions import col
 
 from src.spark_partition_aware_deduplicattion_v2 import (
     apply_deterministic_salting,
-    identity_repartition,
     partition_aware_deduplicate,
 )
 
@@ -209,89 +208,3 @@ class TestDeterministicSalting:
         }
 
         assert result1 == result2
-
-
-class TestIdentityRepartition:
-    def test_identity_mapping(self, spark):
-        data = []
-        num_partition = 100
-        for i in range(num_partition):
-            data.append([f"doc_{i}", i, [1, 2, 3]])
-        df_exploded = spark.createDataFrame(data, ["doc_id", "partition_id", "minhash_signature"])
-        df_partitioned = identity_repartition(
-            df=df_exploded, repartition_col="partition_id", num_partitions=num_partition
-        )
-
-        row_iterator = df_partitioned.withColumn("physical_partition_id", spark_partition_id()).collect()
-        for row in row_iterator:
-            assert row.physical_partition_id == row.partition_id, (
-                "physical_partition_id should be equal to logical partition_id"
-            )
-
-    def test_no_collision(self, spark):
-        data = []
-        num_partition = 100
-        for i in range(num_partition):
-            data.append([f"doc_{i}", i, [1, 2, 3]])
-        df_exploded = spark.createDataFrame(data, ["doc_id", "partition_id", "minhash_signature"])
-        df_partitioned = identity_repartition(
-            df=df_exploded, repartition_col="partition_id", num_partitions=num_partition
-        )
-
-        physical_partition_count = (
-            df_partitioned.withColumn("physical_partition", spark_partition_id())
-            .select("physical_partition")
-            .distinct()
-            .count()
-        )
-        assert physical_partition_count == num_partition
-
-    def test_schema(self, spark):
-        """Output schema should match input schema exactly."""
-        data = [("doc_1", 0, [1, 2, 3])]
-        df_exploded = spark.createDataFrame(data, ["doc_id", "partition_id", "minhash_signature"])
-        df_partitioned = identity_repartition(df=df_exploded, repartition_col="partition_id", num_partitions=10)
-        assert df_exploded.schema == df_partitioned.schema
-
-    def test_same_partition_id_should_be_colocated(self, spark):
-        """
-        same partition_id should be assigned the same physical partition_id
-        """
-        data = [("doc_1", 0, [1, 2, 3]), ("doc_2", 0, [1, 2, 3]), ("doc_3", 1, [1, 2, 3])]
-        df_exploded = spark.createDataFrame(data, ["doc_id", "partition_id", "minhash_signature"])
-        df_partitioned = identity_repartition(df=df_exploded, repartition_col="partition_id", num_partitions=10)
-        row_iterator = df_partitioned.withColumn("physical_partition_id", spark_partition_id()).collect()
-        doc_id_to_physical_partition_id = {}
-        for row in row_iterator:
-            doc_id_to_physical_partition_id[row.doc_id] = row.physical_partition_id
-        assert doc_id_to_physical_partition_id["doc_1"] == doc_id_to_physical_partition_id["doc_2"]
-        assert doc_id_to_physical_partition_id["doc_1"] != doc_id_to_physical_partition_id["doc_3"]
-
-    def test_salted_partition_ids_beyond_num_partitions(self, spark):
-        """
-        salting can make logical partition_id > num_parittions as follows:
-        F.col("partition_id") + F.abs(F.col("band_hash")) % num_splits
-
-        In identity_repartition, partitionBy is based on
-        Utils.nonNegativeMod(key.hashCode, numPartitions) so this shoud wrap via modulo without any errors.
-        """
-        num_partitions = 10
-        data = [
-            ("doc_1", 5, [1, 2, 3]),  # normal
-            ("doc_2", 15, [1, 2, 3]),  # 15 % 10 = 5, same physical as doc_1
-            ("doc_3", 25, [1, 2, 3]),  # 25 % 10 = 5, same physical
-            ("doc_4", 8, [1, 2, 3]),  # normal
-            ("doc_5", 18, [1, 2, 3]),  # 18 % 10 = 8, same physical as doc_4
-        ]
-        df_exploded = spark.createDataFrame(data, ["doc_id", "partition_id", "minhash_signature"])
-        df_partitioned = identity_repartition(
-            df=df_exploded, repartition_col="partition_id", num_partitions=num_partitions
-        )
-        row_iterator = df_partitioned.withColumn("physical_partition_id", spark_partition_id()).collect()
-
-        for row in row_iterator:
-            expected_physical_partition_id = row.partition_id % num_partitions
-            assert row.physical_partition_id == expected_physical_partition_id, (
-                f"partition_id={row.partition_id} expected physical={expected_physical_partition_id}",
-                f"got {row.physical_partition}",
-            )

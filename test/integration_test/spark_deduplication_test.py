@@ -188,8 +188,7 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development", cc
         num_bands=8,  # Fewer bands for speed
         num_partitions=shuffle_partition_count,  # Use executor-based partition count
         ngram=9,
-        is_debug_mode=True,
-        df_with_partitions_s3_path=df_with_partitions_s3_path,
+        checkpoint_path=df_with_partitions_s3_path,
     )
 
     # Collect results
