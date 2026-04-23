@@ -46,7 +46,10 @@ src/minhash_implementation.py
 
 # scala build related
 target/
-project/
+project/*
+# plugins.sbt is needed for pre-commit
+!project/plugins.sbt
+!project/build.properties
 project/target/
 project/project/
 .bsp/
@@ -54,8 +57,6 @@ project/project/
 .scala-build/
 .bloop/
 
-# plugins.sbt is needed for pre-commit
-!project/plugins.sbt
 
 # pyspark build
 src/dependencies.zip
@@ -67,8 +68,6 @@ spark_history_logs/
 
 # Cython downloaded code
 src/cython_minhash/mmh3-5.2.1/
-src/cython_minhash/MurmurHash3.c
-src/cython_minhash/MurmurHash3.h
 src/cython_minhash/*.so
 src/cython_minhash/build/
 src/cython_minhash/build/
