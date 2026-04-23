@@ -6,8 +6,9 @@ verify Cython MinHash produces same dedup results as current Python path.
 import time
 
 import pandas as pd
-from shingle_hash_wrapper import compute_minhash_cython_batch
-from udf import compute_minhash_vectorized_batch_only_hash_once, estimate_similarity
+
+from distributed_curator.shingle_hash_wrapper import compute_minhash_cython_batch
+from distributed_curator.udf import compute_minhash_vectorized_batch_only_hash_once, estimate_similarity
 
 
 def test_dedup_consistency():

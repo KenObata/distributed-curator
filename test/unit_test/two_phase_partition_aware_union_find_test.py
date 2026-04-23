@@ -12,7 +12,8 @@ the UnionFind class in isolation (no Spark needed).
 
 import pytest
 from pyspark.sql import Row
-from two_phase_partition_aware_union_find import (
+
+from distributed_curator.two_phase_partition_aware_union_find import (
     Phase2GlobalTransitivityClosureQuery,
     run_phase2_global_transitivity_closure,
     run_phase2_global_union_find,

@@ -37,11 +37,10 @@ os.environ["PYSPARK_PYTHON"] = sys.executable
 os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
 
 # For pyspark
-os.environ["PYTHONPATH"] = src_dir + ":" + os.environ.get("PYTHONPATH", "")
+os.environ["PYTHONPATH"] = REPO_ROOT + ":" + os.environ.get("PYTHONPATH", "")
 
 # For pytest
-sys.path.insert(0, src_dir)
-sys.path.insert(0, integration_test_dir)
+sys.path.insert(0, REPO_ROOT)
 
 
 class PytestSparkScope(Enum):

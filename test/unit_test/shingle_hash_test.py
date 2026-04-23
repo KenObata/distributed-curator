@@ -11,7 +11,7 @@ import mmh3
 import numpy as np
 
 # Import the compiled Cython module
-from cython_minhash.shingle_hash import hash_shingles
+from distributed_curator.cython_minhash.shingle_hash import hash_shingles
 
 
 def test_hash_correctness():

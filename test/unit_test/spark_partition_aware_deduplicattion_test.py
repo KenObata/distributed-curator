@@ -2,7 +2,8 @@ import os
 
 import pytest
 from pyspark.sql.functions import col
-from spark_partition_aware_deduplication import (
+
+from distributed_curator.spark_partition_aware_deduplication import (
     apply_deterministic_salting,
     partition_aware_deduplicate,
 )
