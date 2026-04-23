@@ -5,23 +5,23 @@ from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.functions import col
 
 try:
-    from spark_partition_aware_deduplicattion_v2 import partition_aware_deduplicate
+    from distributed_curator.spark_partition_aware_deduplication import partition_aware_deduplicate
 except ImportError:
     import sys
 
     sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
-    from spark_partition_aware_deduplicattion_v2 import partition_aware_deduplicate
+    from spark_partition_aware_deduplication import partition_aware_deduplicate
 
 import boto3
-from wet_file_utils import get_wet_file_paths, parse_wet_record_v2
 
-from spark_utils import (
+from distributed_curator.spark_utils import (
     create_spark_session_partition_aware,
     create_spark_session_partition_aware_emr,
     does_file_exists,
     read_parquet_from_s3,
     upload_df_to_s3,
 )
+from test.integration_test.wet_file_utils import get_wet_file_paths, parse_wet_record_v2
 
 s3 = boto3.client("s3")
 
