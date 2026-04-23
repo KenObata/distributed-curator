@@ -189,6 +189,7 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development", cc
         num_partitions=shuffle_partition_count,  # Use executor-based partition count
         ngram=9,
         checkpoint_path=df_with_partitions_s3_path,
+        enable_diagnostics=True,
     )
 
     # Collect results
