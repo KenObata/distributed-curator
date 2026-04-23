@@ -3,16 +3,12 @@ Test agsinst shingle_hash_wrapper.py
 verify Cython MinHash produces same dedup results as current Python path.
 """
 
-import os
-import sys
 import time
 
 import pandas as pd
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src/"))
-
-from shingle_hash_wrapper import compute_minhash_cython_batch
-from udf import compute_minhash_vectorized_batch_only_hash_once, estimate_similarity
+from distributed_curator.shingle_hash_wrapper import compute_minhash_cython_batch
+from distributed_curator.udf import compute_minhash_vectorized_batch_only_hash_once, estimate_similarity
 
 
 def test_dedup_consistency():

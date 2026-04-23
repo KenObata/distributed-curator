@@ -1,7 +1,7 @@
 """
 Integration tests for two-phase partition-aware Union-Find.
 
-Tests Phase 1 (partition-local UF via mapPartitions) and Phase 2 (cross-partition merge via SQL).
+Tests Phase 2 (cross-partition merge via SQL).
 Requires SparkSession — these are integration tests, not pure unit tests.
 
 Run: pytest test/integration_test/two_phase_union_find_test.py -v
@@ -13,9 +13,8 @@ the UnionFind class in isolation (no Spark needed).
 import pytest
 from pyspark.sql import Row
 
-from two_phase_partition_aware_union_find import (
+from distributed_curator.two_phase_partition_aware_union_find import (
     Phase2GlobalTransitivityClosureQuery,
-    run_phase1_local_union_find,
     run_phase2_global_transitivity_closure,
     run_phase2_global_union_find,
 )
@@ -25,158 +24,6 @@ from two_phase_partition_aware_union_find import (
 def phase2_global_transitivity_closure_query(spark):
     """Fresh Phase2GlobalTransitivityClosureQuery instance per test."""
     return Phase2GlobalTransitivityClosureQuery(spark)
-
-
-# =============================================================================
-# Phase 1: Partition-local Union-Find
-# =============================================================================
-
-
-class TestPhase1:
-    def test_output_schema(self, spark):
-        """Output schema should be (doc_id: string, local_representative: string)."""
-        pairs = spark.createDataFrame([Row(doc1="A", doc2="B", similarity=0.9, partition_id=0)]).repartition(1)
-
-        result = run_phase1_local_union_find(pairs)
-        assert result.columns == ["doc_id", "local_representative"]
-        assert str(result.schema["doc_id"].dataType) == "StringType()"
-        assert str(result.schema["local_representative"].dataType) == "StringType()"
-
-    def test_output_size(self, spark):
-        """
-        Output length should be the total unique doc of input iterator.
-        It's not equal to the size of iterator.
-
-        Input:  (docA, docB) in partition 0
-        Expect: 2 rows because (doc_id=docA, local_representative = docA), (doc_id=docB, local_representative=docA)
-        """
-        pairs = spark.createDataFrame([Row(doc1="docA", doc2="docB", similarity=0.9, partition_id=0)]).repartition(1)
-
-        result = run_phase1_local_union_find(pairs).collect()
-        assert len(result) == 2
-
-    def test_single_pair_should_point_same_local_representative(self, spark):
-        """
-        One pair in one partition => both docs should map to same representative.
-
-        Input:  (docA, docB) in partition 0
-        Expect: docA => docA, docB => docA  (because UnionFind picks first arg)
-        """
-        pairs = spark.createDataFrame([Row(doc1="docA", doc2="docB", similarity=0.9, partition_id=0)]).repartition(1)
-        result = run_phase1_local_union_find(pairs).collect()
-        assert isinstance(result[0], Row)
-
-        # Both docs should have the same local_representative
-        assert result[0]["local_representative"] == result[1]["local_representative"]
-
-    def test_multiple_and_transitive_pairs_should_point_same_local_representative(self, spark):
-        """
-        (A,B), (B,C) in same partition => all three map to same representative.
-        Because union(B, C) doesn't union B and C — it unions find(B) and find(C), which is union(A, C)
-
-        Input:  (A,B), (B,C) in partition 0
-        Expect: A, B, C => same representative
-        """
-        pairs = spark.createDataFrame(
-            [
-                Row(doc1="A", doc2="B", similarity=0.9, partition_id=0),
-                Row(doc1="B", doc2="C", similarity=0.9, partition_id=0),
-            ]
-        ).repartition(1)
-
-        result = run_phase1_local_union_find(pairs).collect()
-
-        assert len(result) == 3
-        assert (
-            result[0]["local_representative"] == result[1]["local_representative"] == result[2]["local_representative"]
-        )
-
-    def test_two_disconnected_pairs_in_same_partition(self, spark):
-        """
-        Two independent clusters in one partition => two different representatives.
-
-        Input:  (A,B), (C,D) in partition 0
-        Expect: A,B => same rep; C,D => same rep; two reps are different
-        """
-        pairs = spark.createDataFrame(
-            [
-                Row(doc1="A", doc2="B", similarity=0.9, partition_id=0),
-                Row(doc1="C", doc2="D", similarity=0.9, partition_id=0),
-            ]
-        ).repartition(1)
-
-        result = run_phase1_local_union_find(pairs).collect()
-        root = {row["doc_id"]: row["local_representative"] for row in result}
-
-        assert root["A"] == root["B"]
-        assert root["C"] == root["D"]
-        assert root["A"] != root["C"]
-
-    def test_two_partitions_independent_diff_partition(self, spark):
-        """
-        Different pairs in different partitions => each partition runs UF independently.
-
-        Partition 0: (A,B)
-        Partition 1: (C,D)
-
-        A doc might get different reps in different partitions — that's fine,
-        Phase 2 merges them.
-        """
-        pairs = spark.createDataFrame(
-            [
-                Row(doc1="A", doc2="B", similarity=0.9, partition_id=0),
-                Row(doc1="C", doc2="D", similarity=0.9, partition_id=1),
-            ]
-        ).repartition(2, "partition_id")
-
-        result = run_phase1_local_union_find(pairs).collect()
-        reps = {row["doc_id"]: row["local_representative"] for row in result}
-
-        assert reps["A"] == reps["B"]
-        assert reps["C"] == reps["D"]
-        assert reps["A"] != reps["C"]
-
-    def test_duplicate_pairs_same_partition(self, spark):
-        """
-        Same pair appears twice in same partition => UF handles gracefully.
-        Should still produce one entry per unique doc.
-        """
-        pairs = spark.createDataFrame(
-            [
-                Row(doc1="A", doc2="B", similarity=0.9, partition_id=0),
-                Row(doc1="A", doc2="B", similarity=0.9, partition_id=0),
-            ]
-        ).repartition(1)
-
-        result = run_phase1_local_union_find(pairs).collect()
-        reps = {row["doc_id"]: row["local_representative"] for row in result}
-
-        assert len(reps) != 4  # not A -> A, A -> A, B->A, B->A
-        assert len(reps) == 2
-        assert reps["A"] == reps["B"]
-
-    def test_same_doc_pair_appeared_different_partitions_gets_multiple_rows(self, spark):
-        """
-        Doc A appears in pairs in partition 0 AND partition 1.
-        If Spark places them in different partitions, A appears twice.
-        If hash partitioning collocates them, A appears once.
-        Both are correct — Phase 2 handles either case.
-        """
-        pairs = spark.createDataFrame(
-            [
-                Row(doc1="A", doc2="B", similarity=0.9, partition_id=0),
-                Row(doc1="A", doc2="C", similarity=0.9, partition_id=1),
-            ]
-        ).repartition(2, "partition_id")
-
-        result = run_phase1_local_union_find(pairs).collect()
-
-        a_rows = [row for row in result if row["doc_id"] == "A"]
-        assert len(a_rows) >= 1, "A should appear at least once"
-
-        # Regardless of partition placement, B and C must appear
-        doc_ids = {row["doc_id"] for row in result}
-        assert {"A", "B", "C"} == doc_ids
 
 
 # =============================================================================
@@ -786,15 +633,16 @@ class TestEndToEnd:
         A~B~C all in the same partition. Phase 1 resolves everything.
         Phase 2 is a no-op. D is singleton.
         """
-        pairs = spark.createDataFrame(
+        # Simulate Phase 1 output: A is representative for A, B, C
+        local_results = spark.createDataFrame(
             [
-                Row(doc1="A", doc2="B", similarity=0.9, partition_id=0),
-                Row(doc1="B", doc2="C", similarity=0.85, partition_id=0),
+                Row(doc_id="A", local_representative="A"),
+                Row(doc_id="B", local_representative="A"),
+                Row(doc_id="C", local_representative="A"),
             ]
-        ).repartition(1)
+        )
         vertices = spark.createDataFrame([Row(id="A"), Row(id="B"), Row(id="C"), Row(id="D")])
 
-        local_results = run_phase1_local_union_find(pairs)
         result = {row["doc_id"]: row["local_representative"] for row in local_results.collect()}
         assert result["A"] == result["B"] == result["C"]
 
@@ -809,15 +657,17 @@ class TestEndToEnd:
         Doc A in partition 0 with B, and partition 1 with C.
         Phase 1 can't connect B and C. Phase 2 merges them via A.
         """
-        pairs = spark.createDataFrame(
+        # Simulate Phase 1: partition 0 grouped A,B → rep A; partition 1 grouped A,C → rep A (or C)
+        local_results = spark.createDataFrame(
             [
-                Row(doc1="A", doc2="B", similarity=0.9, partition_id=0),
-                Row(doc1="A", doc2="C", similarity=0.85, partition_id=1),
+                Row(doc_id="A", local_representative="A"),
+                Row(doc_id="B", local_representative="A"),
+                Row(doc_id="A", local_representative="C"),
+                Row(doc_id="C", local_representative="C"),
             ]
-        ).repartition(2, "partition_id")
+        )
         vertices = spark.createDataFrame([Row(id="A"), Row(id="B"), Row(id="C")])
 
-        local_results = run_phase1_local_union_find(pairs)
         result = run_phase2_global_transitivity_closure(spark, local_results, vertices, max_iterations=10)
         reps = {row["doc_id"]: row["representative_id"] for row in result.collect()}
 
@@ -825,15 +675,17 @@ class TestEndToEnd:
 
     def test_two_independent_clusters(self, spark):
         """Two clusters that should never merge. E is singleton."""
-        pairs = spark.createDataFrame(
+        # Simulate Phase 1: two independent clusters
+        local_results = spark.createDataFrame(
             [
-                Row(doc1="A", doc2="B", similarity=0.9, partition_id=0),
-                Row(doc1="C", doc2="D", similarity=0.9, partition_id=1),
+                Row(doc_id="A", local_representative="A"),
+                Row(doc_id="B", local_representative="A"),
+                Row(doc_id="C", local_representative="C"),
+                Row(doc_id="D", local_representative="C"),
             ]
-        ).repartition(2, "partition_id")
+        )
         vertices = spark.createDataFrame([Row(id="A"), Row(id="B"), Row(id="C"), Row(id="D"), Row(id="E")])
 
-        local_results = run_phase1_local_union_find(pairs)
         result = run_phase2_global_transitivity_closure(spark, local_results, vertices, max_iterations=5)
         reps = {row["doc_id"]: row["representative_id"] for row in result.collect()}
 

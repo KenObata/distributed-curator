@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
-from wet_file_utils import get_wet_file_paths, parse_wet_record_v2
+from test.integration_test.wet_file_utils import get_wet_file_paths, parse_wet_record_v2
 
 
 class TestParseWetRecordV2:
@@ -275,7 +275,7 @@ class TestParseWetRecordV2:
 class TestGetWetFilePaths:
     """Tests for S3 listing of WET file paths."""
 
-    @patch("wet_file_utils.boto3")
+    @patch("test.integration_test.wet_file_utils.boto3")
     def test_collects_paths_up_to_max(self, mock_boto3):
         """Should stop collecting once max_files is reached."""
         mock_s3 = MagicMock()
@@ -306,7 +306,7 @@ class TestGetWetFilePaths:
         assert all(p.startswith("s3://commoncrawl/") for p in paths)
         assert all(p.endswith(".warc.wet.gz") for p in paths)
 
-    @patch("wet_file_utils.boto3")
+    @patch("test.integration_test.wet_file_utils.boto3")
     def test_skips_non_wet_files(self, mock_boto3):
         """Should only collect .warc.wet.gz files, not other file types."""
         mock_s3 = MagicMock()
@@ -335,7 +335,7 @@ class TestGetWetFilePaths:
 
         assert len(paths) == 2
 
-    @patch("wet_file_utils.boto3")
+    @patch("test.integration_test.wet_file_utils.boto3")
     def test_multiple_segments(self, mock_boto3):
         """Should iterate through multiple segments."""
         mock_s3 = MagicMock()
@@ -362,7 +362,7 @@ class TestGetWetFilePaths:
 
         assert len(paths) == 6
 
-    @patch("wet_file_utils.boto3")
+    @patch("test.integration_test.wet_file_utils.boto3")
     def test_empty_segment(self, mock_boto3):
         """Should handle segments with no Contents gracefully."""
         mock_s3 = MagicMock()
@@ -384,7 +384,7 @@ class TestGetWetFilePaths:
 
         assert len(paths) == 0
 
-    @patch("wet_file_utils.boto3")
+    @patch("test.integration_test.wet_file_utils.boto3")
     def test_cc_main_id_used_in_prefix(self, mock_boto3):
         """Should use the cc_main_id parameter to construct the S3 prefix."""
         mock_s3 = MagicMock()
