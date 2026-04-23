@@ -68,8 +68,6 @@ spark_history_logs/
 
 # Cython downloaded code
 src/cython_minhash/mmh3-5.2.1/
-src/cython_minhash/MurmurHash3.c
-src/cython_minhash/MurmurHash3.h
 src/cython_minhash/*.so
 src/cython_minhash/build/
 src/cython_minhash/build/
