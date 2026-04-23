@@ -9,7 +9,7 @@ from pyspark import StorageLevel
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import ArrayType, IntegerType, LongType, StringType, StructField, StructType
 
-from two_phase_partition_aware_union_find import run_phase1_local_union_find, run_phase2_global_transitivity_closure
+from two_phase_partition_aware_union_find import run_phase2_global_transitivity_closure
 
 try:
     from .spark_utils import (
@@ -29,7 +29,6 @@ except Exception:
     )
 from driver_memory_diagnostics import capture_heap_histogram, capture_nmt_summary, start_memory_logger
 from shingle_hash_wrapper import compute_minhash_cython_batch
-from udf import compute_minhash_vectorized_batch_only_hash_once
 
 # Import Python's built-in functions before PySpark overwrites them
 builtin_sum = sum
@@ -111,11 +110,7 @@ def partition_aware_deduplicate(
     num_bands: int = 16,
     num_partitions: int = 1000,
     ngram: int = 9,
-    is_debug_mode: bool = False,
-    df_with_partitions_s3_path: str | None = None,
-    remove_articles: bool = False,
-    use_python_udf_min_hash: bool = False,
-    use_scala_phase1: bool = True,
+    checkpoint_path: str | None = None,
 ) -> DataFrame:
     """
     Partition-aware deduplication that scales to 1TB+
@@ -134,7 +129,8 @@ def partition_aware_deduplicate(
         num_hashes: Number of MinHash functions
         num_bands: Number of LSH bands
         num_partitions: Number of partitions for processing
-        use_python_udf_min_hash: if True, call python UDF, else call Cython UDF.
+        checkpoint_path: When checkpoint_path is provided,
+          intermediate results get saved there and reused on subsequent runs.
 
     Returns:
         DataFrame with duplicates marked
@@ -147,7 +143,6 @@ def partition_aware_deduplicate(
     )
     logger.info(f"Spark UI available at: {spark.sparkContext.uiWebUrl}")
     print(f"🚀 Spark UI: {spark.sparkContext.uiWebUrl}")  # Print to console for visibility
-    logger.info(f"Using {'Python UDF' if use_python_udf_min_hash else 'Cython UDF'} for MinHash")
 
     # Start periodic memory logging (appears in yarn logs -am 1 stdout)
     start_memory_logger(spark.sparkContext, interval_seconds=30)
@@ -172,7 +167,7 @@ def partition_aware_deduplicate(
             StructField("band_hashes", ArrayType(IntegerType()), True),
         ]
     )
-    if df_with_partitions_s3_path is None or not does_file_exists(df_with_partitions_s3_path):
+    if checkpoint_path is None or not does_file_exists(checkpoint_path):
         # Get partition count from Spark config
         num_shuffle_partitions = int(spark.conf.get("spark.sql.shuffle.partitions", "1000"))
         # input_df = input_df.repartition(num_shuffle_partitions)
@@ -182,12 +177,7 @@ def partition_aware_deduplicate(
         @F.pandas_udf(ArrayType(LongType()))  # LongType because Step4 expects Long
         def minhash_batch_udf(rows: pd.Series) -> pd.Series:
             """Process entire batch using highly optimized vectorized operations"""
-            if use_python_udf_min_hash:
-                return compute_minhash_vectorized_batch_only_hash_once(
-                    texts=rows, num_hashes=num_hashes, ngram=ngram, remove_articles=remove_articles
-                )
-            else:
-                return compute_minhash_cython_batch(rows, num_hashes, ngram=ngram)
+            return compute_minhash_cython_batch(rows, num_hashes, ngram=ngram)
 
         # If users really need scala UDF (not recommended)
         # spark._jvm.com.minhash.MinHashUDF.registerUdf(spark._jsparkSession)
@@ -232,12 +222,12 @@ def partition_aware_deduplicate(
             F.col("partition_struct.band_hashes").alias("band_hashes"),  # hash from 8 MinHash
         )
 
-        if is_debug_mode and df_with_partitions_s3_path:
-            upload_df_to_s3(df=df_with_partitions, s3_path=df_with_partitions_s3_path, row_count=total_docs_count)
+        if checkpoint_path:
+            upload_df_to_s3(df=df_with_partitions, s3_path=checkpoint_path, row_count=total_docs_count)
             df_with_signatures.unpersist()
             # Break lineage: re-read from S3 instead of recomputing MinHash
             df_with_partitions = read_parquet_from_s3(
-                s3_path=df_with_partitions_s3_path, spark=spark, schema=df_with_partitions_schema
+                s3_path=checkpoint_path, spark=spark, schema=df_with_partitions_schema
             )
         else:
             checkpoint_dir = get_checkpoint_dir(spark=spark, name="checkpoints_dir")
@@ -250,11 +240,11 @@ def partition_aware_deduplicate(
         set_spark_context(
             spark,
             "Loading Cached Data",
-            f"Loading pre-computed signatures and partitions from {df_with_partitions_s3_path}",
+            f"Loading pre-computed signatures and partitions from {checkpoint_path}",
         )
 
         df_with_partitions = read_parquet_from_s3(
-            s3_path=df_with_partitions_s3_path, spark=spark, schema=df_with_partitions_schema
+            s3_path=checkpoint_path, spark=spark, schema=df_with_partitions_schema
         )
 
         # Set total_docs_count for cached data path
@@ -379,8 +369,8 @@ def partition_aware_deduplicate(
     logger.info(f"vertices cached. vertices_count: {vertices_count}")
 
     local_results_s3_path = None
-    if df_with_partitions_s3_path is not None:
-        local_results_s3_path = df_with_partitions_s3_path.rsplit("/", 1)[0] + "/local_results"
+    if checkpoint_path is not None:
+        local_results_s3_path = checkpoint_path.rsplit("/", 1)[0] + "/local_results"
     if local_results_s3_path is not None and does_file_exists(local_results_s3_path):
         set_spark_context(
             spark,
@@ -399,31 +389,23 @@ def partition_aware_deduplicate(
         ).persist(StorageLevel.DISK_ONLY)
         local_count = local_results.count()
     else:
-        if use_scala_phase1:
-            jvm_helper = spark._jvm.com.unionFind.PartitionAwareUnionFindUDF
-            local_results_jdf_and_accumulator_tuple = jvm_helper.runPhase1LocalUnionFind(
-                similar_pairs_df._jdf,  # Pass the underlying JVM DataFrame
-            )
-            local_results_jdf = local_results_jdf_and_accumulator_tuple._1()
-            pair_count_accumulator = local_results_jdf_and_accumulator_tuple._2()
-            local_results = (
-                DataFrame(local_results_jdf, spark)
-                .dropDuplicates(["doc_id", "local_representative"])
-                .persist(StorageLevel.DISK_ONLY)
-            )
-            local_count = local_results.count()
-            # Accumulator value available after action triggers mapPartitions
-            pair_count = pair_count_accumulator.value()
-            logger.info(f"Similar pairs processed: {pair_count}")
-        else:
-            local_results = (
-                run_phase1_local_union_find(similar_pairs_df=similar_pairs_df)
-                .dropDuplicates(["doc_id", "local_representative"])
-                .persist(StorageLevel.DISK_ONLY)
-            )
-            local_count = local_results.count()
+        jvm_helper = spark._jvm.com.unionFind.PartitionAwareUnionFindUDF
+        local_results_jdf_and_accumulator_tuple = jvm_helper.runPhase1LocalUnionFind(
+            similar_pairs_df._jdf,  # Pass the underlying JVM DataFrame
+        )
+        local_results_jdf = local_results_jdf_and_accumulator_tuple._1()
+        pair_count_accumulator = local_results_jdf_and_accumulator_tuple._2()
+        local_results = (
+            DataFrame(local_results_jdf, spark)
+            .dropDuplicates(["doc_id", "local_representative"])
+            .persist(StorageLevel.DISK_ONLY)
+        )
+        local_count = local_results.count()
+        # Accumulator value available after action triggers mapPartitions
+        pair_count = pair_count_accumulator.value()
+        logger.info(f"Similar pairs processed: {pair_count}")
 
-        if is_debug_mode and local_results_s3_path:
+        if local_results_s3_path:
             try:
                 upload_df_to_s3(df=local_results, s3_path=local_results_s3_path, row_count=local_count)
             except Exception as e:
@@ -460,8 +442,8 @@ def partition_aware_deduplicate(
     unique_docs_count = deduplicate_docs.count()
     duplicate_docs_count = total_docs_count - unique_docs_count
 
-    if is_debug_mode and df_with_partitions_s3_path:
-        results_s3_path = df_with_partitions_s3_path.rsplit("/", 1)[0] + "/result"
+    if checkpoint_path:
+        results_s3_path = checkpoint_path.rsplit("/", 1)[0] + "/result"
         try:
             upload_df_to_s3(df=result, s3_path=results_s3_path, row_count=total_docs_count)
         except Exception as e:
