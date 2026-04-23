@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import StructType
@@ -11,12 +10,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 
-def create_spark_session_partition_aware(
-    app_name: str = "PartitionAwareDedup", graphframes_jar_path: Optional[str] = None
-) -> SparkSession:
+def create_spark_session_partition_aware(app_name: str = "PartitionAwareDedup") -> SparkSession:
     """Create optimized Spark session for large-scale deduplication"""
-
-    import os
 
     # JARs are now installed in PySpark's jars directory - no need to specify paths
 
@@ -59,15 +54,6 @@ def create_spark_session_partition_aware(
             "--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.misc=ALL-UNNAMED",
         )
     )
-
-    # Add GraphFrames JAR if provided
-    if graphframes_jar_path and os.path.exists(graphframes_jar_path):
-        builder = (
-            builder.config("spark.jars", graphframes_jar_path)
-            .config("spark.driver.extraClassPath", graphframes_jar_path)
-            .config("spark.executor.extraClassPath", graphframes_jar_path)
-        )
-        print(f"✅ GraphFrames JAR configured: {graphframes_jar_path}")
 
     spark = builder.getOrCreate()
 

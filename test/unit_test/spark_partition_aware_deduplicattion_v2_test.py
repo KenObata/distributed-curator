@@ -11,7 +11,6 @@ from src.spark_partition_aware_deduplicattion_v2 import (
 
 # Resolve JAR paths relative to repo root
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-GRAPHFRAMES_JAR = os.path.join(REPO_ROOT, "lib", "graphframes-0.8.3-spark3.5-s_2.12.jar")
 SCALA_UDF_JAR = os.path.join(
     REPO_ROOT,
     "target",
@@ -21,9 +20,8 @@ SCALA_UDF_JAR = os.path.join(
 
 # Skip entire module if JARs are missing
 pytestmark = pytest.mark.skipif(
-    not os.path.exists(GRAPHFRAMES_JAR) or not os.path.exists(SCALA_UDF_JAR),
+    os.path.exists(SCALA_UDF_JAR),
     reason=f"Required JARs not found. Run 'sbt package' first.\n"
-    f"  GraphFrames: {GRAPHFRAMES_JAR} (exists={os.path.exists(GRAPHFRAMES_JAR)})\n"
     f"  Scala UDF:   {SCALA_UDF_JAR} (exists={os.path.exists(SCALA_UDF_JAR)})",
 )
 
