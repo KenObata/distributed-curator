@@ -19,9 +19,9 @@ import pandas as pd
 
 # Import compiled Cython module
 try:
-    from shingle_hash import hash_shingles
+    from .cython_minhash.shingle_hash import hash_shingles
 except Exception:
-    from cython_minhash.shingle_hash import hash_shingles
+    from shingle_hash import hash_shingles
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")

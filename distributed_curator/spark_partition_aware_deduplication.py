@@ -1,4 +1,4 @@
-# spark_partition_aware_deduplicattion_v2.py - Scalable partition-aware MinHash LSH implementation
+# spark_partition_aware_deduplication.py - Scalable partition-aware MinHash LSH implementation
 from __future__ import annotations
 
 import logging
@@ -9,7 +9,7 @@ from pyspark import StorageLevel
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import ArrayType, IntegerType, LongType, StringType, StructField, StructType
 
-from two_phase_partition_aware_union_find import run_phase2_global_transitivity_closure
+from .two_phase_partition_aware_union_find import run_phase2_global_transitivity_closure
 
 try:
     from .spark_utils import (
@@ -27,8 +27,8 @@ except Exception:
         set_spark_context,
         upload_df_to_s3,
     )
-from driver_memory_diagnostics import capture_heap_histogram, capture_nmt_summary, start_memory_logger
-from shingle_hash_wrapper import compute_minhash_cython_batch
+from .driver_memory_diagnostics import capture_heap_histogram, capture_nmt_summary, start_memory_logger
+from .shingle_hash_wrapper import compute_minhash_cython_batch
 
 # Import Python's built-in functions before PySpark overwrites them
 builtin_sum = sum

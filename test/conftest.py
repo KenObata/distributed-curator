@@ -7,7 +7,7 @@ import pytest
 from pyspark.sql import SparkSession
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-src_dir = os.path.join(REPO_ROOT, "src")
+src_dir = os.path.join(REPO_ROOT, "distributed_curator")
 test_dir = os.path.join(REPO_ROOT, "test")
 integration_test_dir = os.path.join(test_dir, "integration_test")
 assembly_jar = os.path.join(REPO_ROOT, "target/scala-2.12/minhash-udf-assembly-0.1.jar")
@@ -37,11 +37,10 @@ os.environ["PYSPARK_PYTHON"] = sys.executable
 os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
 
 # For pyspark
-os.environ["PYTHONPATH"] = src_dir + ":" + os.environ.get("PYTHONPATH", "")
+os.environ["PYTHONPATH"] = REPO_ROOT + ":" + os.environ.get("PYTHONPATH", "")
 
 # For pytest
-sys.path.insert(0, src_dir)
-sys.path.insert(0, integration_test_dir)
+sys.path.insert(0, REPO_ROOT)
 
 
 class PytestSparkScope(Enum):

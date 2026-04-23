@@ -5,18 +5,13 @@ Test script to verify:
 3. Performance comparison: Cython C loop vs Python set comprehension
 """
 
-import os
-import sys
 import time
 
 import mmh3
 import numpy as np
 
-# Add the cython_minhash directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src/cython_minhash"))
-
 # Import the compiled Cython module
-from shingle_hash import hash_shingles
+from distributed_curator.cython_minhash.shingle_hash import hash_shingles
 
 
 def test_hash_correctness():
