@@ -49,6 +49,7 @@ target/
 project/*
 # plugins.sbt is needed for pre-commit
 !project/plugins.sbt
+!project/build.properties
 project/target/
 project/project/
 .bsp/
