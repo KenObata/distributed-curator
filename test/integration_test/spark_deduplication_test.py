@@ -21,7 +21,11 @@ from distributed_curator.spark_utils import (
     read_parquet_from_s3,
     upload_df_to_s3,
 )
-from test.integration_test.wet_file_utils import get_wet_file_paths, parse_wet_record_v2
+
+try:
+    from test.integration_test.wet_file_utils import get_wet_file_paths, parse_wet_record_v2
+except ModuleNotFoundError:
+    from wet_file_utils import get_wet_file_paths, parse_wet_record_v2
 
 s3 = boto3.client("s3")
 
