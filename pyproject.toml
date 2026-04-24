@@ -59,7 +59,6 @@ dependencies = [
     "pyspark>=3.5",
     "numpy",
     "mmh3",
-    "pandas",
 ]
  
 [project.urls]
