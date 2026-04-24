@@ -47,10 +47,6 @@ def compute_minhash_cython_batch(texts: pd.Series, num_hashes: int = 128, ngram:
     """
     hash_seeds = _get_seeds(num_hashes)
     results = []
-    # Log which module is loaded (runs once per executor batch)
-    import shingle_hash
-
-    logger.info(f"shingle_hash loaded from: {shingle_hash.__file__}")
 
     for text in texts.str.lower():
         if not text or not isinstance(text, str) or len(text) < ngram:

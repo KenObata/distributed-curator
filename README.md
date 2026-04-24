@@ -164,6 +164,23 @@ spark-submit \
   s3://text-deduplication-740959772378/scripts/spark_deduplication_test.py development
 ```
 
+```
+spark-submit \
+  --master yarn \
+  --py-files s3://text-deduplication-740959772378/scripts/wet_file_utils.py \
+  --jars $(python3 -c "from distributed_curator import get_jar_path; print(get_jar_path())") \
+  --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
+  --num-executors 4 \
+  --executor-cores 4 \
+  --executor-memory 14g \
+  --driver-memory 12g \
+  --conf spark.sql.shuffle.partitions=1000 \
+  --conf spark.hadoop.fs.s3a.signing-algorithm="" \
+  --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
+  --deploy-mode client \
+  s3://text-deduplication-740959772378/scripts/spark_deduplication_test.py development
+```
+
 For 100 of WET files, increase partition count
 Cores = 4 node * 8 vCore = 32
 RAM = 4 ndoe * 61 GiB = 240gb
@@ -193,7 +210,23 @@ spark-submit \
   --deploy-mode client \
   s3://text-deduplication-740959772378/scripts/spark_deduplication_test.py validation
 ```
-
+with packaged
+```
+spark-submit \
+  --master yarn \
+  --jars $(python3 -c "from distributed_curator import get_jar_path; print(get_jar_path())") \
+  --py-files s3://text-deduplication-740959772378/scripts/wet_file_utils.py \
+  --conf spark.sql.execution.arrow.maxRecordsPerBatch=10000 \
+  --num-executors 1 \
+  --executor-cores 4 \
+  --executor-memory 12g \
+  --driver-memory 12g \
+  --conf spark.sql.shuffle.partitions=4 \
+  --conf spark.hadoop.fs.s3a.signing-algorithm="" \
+  --conf spark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.DefaultAWSCredentialsProviderChain \
+  --deploy-mode client \
+  s3://text-deduplication-740959772378/scripts/spark_deduplication_test.py development
+```
 where --deploy-mode cluster is to run the driver on EMR, not laptop.
 
 For 1000 of WET files, increase partition count
