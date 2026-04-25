@@ -30,6 +30,10 @@ except ModuleNotFoundError:
 s3 = boto3.client("s3")
 
 S3_BUCKET_TEST_INPUT = "text-dedupe-benchmark"
+# Need to pass:
+# --conf spark.executorEnv.S3_RESULTS_BUCKET=your-bucket-name \
+# --conf spark.yarn.appMasterEnv.S3_RESULTS_BUCKET=your-bucket-name \
+S3_RESULTS_BUCKET = os.environ.get("S3_RESULTS_BUCKET", "")
 
 BENCHMARK_CONFIGS = {
     "development": {"wet_files": 1},
@@ -251,8 +255,10 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development", cc
 
         # Save to S3 for retrieval after job completes
         result_df = spark.createDataFrame([(result_json,)], ["result"])
-        result_df.write.mode("overwrite").text("s3://text-deduplication-740959772378/results/benchmark_results/")
-        print("Results saved to S3: s3://text-deduplication-740959772378/results/benchmark_results/")
+        if S3_RESULTS_BUCKET:
+            results_path = f"{S3_RESULTS_BUCKET}/{benchmark_level}/result/"
+            result_df.write.mode("overwrite").text(results_path)
+            print(f"Results saved to S3: {results_path}")
 
     else:
         print("Client mode - results displayed above")
