@@ -119,7 +119,7 @@ distributed_curator/           # Python package
 ├── two_phase_partition_aware_union_find.py # Phase 2 global union-find
 ├── shingle_hash_wrapper.py    # NumPy SIMD MinHash wrapper
 ├── driver_memory_diagnostics.py # opt-in JVM diagnostics
-├── udf.py                     # Python UDF fallbacks
+├── udf.py                     # Python UDF (which calls shingle_hash_wrapper.py)
 ├── cython_minhash/            # Cython C extension
 │   ├── shingle_hash.pyx
 │   ├── murmurhash3.c
