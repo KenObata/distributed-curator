@@ -19,6 +19,7 @@ Thanks for your interest in contributing! This guide covers how to set up your d
 git clone https://github.com/KenObata/distributed-curator.git
 cd distributed-curator
 pip install -e .
+pip install build twine   # for publishing
 ```
 
 2. Build the Scala UDF JAR:
