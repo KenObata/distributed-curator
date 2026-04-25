@@ -29,7 +29,13 @@ except ModuleNotFoundError:
 
 s3 = boto3.client("s3")
 
-S3_BUCKET_TEST_INPUT = "text-dedupe-benchmark"
+# Need to pass:
+# --conf spark.executorEnv.S3_BUCKET_TEST_INPUT=your-bucket-name \
+# --conf spark.yarn.appMasterEnv.S3_BUCKET_TEST_INPUT=your-bucket-name \
+# --conf spark.executorEnv.S3_RESULTS_BUCKET=your-bucket-name \
+# --conf spark.yarn.appMasterEnv.S3_RESULTS_BUCKET=your-bucket-name \
+S3_BUCKET_TEST_INPUT = os.environ.get("S3_BUCKET_TEST_INPUT", "")
+S3_RESULTS_BUCKET = os.environ.get("S3_RESULTS_BUCKET", "")
 
 BENCHMARK_CONFIGS = {
     "development": {"wet_files": 1},
@@ -41,6 +47,16 @@ BENCHMARK_CONFIGS = {
 
 
 def init() -> None:
+    if not S3_BUCKET_TEST_INPUT:
+        raise OSError(
+            "S3_BUCKET_TEST_INPUT env var is required. Set via --conf spark.yarn.appMasterEnv.S3_BUCKET_TEST_INPUT=your-bucket"
+        )
+
+    if not S3_RESULTS_BUCKET:
+        raise OSError(
+            "S3_RESULTS_BUCKET env var is required. Set via --conf spark.yarn.appMasterEnv.S3_RESULTS_BUCKET=your-bucket"
+        )
+
     print("\n" + "=" * 80)
     print("COMMON CRAWL STRESS TEST - PARTITION-AWARE DEDUPLICATION")
     print("=" * 80)
@@ -251,8 +267,10 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development", cc
 
         # Save to S3 for retrieval after job completes
         result_df = spark.createDataFrame([(result_json,)], ["result"])
-        result_df.write.mode("overwrite").text("s3://your-scripts-bucket/results/benchmark_results/")
-        print("Results saved to S3: s3://your-scripts-bucket/results/benchmark_results/")
+        if S3_RESULTS_BUCKET:
+            results_path = f"{S3_RESULTS_BUCKET}/{benchmark_level}/result_stats/"
+            result_df.write.mode("overwrite").text(results_path)
+            print(f"Results saved to S3: {results_path}")
 
     else:
         print("Client mode - results displayed above")
