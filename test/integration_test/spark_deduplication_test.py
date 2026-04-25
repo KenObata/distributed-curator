@@ -29,10 +29,12 @@ except ModuleNotFoundError:
 
 s3 = boto3.client("s3")
 
-S3_BUCKET_TEST_INPUT = "text-dedupe-benchmark"
 # Need to pass:
+# --conf spark.executorEnv.S3_BUCKET_TEST_INPUT=your-bucket-name \
+# --conf spark.yarn.appMasterEnv.S3_BUCKET_TEST_INPUT=your-bucket-name \
 # --conf spark.executorEnv.S3_RESULTS_BUCKET=your-bucket-name \
 # --conf spark.yarn.appMasterEnv.S3_RESULTS_BUCKET=your-bucket-name \
+S3_BUCKET_TEST_INPUT = os.environ.get("S3_BUCKET_TEST_INPUT", "")
 S3_RESULTS_BUCKET = os.environ.get("S3_RESULTS_BUCKET", "")
 
 BENCHMARK_CONFIGS = {
