@@ -142,13 +142,13 @@ source .env && spark-submit \
 These are just sharing working settings based on common crawl datast.
 If dataset is different, you need to find your own settings.
 
-| Scale | Executors | Executor Memory | Shuffle Partitions |
-|-------|-----------|----------------|-------------------|
-| 1 WET | 1 | 12g | 4 |
-| 100 WET | 4 | 24g | 50 |
-| 1K WET | 14 | 27g | 1000 |
-| 9K WET | 63 | 27g | 9000 |
-| 90K WET | 504 | 27g | 27000 |
+| Scale | Executors | Executor Memory | Driver Memory| Shuffle Partitions |
+|-------|-----------|----------------|-------------------|-------------------|
+| 1 WET | 1 | 12g | 12g | 4 |
+| 100 WET | 4 | 24g | 12g | 50 |
+| 1K WET | 14 | 27g | 16g | 1000 |
+| 9K WET | 63 | 27g | 48g | 9000 |
+| 90K WET | 504 | 27g | 58g | 27000 |
 
 Add these as `--num-executors`, `--executor-memory`, and `--conf spark.sql.shuffle.partitions` flags.
 
