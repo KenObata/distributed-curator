@@ -47,6 +47,16 @@ BENCHMARK_CONFIGS = {
 
 
 def init() -> None:
+    if not S3_BUCKET_TEST_INPUT:
+        raise OSError(
+            "S3_BUCKET_TEST_INPUT env var is required. Set via --conf spark.yarn.appMasterEnv.S3_BUCKET_TEST_INPUT=your-bucket"
+        )
+
+    if not S3_RESULTS_BUCKET:
+        raise OSError(
+            "S3_RESULTS_BUCKET env var is required. Set via --conf spark.yarn.appMasterEnv.S3_RESULTS_BUCKET=your-bucket"
+        )
+
     print("\n" + "=" * 80)
     print("COMMON CRAWL STRESS TEST - PARTITION-AWARE DEDUPLICATION")
     print("=" * 80)
@@ -258,7 +268,7 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development", cc
         # Save to S3 for retrieval after job completes
         result_df = spark.createDataFrame([(result_json,)], ["result"])
         if S3_RESULTS_BUCKET:
-            results_path = f"{S3_RESULTS_BUCKET}/{benchmark_level}/result/"
+            results_path = f"{S3_RESULTS_BUCKET}/{benchmark_level}/result_stats/"
             result_df.write.mode("overwrite").text(results_path)
             print(f"Results saved to S3: {results_path}")
 
