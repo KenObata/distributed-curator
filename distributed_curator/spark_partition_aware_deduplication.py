@@ -1,9 +1,12 @@
 # spark_partition_aware_deduplication.py - Scalable partition-aware MinHash LSH implementation
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pandas as pd
 import logging
 
-import pandas as pd
 import pyspark.sql.functions as F
 from pyspark import StorageLevel
 from pyspark.sql import DataFrame, SparkSession

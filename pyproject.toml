@@ -20,12 +20,16 @@
 requires = ["setuptools>=68.0", "wheel", "Cython>=3.0", "numpy"]
 build-backend = "setuptools.build_meta"
 
+# includes these dependencies when developers run pip install distributed-curator[dev]
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "build", "twine", "pandas", "boto3"]
+
 # ==============================================================================
 # project metadata
 # ==============================================================================
 [project]
 name = "distributed-curator"
-version = "0.1.0"
+version = "0.1.1"
 description = "Partition-aware MinHash LSH deduplication for large-scale text data curation on Apache Spark"
 readme = "README.md"
 license = "Apache-2.0"

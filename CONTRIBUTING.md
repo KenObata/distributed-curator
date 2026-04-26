@@ -18,9 +18,13 @@ Thanks for your interest in contributing! This guide covers how to set up your d
 ```bash
 git clone https://github.com/KenObata/distributed-curator.git
 cd distributed-curator
-pip install -e .
-pip install build twine   # for publishing
+python3.9 -m venv venv
+source venv/bin/activate
+pip install -e ".[dev]"
 ```
+[dev] will install dependecies such as:
+- build, twine for publishing
+- pytest ruff for pre-commit
 
 2. Build the Scala UDF JAR:
 
@@ -101,6 +105,14 @@ ruff format --check distributed_curator/ test/
 sbt scalafmtCheckAll
 python scripts/check_spark_persist.py
 ```
+
+### Version metadata
+When you create a PR that changes functionality or includes major optimization,
+bump the version. Update these two files:
+- `distributed_curator/__init__.py` — `__version__`
+- `pyproject.toml` — `version` under `[project]`
+
+Follow semantic versioning: patch (0.1.x) for bug fixes, minor (0.x.0) for new features, major (x.0.0) for breaking changes.
 
 ## Code Style
 

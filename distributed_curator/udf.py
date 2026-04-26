@@ -1,9 +1,14 @@
+from __future__ import annotations  # lazy import of pandas
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pandas as pd
 import logging
 from collections import defaultdict
 from collections.abc import Iterator
 
 import numpy as np
-import pandas as pd
 
 builtin_hash = hash
 builtin_min = min
@@ -28,6 +33,8 @@ def compute_minhash_vectorized_batch_only_hash_once(
     Difference from compute_minhash_vectorized_batch is that this function
     hashes the shingle only once and then for different seed i, use different permutation to generate different hash values.
     """
+    import pandas as pd
+
     results = []
 
     # Step 1: Vectorized text normalization using pandas string operations

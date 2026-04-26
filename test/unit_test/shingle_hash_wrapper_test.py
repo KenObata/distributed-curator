@@ -5,14 +5,14 @@ verify Cython MinHash produces same dedup results as current Python path.
 
 import time
 
-import pandas as pd
-
 from distributed_curator.shingle_hash_wrapper import compute_minhash_cython_batch
 from distributed_curator.udf import compute_minhash_vectorized_batch_only_hash_once, estimate_similarity
 
 
 def test_dedup_consistency():
     """Verify both paths find the same duplicates."""
+    import pandas as pd
+
     docs = pd.Series(
         [
             "The quick brown fox jumps over the lazy dog near the river bank",
@@ -59,6 +59,8 @@ def test_dedup_consistency():
 
 def test_performance_batch():
     """Benchmark batch performance."""
+    import pandas as pd
+
     # Simulate a realistic batch: 1000 documents, ~5KB each
     texts = pd.Series(["The quick brown fox jumps over the lazy dog. " * 100] * 1000)
     num_hashes = 64
