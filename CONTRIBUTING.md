@@ -106,6 +106,14 @@ sbt scalafmtCheckAll
 python scripts/check_spark_persist.py
 ```
 
+### Version metadata
+When you create a PR that changes functionality or includes major optimization,
+bump the version. Update these two files:
+- `distributed_curator/__init__.py` — `__version__`
+- `pyproject.toml` — `version` under `[project]`
+
+Follow semantic versioning: patch (0.1.x) for bug fixes, minor (0.x.0) for new features, major (x.0.0) for breaking changes.
+
 ## Code Style
 
 - **Python**: ruff handles lint and formatting. Config is in `pyproject.toml`. Line length is 120 characters.
