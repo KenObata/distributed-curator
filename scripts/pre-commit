@@ -204,6 +204,20 @@ if $HAS_SCALA; then
         printf "  ${FAIL} Scala JAR not found. Run: ${YELLOW}sbt assembly${NC}\n"
         FAILED=1
     fi
+
+    # ── 4. Sync bundled JAR ──────────────────────────────────────────────
+    # we neeed to copy the new jar into the Python package.
+    # cp target/scala-2.12/minhash-udf-assembly-0.1.jar distributed_curator/jars/
+    # this section auto sync the new jar.
+    ASSEMBLY_JAR=$(ls target/scala-2.12/minhash-udf-assembly-*.jar 2>/dev/null | head -1)
+    BUNDLED_JAR=$(ls distributed_curator/jars/minhash-udf-assembly-*.jar 2>/dev/null | head -1)
+
+    if [[ -n "$ASSEMBLY_JAR" ]]; then
+        if [[ -z "$BUNDLED_JAR" || "$ASSEMBLY_JAR" -nt "$BUNDLED_JAR" ]]; then
+            cp "$ASSEMBLY_JAR" distributed_curator/jars/
+            printf "  ${PASS} Auto-copied %s → distributed_curator/jars/\n" "$(basename $ASSEMBLY_JAR)"
+        fi
+    fi
 fi
 
 
