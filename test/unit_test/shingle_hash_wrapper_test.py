@@ -3,12 +3,6 @@ Test agsinst shingle_hash_wrapper.py
 verify Cython MinHash produces same dedup results as current Python path.
 """
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
 import time
 
 from distributed_curator.shingle_hash_wrapper import compute_minhash_cython_batch
