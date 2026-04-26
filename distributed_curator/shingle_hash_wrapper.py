@@ -11,11 +11,16 @@ Architecture:
      (processes all shingles including duplicates, min() is idempotent)
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pandas as pd
 import logging
 import random
 
 import numpy as np
-import pandas as pd
 
 # Import compiled Cython module
 try:
@@ -45,6 +50,8 @@ def compute_minhash_cython_batch(texts: pd.Series, num_hashes: int = 128, ngram:
 
     This is a replacement for udf/compute_minhash_vectorized_batch_only_hash_once
     """
+    import pandas as pd
+
     hash_seeds = _get_seeds(num_hashes)
     results = []
 

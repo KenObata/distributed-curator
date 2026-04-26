@@ -18,9 +18,13 @@ Thanks for your interest in contributing! This guide covers how to set up your d
 ```bash
 git clone https://github.com/KenObata/distributed-curator.git
 cd distributed-curator
-pip install -e .
-pip install build twine   # for publishing
+python3.9 -m venv venv
+source venv/bin/activate
+pip install -e ".[dev]"
 ```
+[dev] will install dependecies such as:
+- build, twine for publishing
+- pytest ruff for pre-commit
 
 2. Build the Scala UDF JAR:
 
