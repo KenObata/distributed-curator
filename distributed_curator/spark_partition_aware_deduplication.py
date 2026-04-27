@@ -1,10 +1,6 @@
 # spark_partition_aware_deduplication.py - Scalable partition-aware MinHash LSH implementation
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    import pandas as pd
 import logging
 
 import pyspark.sql.functions as F
@@ -154,8 +150,13 @@ def partition_aware_deduplicate(
         logger.info(f"Input has {current_partitions} partitions (shuffle_partitions config: {num_shuffle_partitions})")
 
         @F.pandas_udf(ArrayType(LongType()))  # LongType because Step4 expects Long
-        def minhash_batch_udf(rows: pd.Series) -> pd.Series:
-            """Process entire batch using highly optimized vectorized operations"""
+        def minhash_batch_udf(rows):
+            """Process entire batch using highly optimized vectorized operations
+            Args:
+                rows: pd.Series of text strings
+            Returns:
+                pd.Series of List[int] — 64-element MinHash signatures
+            """
             return compute_minhash_cython_batch(rows, num_hashes, ngram=ngram)
 
         # If users really need scala UDF (not recommended)
