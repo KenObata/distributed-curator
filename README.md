@@ -4,7 +4,7 @@ Partition-aware MinHash LSH deduplication library for large-scale text data cura
 
 ## Headline
 
-2.53 billion documents deduplicated on a 63-node EMR cluster for ~$500 using partition-aware MinHash LSH — zero shuffle during local deduplication.
+2.53 billion documents deduplicated on a 63-node EMR cluster for ~$750 using partition-aware MinHash LSH — zero shuffle during local deduplication.
 
 ## Quick Start
 
@@ -56,7 +56,7 @@ All benchmarks run on Common Crawl WET files (CC-MAIN-2024-22) with `similarity_
 | Scale | Documents | Duplicates | Rate | Cluster | Time | Cost |
 |-------|-----------|------------|------|---------|------|------|
 | 9K WET | 253M | 55M | 21.82% | 9× r5ad.8xlarge | ~1.5 hr | ~$50 |
-| 90K WET | 2.53B | 827.7M | 32.76% | 63× r6gd.8xlarge | ~4.5 hr | ~$500 |
+| 90K WET | 2.53B | 827.7M | 32.76% | 63× r6gd.8xlarge | ~4.5 hr | ~$750 |
 
 ## Configuration
 
