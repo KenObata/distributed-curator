@@ -83,6 +83,7 @@ def partition_aware_deduplicate(
     ngram: int = 9,
     checkpoint_path: str | None = None,
     enable_diagnostics: bool = False,
+    is_input_doc_id_unique: bool = False,
 ) -> DataFrame:
     """
     Partition-aware deduplication that scales to 1TB+
@@ -105,6 +106,8 @@ def partition_aware_deduplicate(
           intermediate results get saved there and reused on subsequent runs.
         enable_diagnostics: eabled periodic memory logging.
           (Currently only support driver mem, appears in yarn logs -am 1 stdout)
+        is_input_doc_id_unique: if input_df's doc_id column is already distinct,
+         set it True. We can skip df.distinct() operation.
 
     Returns:
         DataFrame with duplicates marked
@@ -113,7 +116,8 @@ def partition_aware_deduplicate(
     logger.info("Starting PARTITION-AWARE deduplication...")
     logger.info(
         f"Parameters: threshold={similarity_threshold}, hashes={num_hashes}, "
-        f"bands={num_bands}, partitions={num_partitions}"
+        f"bands={num_bands}, partitions={num_partitions}",
+        f"is_input_doc_id_unique={is_input_doc_id_unique}",
     )
     logger.info(f"Spark UI available at: {spark.sparkContext.uiWebUrl}")
     print(f"🚀 Spark UI: {spark.sparkContext.uiWebUrl}")  # Print to console for visibility
@@ -323,7 +327,11 @@ def partition_aware_deduplicate(
     # Step 5: Build connected components for duplicate groups
     logger.info("Step 5: Build connected components. For each distinct doc_id, it has representative doc_id")
     set_spark_context(spark, "Step 5 Phase 1", "Partition-aware local Union-Find (no shuffle). Dedupe after phase1.")
-    vertices = input_df.select(F.col("doc_id").alias("id")).distinct().persist(StorageLevel.DISK_ONLY)
+
+    if is_input_doc_id_unique:
+        vertices = input_df.select(F.col("doc_id").alias("id")).persist(StorageLevel.DISK_ONLY)
+    else:
+        vertices = input_df.select(F.col("doc_id").alias("id")).distinct().persist(StorageLevel.DISK_ONLY)
     vertices_count = vertices.count()
     logger.info(f"vertices cached. vertices_count: {vertices_count}")
 
