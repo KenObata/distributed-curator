@@ -278,7 +278,7 @@ class GlobalUnionFindUDFTest extends AnyFunSuite {
     )
 
     val multipleRepsEdgesDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(1)
-    val resultDf: DataFrame            = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf)
+    val resultDf: DataFrame            = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf, 2)
 
     assert(resultDf.schema == outputSchema)
     assert(resultDf.count() == 2)
@@ -296,7 +296,7 @@ class GlobalUnionFindUDFTest extends AnyFunSuite {
     )
 
     val multipleRepsEdgesDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(1)
-    val resultDf: DataFrame            = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf)
+    val resultDf: DataFrame            = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf, 3)
 
     val resultMap: Map[Long, Long] =
       resultDf.collect().map(row => row.getAs[Long]("node_id") -> row.getAs[Long]("component_id")).toMap
@@ -315,7 +315,7 @@ class GlobalUnionFindUDFTest extends AnyFunSuite {
     )
 
     val multipleRepsEdgesDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(1)
-    val resultDf: DataFrame            = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf)
+    val resultDf: DataFrame            = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf, 4)
 
     val resultMap: Map[Long, Long] =
       resultDf.collect().map(row => row.getAs[Long]("node_id") -> row.getAs[Long]("component_id")).toMap
@@ -336,7 +336,7 @@ class GlobalUnionFindUDFTest extends AnyFunSuite {
       )
     )
     val multipleRepsEdgesDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(1)
-    val resultDf: DataFrame            = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf)
+    val resultDf: DataFrame            = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf, 4)
 
     val resultMap: Map[Long, Long] =
       resultDf.collect().map(row => row.getAs[Long]("node_id") -> row.getAs[Long]("component_id")).toMap
@@ -360,7 +360,7 @@ class GlobalUnionFindUDFTest extends AnyFunSuite {
       )
     )
     val multipleRepsEdgesDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(1)
-    val resultDf: DataFrame            = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf)
+    val resultDf: DataFrame            = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf, 3)
 
     val resultMap: Map[Long, Long] =
       resultDf.collect().map(row => row.getAs[Long]("node_id") -> row.getAs[Long]("component_id")).toMap
@@ -381,7 +381,7 @@ class GlobalUnionFindUDFTest extends AnyFunSuite {
       )
     )
     val multipleRepsEdgesDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(10)
-    val resultDf: DataFrame            = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf)
+    val resultDf: DataFrame            = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf, 4)
 
     assert(resultDf.rdd.getNumPartitions == 1)
   }
@@ -400,8 +400,8 @@ class GlobalUnionFindUDFTest extends AnyFunSuite {
     )
     val multipleRepsEdgesDf: DataFrame = spark.createDataFrame(rowRDD, inputSchema).repartition(1)
 
-    val executorResult: DataFrame = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf)
-    val driverResult: DataFrame   = PartitionAwareUnionFindUDF.runGlobalUnionFindFromDriver(multipleRepsEdgesDf)
+    val executorResult: DataFrame = PartitionAwareUnionFindUDF.runGlobalUnionFind(multipleRepsEdgesDf, 5)
+    val driverResult: DataFrame   = PartitionAwareUnionFindUDF.runGlobalUnionFindFromDriver(multipleRepsEdgesDf, 5)
 
     val executorMap: Map[Long, Long] =
       executorResult.collect().map(row => row.getAs[Long]("node_id") -> row.getAs[Long]("component_id")).toMap

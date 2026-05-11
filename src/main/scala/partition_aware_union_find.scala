@@ -67,7 +67,7 @@ object PartitionAwareUnionFindUDF {
 
   } // end of class UnionFind
 
-  private class LongUnionFind {
+  private class LongUnionFind(expectedSize: Int = 1024) {
     /*
     Note: LongUnionFind is intentionally duplicated from UnionFind[String] rather than
     using generics. mutable.HashMap[T, T] with T=Long would box Long to java.lang.Long,
@@ -80,8 +80,8 @@ object PartitionAwareUnionFindUDF {
     phase 1 is not deduped yet. Convert from string to Long without dedupe
     degrades performanece.
      */
-    val parent: LongLongHashMap = new LongLongHashMap()
-    val rank: LongIntHashMap    = new LongIntHashMap()
+    val parent: LongLongHashMap = new LongLongHashMap(expectedSize)
+    val rank: LongIntHashMap    = new LongIntHashMap(expectedSize)
 
     def initialSetup(node: Long): Unit = if (!parent.containsKey(node)) {
       parent.put(node, node)
@@ -182,7 +182,7 @@ object PartitionAwareUnionFindUDF {
     (resultRDD.toDF(), pairCount)
   } // End of def runPhase1LocalUnionFind()
 
-  def runGlobalUnionFind(multipleRepsEdgesDf: DataFrame): DataFrame = {
+  def runGlobalUnionFind(multipleRepsEdgesDf: DataFrame, nodeCount: Int): DataFrame = {
     /*
     Phase 2: Global Union-Find in a single partition.
     Args:
@@ -212,7 +212,7 @@ object PartitionAwareUnionFindUDF {
       System.gc()       // to be removed
       Thread.sleep(100) // to be removed
       Utils.plotHeapMemory(label = "Before_global_UnionFind")
-      val uf = new LongUnionFind()
+      val uf = new LongUnionFind(nodeCount)
       for (row <- iterator) {
         val src = row.getLong(0)
         val dst = row.getLong(1)
@@ -240,7 +240,7 @@ object PartitionAwareUnionFindUDF {
     spark.createDataFrame(resultRDD, resultSchema)
   } // end of def runGlobalUnionFind()
 
-  def runGlobalUnionFindFromDriver(multipleRepsEdgesDf: DataFrame): DataFrame = {
+  def runGlobalUnionFindFromDriver(multipleRepsEdgesDf: DataFrame, nodeCount: Int): DataFrame = {
     /*
     Phase 2: Global Union-Find in a single partition.
     Unlike runGlobalUnionFind, which runs on executors,
@@ -277,7 +277,7 @@ object PartitionAwareUnionFindUDF {
       Thread.sleep(100) // to be removed
       Utils.plotHeapMemory(label = "After_multipleRepsEdgesDf_collect")
 
-      val uf = new LongUnionFind()
+      val uf = new LongUnionFind(nodeCount)
       var j  = 0
       while (j < srcArray.length) {
         uf.initialSetup(srcArray(j))
