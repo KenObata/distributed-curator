@@ -116,7 +116,7 @@ def partition_aware_deduplicate(
     logger.info("Starting PARTITION-AWARE deduplication...")
     logger.info(
         f"Parameters: threshold={similarity_threshold}, hashes={num_hashes}, "
-        f"bands={num_bands}, partitions={num_partitions},"
+        f"bands={num_bands}, partitions={num_partitions}, "
         f"is_input_doc_id_unique={is_input_doc_id_unique}"
     )
     logger.info(f"Spark UI available at: {spark.sparkContext.uiWebUrl}")
