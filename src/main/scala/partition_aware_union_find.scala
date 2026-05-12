@@ -1,5 +1,6 @@
 package com.unionFind
 
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import org.apache.spark.sql.types.{LongType, StringType, StructField, StructType}
@@ -311,9 +312,18 @@ object PartitionAwareUnionFindUDF {
     Utils.plotHeapMemory(label = "After_nodeIdscomponentIds_created")
 
     // create DataFrame to return
-    val numSlices = 1000
+    /* .map{Row(i => bcNodeIds(i), bcComponentIds(i))} breaks at scale:
+      parallelize.map closure captures both nodeIds (2 GB) and componentIds (2 GB).
+      When Spark serializes this closure, it creates a single byte[] of ~4 GB, which exceeds the limit.
+      Not a heap OOM, it's a JVM array size limit.
+      Solution:
+        Broadcast splits data into 4 MB blocks and stream to executors.
+     */
+    val bcNodeIds: Broadcast[Array[Long]]      = spark.sparkContext.broadcast(nodeIds)
+    val bcComponentIds: Broadcast[Array[Long]] = spark.sparkContext.broadcast(componentIds)
+    val numSlices                              = 1000
     val rdd: RDD[Row] = spark.sparkContext.parallelize(0 until nodeIds.length, numSlices).map { i =>
-      Row(nodeIds(i), componentIds(i))
+      Row(bcNodeIds.value(i), bcComponentIds.value(i))
     }
 
     Utils.plotHeapMemory(label = "After_rows_created")
