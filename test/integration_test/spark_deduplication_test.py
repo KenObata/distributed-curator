@@ -210,6 +210,7 @@ def test_integration_commoncrawl_sample(benchmark_level: str = "development", cc
         ngram=9,
         checkpoint_path=df_with_partitions_s3_path,
         enable_diagnostics=True,
+        is_input_doc_id_unique=True,
     )
 
     # Collect results

@@ -1,5 +1,6 @@
 package com.unionFind
 
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import org.apache.spark.sql.types.{LongType, StringType, StructField, StructType}
@@ -67,7 +68,7 @@ object PartitionAwareUnionFindUDF {
 
   } // end of class UnionFind
 
-  private class LongUnionFind {
+  private class LongUnionFind(expectedSize: Int = 1024) {
     /*
     Note: LongUnionFind is intentionally duplicated from UnionFind[String] rather than
     using generics. mutable.HashMap[T, T] with T=Long would box Long to java.lang.Long,
@@ -80,8 +81,8 @@ object PartitionAwareUnionFindUDF {
     phase 1 is not deduped yet. Convert from string to Long without dedupe
     degrades performanece.
      */
-    val parent: LongLongHashMap = new LongLongHashMap()
-    val rank: LongIntHashMap    = new LongIntHashMap()
+    val parent: LongLongHashMap = new LongLongHashMap(expectedSize)
+    val rank: LongIntHashMap    = new LongIntHashMap(expectedSize)
 
     def initialSetup(node: Long): Unit = if (!parent.containsKey(node)) {
       parent.put(node, node)
@@ -182,7 +183,7 @@ object PartitionAwareUnionFindUDF {
     (resultRDD.toDF(), pairCount)
   } // End of def runPhase1LocalUnionFind()
 
-  def runGlobalUnionFind(multipleRepsEdgesDf: DataFrame): DataFrame = {
+  def runGlobalUnionFind(multipleRepsEdgesDf: DataFrame, nodeCount: Int): DataFrame = {
     /*
     Phase 2: Global Union-Find in a single partition.
     Args:
@@ -212,7 +213,7 @@ object PartitionAwareUnionFindUDF {
       System.gc()       // to be removed
       Thread.sleep(100) // to be removed
       Utils.plotHeapMemory(label = "Before_global_UnionFind")
-      val uf = new LongUnionFind()
+      val uf = new LongUnionFind(nodeCount)
       for (row <- iterator) {
         val src = row.getLong(0)
         val dst = row.getLong(1)
@@ -240,7 +241,7 @@ object PartitionAwareUnionFindUDF {
     spark.createDataFrame(resultRDD, resultSchema)
   } // end of def runGlobalUnionFind()
 
-  def runGlobalUnionFindFromDriver(multipleRepsEdgesDf: DataFrame): DataFrame = {
+  def runGlobalUnionFindFromDriver(multipleRepsEdgesDf: DataFrame, nodeCount: Int): DataFrame = {
     /*
     Phase 2: Global Union-Find in a single partition.
     Unlike runGlobalUnionFind, which runs on executors,
@@ -277,7 +278,7 @@ object PartitionAwareUnionFindUDF {
       Thread.sleep(100) // to be removed
       Utils.plotHeapMemory(label = "After_multipleRepsEdgesDf_collect")
 
-      val uf = new LongUnionFind()
+      val uf = new LongUnionFind(nodeCount)
       var j  = 0
       while (j < srcArray.length) {
         uf.initialSetup(srcArray(j))
@@ -311,9 +312,18 @@ object PartitionAwareUnionFindUDF {
     Utils.plotHeapMemory(label = "After_nodeIdscomponentIds_created")
 
     // create DataFrame to return
-    val numSlices = 1000
+    /* .map{Row(i => bcNodeIds(i), bcComponentIds(i))} breaks at scale:
+      parallelize.map closure captures both nodeIds (2 GB) and componentIds (2 GB).
+      When Spark serializes this closure, it creates a single byte[] of ~4 GB, which exceeds the limit.
+      Not a heap OOM, it's a JVM array size limit.
+      Solution:
+        Broadcast splits data into 4 MB blocks and stream to executors.
+     */
+    val bcNodeIds: Broadcast[Array[Long]]      = spark.sparkContext.broadcast(nodeIds)
+    val bcComponentIds: Broadcast[Array[Long]] = spark.sparkContext.broadcast(componentIds)
+    val numSlices                              = 1000
     val rdd: RDD[Row] = spark.sparkContext.parallelize(0 until nodeIds.length, numSlices).map { i =>
-      Row(nodeIds(i), componentIds(i))
+      Row(bcNodeIds.value(i), bcComponentIds.value(i))
     }
 
     Utils.plotHeapMemory(label = "After_rows_created")
