@@ -56,7 +56,7 @@ All benchmarks run on Common Crawl WET files (CC-MAIN-2024-22) with `similarity_
 | Scale | Documents | Duplicates | Rate | Cluster | Time | Cost |
 |-------|-----------|------------|------|---------|------|------|
 | 9K WET | 253M | 55M | 21.82% | 9× r5ad.8xlarge | ~1.5 hr | ~$50 |
-| 90K WET | 2.53B | 827.7M | 32.76% | 63× r6gd.8xlarge | ~4.5 hr | ~$620 |
+| 90K WET | 2.53B | 767M | 30.39% | 63× r6gd.8xlarge | ~4.5 hr | ~$620 |
 
 ## Configuration
 
