@@ -50,6 +50,15 @@ run_step() {
 STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM -- '*.py' || true)
 STAGED_SCALA=$(git diff --cached --name-only --diff-filter=ACM -- '*.scala' || true)
 STAGED_TERRAFORM=$(git diff --cached --name-only --diff-filter=ACM -- '*.tf' '*.tfvars' || true)
+STAGED_TEST_JSON=$(git diff --cached --name-only --diff-filter=ACM -- 'test' | grep -E '\.json$' || true)
+
+# .json
+HAS_TEST_JSON=false
+[[ -n "$STAGED_TEST_JSON" ]] && HAS_TEST_JSON=true
+# Cython
+STAGED_PYX=$(git diff --cached --name-only --diff-filter=ACM -- '*.pyx' '*.pxd' || true)
+HAS_PYX=false
+[[ -n "$STAGED_PYX" ]] && HAS_PYX=true
 
 HAS_PY=false
 HAS_SCALA=false
@@ -59,15 +68,16 @@ HAS_TERRAFORM=false
 [[ -n "$STAGED_SCALA" ]] && HAS_SCALA=true
 [[ -n "$STAGED_TERRAFORM" ]] && HAS_TERRAFORM=true
 
-if ! $HAS_PY && ! $HAS_SCALA && ! $HAS_TERRAFORM; then
-    printf "${SKIP} No Python or Scala or Terraform files staged — skipping checks.\n"
+# early exit
+if ! $HAS_PY && ! $HAS_SCALA && ! $HAS_TERRAFORM && ! $HAS_TEST_JSON && ! $HAS_PYX; then
+    printf "${SKIP} No Python or Scala, Terraform, Cython, or test-fixture files staged — skipping checks.\n"
     exit 0
 fi
 
 # ==============================================================================
 # PYTHON
 # ==============================================================================
-if $HAS_PY; then
+if $HAS_PY || $HAS_TEST_JSON || $HAS_PYX; then
     header "Python"
 
     # ── 0. Setup venv for pytest ────────────────────────────────────────────────
@@ -93,33 +103,34 @@ if $HAS_PY; then
     fi
 
     # ── 2. Lint (ruff check) ──────────────────────────────────────────────────
-    if command -v ruff &>/dev/null; then
-        printf "  Running ruff check + Auto-fixing lint and format ...\n"
-        # Phase 1: fix silently (don't care about exit code) - no run_step
-        # Only lint the staged files
-        ruff check --fix $STAGED_PY 2>&1 | tail -20 || true # true: due to set -euo pipefail, script exist early but we want to continue
-        ruff format $STAGED_PY 2>&1 | tail -20 || true
-        git add $STAGED_PY
-        
-        # Intentionally unquoted $STAGED_PY because word splitting is wanted
-        printf "  Verifying ruff check ...\n"
-        run_step "ruff check" ruff check $STAGED_PY
+    if $HAS_PY; then
+        if command -v ruff &>/dev/null; then
+            printf "  Running ruff check + Auto-fixing lint and format ...\n"
+            # Phase 1: fix silently (don't care about exit code) - no run_step
+            # Only lint the staged files
+            ruff check --fix $STAGED_PY 2>&1 | tail -20 || true # true: due to set -euo pipefail, script exist early but we want to continue
+            ruff format $STAGED_PY 2>&1 | tail -20 || true
+            git add $STAGED_PY
+            
+            # Intentionally unquoted $STAGED_PY because word splitting is wanted
+            printf "  Verifying ruff check ...\n"
+            run_step "ruff check" ruff check $STAGED_PY
 
-        printf "  Verifying ruff format ...\n"
-        run_step "ruff format" ruff format --check $STAGED_PY
-    else
-        printf "  ${SKIP} ruff not found — skipping Python lint\n"
-        printf "       Install: ${YELLOW}pip install ruff${NC}\n"
+            printf "  Verifying ruff format ...\n"
+            run_step "ruff format" ruff format --check $STAGED_PY
+        else
+            printf "  ${SKIP} ruff not found — skipping Python lint\n"
+            printf "       Install: ${YELLOW}pip install ruff${NC}\n"
+        fi
+
+        # ── 3. PySpark persist check ──────────────────────────────────────────
+        if [[ -f scripts/check_spark_persist.py ]]; then
+            printf "  Running PySpark persist check ...\n"
+            run_step "persist check" python3 scripts/check_spark_persist.py $STAGED_PY
+        else
+            printf "  ${SKIP} scripts/check_spark_persist.py not found — skipping persist check\n"
+        fi
     fi
-
-    # ── 3. PySpark persist check ──────────────────────────────────────────
-    if [[ -f scripts/check_spark_persist.py ]]; then
-        printf "  Running PySpark persist check ...\n"
-        run_step "persist check" python3 scripts/check_spark_persist.py $STAGED_PY
-    else
-        printf "  ${SKIP} scripts/check_spark_persist.py not found — skipping persist check\n"
-    fi
-
     # ── 4. File name check for test files ────────────────────────────────
     # Find .py files under test/unit_test that don't match *_test.py
     #  (and aren't __init__.py or conftest.py)
@@ -254,6 +265,25 @@ if $HAS_TERRAFORM; then
         bash -c  "! grep -rn --include='*.tf' --include='*.tfvars' '\$\$(' terraform/"
 fi
 
+# ==============================================================================
+# Cython
+# ==============================================================================
+# -n (non-empty)
+# [[]] - breaks if empty or contains spaces
+# -nt - newer than 
+
+# ── stale compiled extension check (mirror of the Scala stale-JAR check) ──
+# -z "$SO" — string test: true if the string is empty (zero length).
+if $HAS_PYX; then
+    header "Cython"
+    for f in $STAGED_PYX; do
+        SO=$(ls "$(dirname "$f")"/*.so 2>/dev/null | head -1)
+        if [[ -z "$SO" || "$f" -nt "$SO" ]]; then
+            printf "  ${FAIL} %s changed but built .so is stale/missing. Run: ${YELLOW}python setup.py build_ext --inplace${NC}\n" "$f"
+            FAILED=1
+        fi
+    done
+fi
 # ==============================================================================
 # RESULT
 # ==============================================================================

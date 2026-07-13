@@ -1,0 +1,382 @@
+[
+    {
+      "doc_id": "clean_prose",
+      "text": "The quick brown fox jumps over the lazy dog and runs to the forest.\nIt was a calm morning and the air was fresh with the scent of pine.\nResearchers have shown that animals adapt quickly to new environments.",
+      "_derivation": "Normal English prose: high stopword count, no bullets, no repetition.",
+      "expected": {
+        "q_heur_word_count": 39,
+        "q_heur_mean_word_len": 4.3076923076923075,
+        "q_heur_hash_word_ratio": 0.0,
+        "q_heur_ellipsis_word_ratio": 0.0,
+        "q_heur_bullet_line_frac": 0.0,
+        "q_heur_ellipsis_line_frac": 0.0,
+        "q_heur_alpha_word_frac": 1.0,
+        "q_heur_stopword_count": 7,
+        "q_heur_dup_line_frac": 0.0,
+        "q_heur_dup_line_char_frac": 0.0,
+        "q_heur_dup_para_frac": 0.0,
+        "q_heur_dup_para_char_frac": 0.0
+      }
+    },
+    {
+      "doc_id": "short_doc",
+      "text": "Hello world.",
+      "_derivation": "Two words; 'world.' still non-symbol (has letters). No stopwords.",
+      "expected": {
+        "q_heur_word_count": 2,
+        "q_heur_mean_word_len": 5.5,
+        "q_heur_hash_word_ratio": 0.0,
+        "q_heur_ellipsis_word_ratio": 0.0,
+        "q_heur_bullet_line_frac": 0.0,
+        "q_heur_ellipsis_line_frac": 0.0,
+        "q_heur_alpha_word_frac": 1.0,
+        "q_heur_stopword_count": 0,
+        "q_heur_dup_line_frac": 0.0,
+        "q_heur_dup_line_char_frac": 0.0,
+        "q_heur_dup_para_frac": 0.0,
+        "q_heur_dup_para_char_frac": 0.0
+      }
+    },
+    {
+      "doc_id": "bullet_boilerplate",
+      "text": "Navigation menu\n• Home\n• Products\n• Services\n• About us\n• Contact\n• Blog\n• Careers\n• Press\n• Legal",
+      "_derivation": "10 lines, 9 start with bullet -> bullet_line_frac 0.9.",
+      "expected": {
+        "q_heur_word_count": 21,
+        "q_heur_mean_word_len": 3.7142857142857144,
+        "q_heur_hash_word_ratio": 0.0,
+        "q_heur_ellipsis_word_ratio": 0.0,
+        "q_heur_bullet_line_frac": 0.9,
+        "q_heur_ellipsis_line_frac": 0.0,
+        "q_heur_alpha_word_frac": 0.5714285714285714,
+        "q_heur_stopword_count": 0,
+        "q_heur_dup_line_frac": 0.0,
+        "q_heur_dup_line_char_frac": 0.0,
+        "q_heur_dup_para_frac": 0.0,
+        "q_heur_dup_para_char_frac": 0.0
+      }
+    },
+    {
+      "doc_id": "ellipsis_nav",
+      "text": "Read more...\nClick here...\nContinue reading...\nFull story here\nSee details...",
+      "_derivation": "5 lines, 4 end with '...' -> ellipsis_line_frac 0.8. Each '...' also counts toward symbol ratio.",
+      "expected": {
+        "q_heur_word_count": 11,
+        "q_heur_mean_word_len": 6.090909090909091,
+        "q_heur_hash_word_ratio": 0.0,
+        "q_heur_ellipsis_word_ratio": 0.36363636363636365,
+        "q_heur_bullet_line_frac": 0.0,
+        "q_heur_ellipsis_line_frac": 0.8,
+        "q_heur_alpha_word_frac": 1.0,
+        "q_heur_stopword_count": 0,
+        "q_heur_dup_line_frac": 0.0,
+        "q_heur_dup_line_char_frac": 0.0,
+        "q_heur_dup_para_frac": 0.0,
+        "q_heur_dup_para_char_frac": 0.0
+      }
+    },
+    {
+      "doc_id": "code_snippet",
+      "text": "def main(args):\n    x = compute(args[0])\n    return {'result': x, 'status': 200}\n\nif __name__ == '__main__':\n    main(sys.argv)",
+      "_derivation": "Code: low stopword count, some symbol-only tokens ('=' is symbol-only).",
+      "expected": {
+        "q_heur_word_count": 13,
+        "q_heur_mean_word_len": 7.461538461538462,
+        "q_heur_hash_word_ratio": 0.0,
+        "q_heur_ellipsis_word_ratio": 0.0,
+        "q_heur_bullet_line_frac": 0.0,
+        "q_heur_ellipsis_line_frac": 0.0,
+        "q_heur_alpha_word_frac": 0.8,
+        "q_heur_stopword_count": 0,
+        "q_heur_dup_line_frac": 0.0,
+        "q_heur_dup_line_char_frac": 0.0,
+        "q_heur_dup_para_frac": 0.0,
+        "q_heur_dup_para_char_frac": 0.0
+      }
+    },
+    {
+      "doc_id": "gibberish_symbols",
+      "text": "$$$ ### @@@ %%% ^^^ &&& *** ((( ))) !!!",
+      "_derivation": "10 whitespace tokens, all symbol-only -> word_count 0, mean_word_len null, alpha_frac 0. '###' contributes 3 hashes.",
+      "expected": {
+        "q_heur_word_count": 0,
+        "q_heur_mean_word_len": null,
+        "q_heur_hash_word_ratio": 0.3,
+        "q_heur_ellipsis_word_ratio": 0.0,
+        "q_heur_bullet_line_frac": 0.0,
+        "q_heur_ellipsis_line_frac": 0.0,
+        "q_heur_alpha_word_frac": 0.0,
+        "q_heur_stopword_count": 0,
+        "q_heur_dup_line_frac": 0.0,
+        "q_heur_dup_line_char_frac": 0.0,
+        "q_heur_dup_para_frac": 0.0,
+        "q_heur_dup_para_char_frac": 0.0
+      }
+    },
+    {
+      "doc_id": "repeated_lines",
+      "text": "Buy cheap widgets online now\nBuy cheap widgets online now\nBuy cheap widgets online now\nBuy cheap widgets online now\nOnly today special offer\nLimited stock available",
+      "_derivation": "Line repeated 4x: 3 duplicate occurrences of 6 lines -> dup_line_frac 0.5.",
+      "expected": {
+        "q_heur_word_count": 27,
+        "q_heur_mean_word_len": 5.111111111111111,
+        "q_heur_hash_word_ratio": 0.0,
+        "q_heur_ellipsis_word_ratio": 0.0,
+        "q_heur_bullet_line_frac": 0.0,
+        "q_heur_ellipsis_line_frac": 0.0,
+        "q_heur_alpha_word_frac": 1.0,
+        "q_heur_stopword_count": 0,
+        "q_heur_dup_line_frac": 0.5,
+        "q_heur_dup_line_char_frac": 0.5121951219512195,
+        "q_heur_dup_para_frac": 0.0,
+        "q_heur_dup_para_char_frac": 0.0
+      }
+    },
+    {
+      "doc_id": "repeated_paragraphs",
+      "text": "This product changed my life completely. I recommend it to everyone I know.\n\nThis product changed my life completely. I recommend it to everyone I know.\n\nShipping was fast and the packaging was secure on arrival.",
+      "_derivation": "First paragraph duplicated once among 3 paragraphs -> dup_para_frac 1/3.",
+      "expected": {
+        "q_heur_word_count": 36,
+        "q_heur_mean_word_len": 4.861111111111111,
+        "q_heur_hash_word_ratio": 0.0,
+        "q_heur_ellipsis_word_ratio": 0.0,
+        "q_heur_bullet_line_frac": 0.0,
+        "q_heur_ellipsis_line_frac": 0.0,
+        "q_heur_alpha_word_frac": 1.0,
+        "q_heur_stopword_count": 3,
+        "q_heur_dup_line_frac": 0.3333333333333333,
+        "q_heur_dup_line_char_frac": 0.35377358490566035,
+        "q_heur_dup_para_frac": 0.3333333333333333,
+        "q_heur_dup_para_char_frac": 0.35377358490566035
+      }
+    },
+    {
+      "doc_id": "japanese_text",
+      "text": "東京は日本の首都です。多くの人々が住んでいます。\n富士山は美しい山として世界中で知られています。",
+      "_derivation": "Japanese: kanji/kana are Unicode letters -> alpha_word_frac 1.0; English stopword count 0.",
+      "expected": {
+        "q_heur_word_count": 2,
+        "q_heur_mean_word_len": 23.5,
+        "q_heur_hash_word_ratio": 0.0,
+        "q_heur_ellipsis_word_ratio": 0.0,
+        "q_heur_bullet_line_frac": 0.0,
+        "q_heur_ellipsis_line_frac": 0.0,
+        "q_heur_alpha_word_frac": 1.0,
+        "q_heur_stopword_count": 0,
+        "q_heur_dup_line_frac": 0.0,
+        "q_heur_dup_line_char_frac": 0.0,
+        "q_heur_dup_para_frac": 0.0,
+        "q_heur_dup_para_char_frac": 0.0
+      }
+    },
+    {
+      "doc_id": "empty_string",
+      "text": "",
+      "_derivation": "Empty text: counts 0, every ratio null (try_divide by zero).",
+      "expected": {
+        "q_heur_word_count": 0,
+        "q_heur_mean_word_len": null,
+        "q_heur_hash_word_ratio": null,
+        "q_heur_ellipsis_word_ratio": null,
+        "q_heur_bullet_line_frac": null,
+        "q_heur_ellipsis_line_frac": null,
+        "q_heur_alpha_word_frac": null,
+        "q_heur_stopword_count": 0,
+        "q_heur_dup_line_frac": 0.0,
+        "q_heur_dup_line_char_frac": null,
+        "q_heur_dup_para_frac": 0.0,
+        "q_heur_dup_para_char_frac": null
+      }
+    },
+    {
+      "doc_id": "whitespace_only",
+      "text": "   \n\t\n  ",
+      "_derivation": "Whitespace only: 0 words; splitlines gives 3 lines, none bullet/ellipsis.",
+      "expected": {
+        "q_heur_word_count": 0,
+        "q_heur_mean_word_len": null,
+        "q_heur_hash_word_ratio": null,
+        "q_heur_ellipsis_word_ratio": null,
+        "q_heur_bullet_line_frac": 0.0,
+        "q_heur_ellipsis_line_frac": 0.0,
+        "q_heur_alpha_word_frac": null,
+        "q_heur_stopword_count": 0,
+        "q_heur_dup_line_frac": 0.0,
+        "q_heur_dup_line_char_frac": 0.0,
+        "q_heur_dup_para_frac": 0.0,
+        "q_heur_dup_para_char_frac": 0.0
+      }
+    },
+    {
+      "doc_id": "null_text",
+      "text": null,
+      "_derivation": "NULL text: every score column NULL.",
+      "expected": {
+        "q_heur_word_count": null,
+        "q_heur_mean_word_len": null,
+        "q_heur_hash_word_ratio": null,
+        "q_heur_ellipsis_word_ratio": null,
+        "q_heur_bullet_line_frac": null,
+        "q_heur_ellipsis_line_frac": null,
+        "q_heur_alpha_word_frac": null,
+        "q_heur_stopword_count": null,
+        "q_heur_dup_line_frac": null,
+        "q_heur_dup_line_char_frac": null,
+        "q_heur_dup_para_frac": null,
+        "q_heur_dup_para_char_frac": null
+      }
+    },
+    {
+      "doc_id": "single_long_word",
+      "text": "supercalifragilisticexpialidocious",
+      "_derivation": "One word of 34 chars -> mean_word_len 34, alpha_frac 1.0.",
+      "expected": {
+        "q_heur_word_count": 1,
+        "q_heur_mean_word_len": 34.0,
+        "q_heur_hash_word_ratio": 0.0,
+        "q_heur_ellipsis_word_ratio": 0.0,
+        "q_heur_bullet_line_frac": 0.0,
+        "q_heur_ellipsis_line_frac": 0.0,
+        "q_heur_alpha_word_frac": 1.0,
+        "q_heur_stopword_count": 0,
+        "q_heur_dup_line_frac": 0.0,
+        "q_heur_dup_line_char_frac": 0.0,
+        "q_heur_dup_para_frac": 0.0,
+        "q_heur_dup_para_char_frac": 0.0
+      }
+    },
+    {
+      "doc_id": "hash_markdown",
+      "text": "# Title\n## Section one\n### Subsection\nSome actual content here with the details that matter.\n## Another section",
+      "_derivation": "6 '#' chars over 19 words -> hash_word_ratio 6/19 ~ 0.316.",
+      "expected": {
+        "q_heur_word_count": 15,
+        "q_heur_mean_word_len": 5.666666666666667,
+        "q_heur_hash_word_ratio": 0.42105263157894735,
+        "q_heur_ellipsis_word_ratio": 0.0,
+        "q_heur_bullet_line_frac": 0.0,
+        "q_heur_ellipsis_line_frac": 0.0,
+        "q_heur_alpha_word_frac": 0.7894736842105263,
+        "q_heur_stopword_count": 3,
+        "q_heur_dup_line_frac": 0.0,
+        "q_heur_dup_line_char_frac": 0.0,
+        "q_heur_dup_para_frac": 0.0,
+        "q_heur_dup_para_char_frac": 0.0
+      }
+    },
+    {
+      "doc_id": "caps_stopwords",
+      "text": "THE QUICK FOX AND THE HOUND HAVE BE TO OF THAT WITH",
+      "_derivation": "Uppercase stopwords only: case-sensitive matching -> stopword_count 0 (datatrove parity).",
+      "expected": {
+        "q_heur_word_count": 12,
+        "q_heur_mean_word_len": 3.3333333333333335,
+        "q_heur_hash_word_ratio": 0.0,
+        "q_heur_ellipsis_word_ratio": 0.0,
+        "q_heur_bullet_line_frac": 0.0,
+        "q_heur_ellipsis_line_frac": 0.0,
+        "q_heur_alpha_word_frac": 1.0,
+        "q_heur_stopword_count": 0,
+        "q_heur_dup_line_frac": 0.0,
+        "q_heur_dup_line_char_frac": 0.0,
+        "q_heur_dup_para_frac": 0.0,
+        "q_heur_dup_para_char_frac": 0.0
+      }
+    },
+    {
+      "doc_id": "mixed_quality",
+      "text": "Welcome to our store where you can find many of the best products.\n- Free shipping\n- Easy returns\nWe have served customers since 1995 and that tradition continues.",
+      "_derivation": "Prose + 2 bullet lines of 4 -> bullet_line_frac 0.5; healthy stopwords.",
+      "expected": {
+        "q_heur_word_count": 27,
+        "q_heur_mean_word_len": 4.925925925925926,
+        "q_heur_hash_word_ratio": 0.0,
+        "q_heur_ellipsis_word_ratio": 0.0,
+        "q_heur_bullet_line_frac": 0.5,
+        "q_heur_ellipsis_line_frac": 0.0,
+        "q_heur_alpha_word_frac": 0.896551724137931,
+        "q_heur_stopword_count": 6,
+        "q_heur_dup_line_frac": 0.0,
+        "q_heur_dup_line_char_frac": 0.0,
+        "q_heur_dup_para_frac": 0.0,
+        "q_heur_dup_para_char_frac": 0.0
+      }
+    },
+    {
+      "doc_id": "unicode_ellipsis",
+      "text": "The story continues… and then it ends… or does it…",
+      "_derivation": "3 U+2026 ellipses over 10 words -> ellipsis_word_ratio 0.3; no line ends with it except the last.",
+      "expected": {
+        "q_heur_word_count": 10,
+        "q_heur_mean_word_len": 4.1,
+        "q_heur_hash_word_ratio": 0.0,
+        "q_heur_ellipsis_word_ratio": 0.3,
+        "q_heur_bullet_line_frac": 0.0,
+        "q_heur_ellipsis_line_frac": 1.0,
+        "q_heur_alpha_word_frac": 1.0,
+        "q_heur_stopword_count": 1,
+        "q_heur_dup_line_frac": 0.0,
+        "q_heur_dup_line_char_frac": 0.0,
+        "q_heur_dup_para_frac": 0.0,
+        "q_heur_dup_para_char_frac": 0.0
+      }
+    },
+    {
+      "doc_id": "long_words_doc",
+      "text": "internationalization localization containerization orchestration virtualization parallelization",
+      "_derivation": "6 words, mean length > 14 -> outside Gopher 3..10 band (score reflects it; no filtering here).",
+      "expected": {
+        "q_heur_word_count": 6,
+        "q_heur_mean_word_len": 15.0,
+        "q_heur_hash_word_ratio": 0.0,
+        "q_heur_ellipsis_word_ratio": 0.0,
+        "q_heur_bullet_line_frac": 0.0,
+        "q_heur_ellipsis_line_frac": 0.0,
+        "q_heur_alpha_word_frac": 1.0,
+        "q_heur_stopword_count": 0,
+        "q_heur_dup_line_frac": 0.0,
+        "q_heur_dup_line_char_frac": 0.0,
+        "q_heur_dup_para_frac": 0.0,
+        "q_heur_dup_para_char_frac": 0.0
+      }
+    },
+    {
+      "doc_id": "numeric_doc",
+      "text": "12345 67890 11111 22222 33333 44444 55555",
+      "_derivation": "Digits are non-symbol (not punctuation) but not alphabetic -> word_count 7, alpha_frac 0.0.",
+      "expected": {
+        "q_heur_word_count": 7,
+        "q_heur_mean_word_len": 5.0,
+        "q_heur_hash_word_ratio": 0.0,
+        "q_heur_ellipsis_word_ratio": 0.0,
+        "q_heur_bullet_line_frac": 0.0,
+        "q_heur_ellipsis_line_frac": 0.0,
+        "q_heur_alpha_word_frac": 0.0,
+        "q_heur_stopword_count": 0,
+        "q_heur_dup_line_frac": 0.0,
+        "q_heur_dup_line_char_frac": 0.0,
+        "q_heur_dup_para_frac": 0.0,
+        "q_heur_dup_para_char_frac": 0.0
+      }
+    },
+    {
+      "doc_id": "blank_line_runs",
+      "text": "alpha\n\n\nbeta\n\n\n\ngamma\nalpha",
+      "_derivation": "\\n+ split -> [alpha, beta, gamma, alpha]: 1 dup of 4 lines. \\n{2,} split on stripped text -> 3 paragraphs [alpha, beta, gamma\\nalpha], no para dups.",
+      "expected": {
+        "q_heur_word_count": 4,
+        "q_heur_mean_word_len": 4.75,
+        "q_heur_hash_word_ratio": 0.0,
+        "q_heur_ellipsis_word_ratio": 0.0,
+        "q_heur_bullet_line_frac": 0.0,
+        "q_heur_ellipsis_line_frac": 0.0,
+        "q_heur_alpha_word_frac": 1.0,
+        "q_heur_stopword_count": 0,
+        "q_heur_dup_line_frac": 0.25,
+        "q_heur_dup_line_char_frac": 0.18518518518518517,
+        "q_heur_dup_para_frac": 0.0,
+        "q_heur_dup_para_char_frac": 0.0
+      }
+    }
+  ]
