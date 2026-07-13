@@ -40,7 +40,7 @@ import os
 import pytest
 from pyspark.sql.types import StringType, StructField, StructType
 
-from distributed_curator.quality import SCORE_COLUMN_GROUPS, HeuristicConfig, compute_heuristic_scores
+from distributed_curator.quality.native_heuristics import SCORE_COLUMN_GROUPS, HeuristicConfig, compute_heuristic_scores
 
 FIXTURE_PATH = os.path.join(os.path.dirname(__file__), "fixtures", "quality_golden.json")
 

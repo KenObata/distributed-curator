@@ -378,5 +378,43 @@
         "q_heur_dup_para_frac": 0.0,
         "q_heur_dup_para_char_frac": 0.0
       }
+    },
+    {
+      "doc_id": "ideographic_space",
+      "text": "東京　大阪　the of",
+      "_derivation": "U+3000 IDEOGRAPHIC SPACE must split words ((?U) regex fix, found by kernel differential test). Words: [東京, 大阪, the, of] -> word_count 4, mean len (2+2+3+2)/4=2.25, alpha frac 1.0, stopwords {the, of}=2. One line, one paragraph, no repetition. len(text)=12.",
+      "expected": {
+        "q_heur_word_count": 4,
+        "q_heur_mean_word_len": 2.25,
+        "q_heur_hash_word_ratio": 0.0,
+        "q_heur_ellipsis_word_ratio": 0.0,
+        "q_heur_bullet_line_frac": 0.0,
+        "q_heur_ellipsis_line_frac": 0.0,
+        "q_heur_alpha_word_frac": 1.0,
+        "q_heur_stopword_count": 2,
+        "q_heur_dup_line_frac": 0.0,
+        "q_heur_dup_line_char_frac": 0.0,
+        "q_heur_dup_para_frac": 0.0,
+        "q_heur_dup_para_char_frac": 0.0
+      }
+    },
+    {
+      "doc_id": "trailing_lf_cr",
+      "text": "alpha\n\r",
+      "_derivation": "Ends with \\n then \\r: splitlines drops ONE trailing terminator (the \\r), leaving lines ['alpha', ''] -> 2 lines (\\R\\z anchor fix: Java $ would strip both, giving 1 line - found by kernel differential test). Words: [alpha]. rep lines re.split \\n+ -> ['alpha', '\\r'] -> 2 elems, 0 dups. Stripped text 'alpha' -> 1 paragraph. len(text)=7.",
+      "expected": {
+        "q_heur_word_count": 1,
+        "q_heur_mean_word_len": 5.0,
+        "q_heur_hash_word_ratio": 0.0,
+        "q_heur_ellipsis_word_ratio": 0.0,
+        "q_heur_bullet_line_frac": 0.0,
+        "q_heur_ellipsis_line_frac": 0.0,
+        "q_heur_alpha_word_frac": 1.0,
+        "q_heur_stopword_count": 0,
+        "q_heur_dup_line_frac": 0.0,
+        "q_heur_dup_line_char_frac": 0.0,
+        "q_heur_dup_para_frac": 0.0,
+        "q_heur_dup_para_char_frac": 0.0
+      }
     }
   ]

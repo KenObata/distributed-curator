@@ -1,4 +1,6 @@
-# heuristics.py - Heuristic quality scoring as native Spark SQL expressions (no UDFs)
+# native_heuristics.py - reference implementation: heuristic scoring as native Spark SQL expressions
+# This module is the parity oracle for the Cython kernel (kernel_scoring.py);
+# public entry point is heuristics.compute_heuristic_scores.
 """Heuristic quality-scoring layer.
 
 Appends ``q_heur_*`` score columns to an input DataFrame. Emits raw
@@ -64,8 +66,14 @@ def _whitespace_words(text: Column) -> Column:
 
     Matches Python's ``str.split()`` semantics (used as the documented
     whitespace-split deviation from datatrove's tokenizer).
+
+    (?U) makes Java's \\s Unicode-aware (IsWhite_Space property) — without
+    it, \\s is ASCII-only and e.g. U+3000 IDEOGRAPHIC SPACE does not split
+    words, silently corrupting word-based scores on CJK text. Found by the
+    kernel differential test. Known residual deviation from str.split():
+    Java (?U)\\s excludes \\x1c-\\x1f (Python isspace() includes them).
     """
-    return F.filter(F.split(text, r"\s+"), lambda w: w != F.lit(""))
+    return F.filter(F.split(text, r"(?U)\s+"), lambda w: w != F.lit(""))
 
 
 def _size(arr: Column) -> Column:
@@ -130,15 +138,15 @@ def _duplicate_stats(arr: Column) -> Column:
 
 def _python_strip(text: Column) -> Column:
     """Equivalent of Python str.strip() (Spark's trim() only strips spaces)."""
-    return F.regexp_replace(text, r"^\s+|\s+$", "")
+    return F.regexp_replace(text, r"(?U)^\s+|\s+$", "")
 
 
 def _lstrip(line: Column) -> Column:
-    return F.regexp_replace(line, r"^\s+", "")
+    return F.regexp_replace(line, r"(?U)^\s+", "")
 
 
 def _rstrip(line: Column) -> Column:
-    return F.regexp_replace(line, r"\s+$", "")
+    return F.regexp_replace(line, r"(?U)\s+$", "")
 
 
 def compute_heuristic_scores(
@@ -209,14 +217,16 @@ def compute_heuristic_scores(
         df = df.withColumn(_TMP_NONSYM_WORDS, _non_symbol_words(F.col(_TMP_WORDS)))
     if config.enable_line_format_fractions:
         # datatrove uses str.splitlines() here. Emulation: drop ONE trailing
-        # line terminator, then split on \R (Java regex: \n, \r\n, \r, \v, \f,
+        # line terminator (anchored \z, NOT $: Java's $ also matches before
+        # a final line terminator, so \R$ + replaceAll strips up to TWO
+        # trailing terminators - found by the kernel differential test), then split on \R (Java regex: \n, \r\n, \r, \v, \f,
         # \x85, \u2028, \u2029 — splitlines() minus \x1c-\x1e, a negligible
         # difference for web text). splitlines("") == [], so empty text maps
         # to an empty array rather than [""].
         df = df.withColumn(
             _TMP_QUALITY_LINES,
             F.when(F.length(text) == 0, F.array().cast("array<string>")).otherwise(
-                F.split(F.regexp_replace(text, r"\R$", ""), r"\R")
+                F.split(F.regexp_replace(text, r"\R\z", ""), r"\R")
             ),
         )
 
