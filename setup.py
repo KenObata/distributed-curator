@@ -24,6 +24,16 @@ try:
     extensions = cythonize(
         [
             Extension(
+                # Python import path:
+                # from distributed_curator.quality.kernel.heuristic_kernel import score_document
+                "distributed_curator.quality.kernel.heuristic_kernel",
+                sources=["distributed_curator/quality/kernel/heuristic_kernel.pyx"],
+                extra_compile_args=[
+                    "-O3",
+                    "-march=native",
+                ],
+            ),
+            Extension(
                 # Python import path: from distributed_curator.cython_minhash.shingle_hash import hash_shingles
                 "distributed_curator.cython_minhash.shingle_hash",
                 sources=[
@@ -40,7 +50,7 @@ try:
                     "-O3",  # maximum optimization level
                     "-march=native",  # enables NEON SIMD instructions
                 ],
-            )
+            ),
         ],
         compiler_directives={"language_level": "3"},  # python3.x
     )

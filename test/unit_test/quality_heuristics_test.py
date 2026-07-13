@@ -40,7 +40,11 @@ import os
 import pytest
 from pyspark.sql.types import StringType, StructField, StructType
 
-from distributed_curator.quality.native_heuristics import SCORE_COLUMN_GROUPS, HeuristicConfig, compute_heuristic_scores
+from distributed_curator.quality.native_heuristics import (
+    SCORE_COLUMN_GROUPS,
+    HeuristicConfig,
+    compute_native_heuristic_scores,
+)
 
 FIXTURE_PATH = os.path.join(os.path.dirname(__file__), "fixtures", "quality_golden.json")
 
@@ -73,7 +77,7 @@ class TestHeuristicGoldenFiles:
         schema = StructType([StructField("doc_id", StringType(), False), StructField("text", StringType(), True)])
         df = spark.createDataFrame([(d["doc_id"], d["text"]) for d in golden], schema)
 
-        result = {r["doc_id"]: r.asDict() for r in compute_heuristic_scores(df).collect()}
+        result = {r["doc_id"]: r.asDict() for r in compute_native_heuristic_scores(df).collect()}
 
         assert len(result) == len(golden), "Row count changed — a layer must never drop rows"
         for doc in golden:
@@ -95,7 +99,7 @@ class TestHeuristicLayerContract:
         data = [("d1", "The cat sat on the mat with a hat.", "rep_1", False, 42)]
         df = spark.createDataFrame(data, ["doc_id", "text", "representative_id", "is_duplicate", "shard"])
 
-        result = compute_heuristic_scores(df)
+        result = compute_native_heuristic_scores(df)
 
         for col in ["doc_id", "representative_id", "is_duplicate", "shard"]:
             assert col in result.columns
@@ -107,7 +111,7 @@ class TestHeuristicLayerContract:
         df = spark.createDataFrame([("d1", "some text here")], ["doc_id", "text"])
         config = HeuristicConfig(enable_dup_lines_paragraphs=False, enable_stop_words=False)
 
-        result = compute_heuristic_scores(df, config=config)
+        result = compute_native_heuristic_scores(df, config=config)
 
         for col in SCORE_COLUMN_GROUPS["enable_dup_lines_paragraphs"] + SCORE_COLUMN_GROUPS["enable_stop_words"]:
             assert col not in result.columns
@@ -116,16 +120,16 @@ class TestHeuristicLayerContract:
     def test_missing_text_column_raises(self, spark):
         df = spark.createDataFrame([("d1",)], ["doc_id"])
         with pytest.raises(ValueError, match="text_column"):
-            compute_heuristic_scores(df)
+            compute_native_heuristic_scores(df)
 
     def test_output_column_collision_raises(self, spark):
         df = spark.createDataFrame([("d1", "text", 0.5)], ["doc_id", "text", "q_heur_word_count"])
         with pytest.raises(ValueError, match="already exist"):
-            compute_heuristic_scores(df)
+            compute_native_heuristic_scores(df)
 
     def test_custom_text_column_name(self, spark):
         df = spark.createDataFrame([("d1", "the words and the content")], ["doc_id", "content"])
-        result = compute_heuristic_scores(df, text_column="content")
+        result = compute_native_heuristic_scores(df, text_column="content")
         row = result.collect()[0]
         assert row["q_heur_word_count"] == 5
         assert row["q_heur_stopword_count"] == 2  # {"the", "and"}
