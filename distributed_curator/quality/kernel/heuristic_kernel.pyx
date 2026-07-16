@@ -28,6 +28,28 @@ handful of line slices per document use Python str methods (startswith/endswith
 with tuples) for exact datatrove-style semantics.
 """
 
+# ══════════════════════════════════════════════════════════════════════════════
+# CHECK NUMBERING (order == KERNEL_COLUMN_ORDER == score_document return tuple)
+#
+#   #1  q_heur_word_count           <- n_nonsym_words                  (pass 1)
+#   #2  q_heur_mean_word_len        <- nonsym_len_sum / n_nonsym_words (pass 1)
+#   #3  q_heur_hash_word_ratio      <- hash_count / n_words            (pass 1)
+#   #4  q_heur_ellipsis_word_ratio  <- ellipsis_count(dot_run) / n_words (pass 1)
+#   #5  q_heur_bullet_line_frac     <- n_bullet / n_lines              (pass 2, _classify_quality_line)
+#   #6  q_heur_ellipsis_line_frac   <- n_ellipsis_end / n_lines        (pass 2, _classify_quality_line)
+#   #7  q_heur_alpha_word_frac      <- n_alpha_words / n_words         (pass 1)
+#   #8  q_heur_stopword_count       <- len(seen_stops)                 (pass 1)
+#   #9  q_heur_dup_line_frac        <- rep_line_dups / rep_line_count  (pass 3, _dup_scan_newline_split)
+#   #10 q_heur_dup_line_char_frac   <- rep_line_dup_chars / len(text)  (pass 3, _dup_scan_newline_split)
+#   #11 q_heur_dup_para_frac        <- para_dups / para_count          (pass 4, _dup_scan_newline_split)
+#   #12 q_heur_dup_para_char_frac   <- para_dup_chars / len(text)      (pass 4, _dup_scan_newline_split)
+#
+# NOTE: checks are fused into shared scans on purpose (that fusion is the
+# speedup); one-check-per-unit structure lives in native_heuristics.py, the
+# reference implementation. Shared denominators: n_words feeds #3/#4/#7,
+# n_lines feeds #5/#6, len(text) feeds #10/#12.
+# ══════════════════════════════════════════════════════════════════════════════
+
 from cpython.unicode cimport Py_UNICODE_ISALPHA, Py_UNICODE_ISSPACE
 
 from distributed_curator.quality.config import GOPHER_STOP_WORDS, PUNCTUATION_CHARS
@@ -100,22 +122,22 @@ def score_document(
     cdef Py_ssize_t word_len = 0
     cdef bint word_has_alpha = False
     cdef bint word_has_nonpunct = False
-    cdef long n_words = 0
-    cdef long n_nonsym_words = 0
-    cdef long nonsym_len_sum = 0
-    cdef long n_alpha_words = 0
-    cdef long hash_count = 0
-    cdef long dot_run = 0
-    cdef long ellipsis_count = 0
-    cdef Py_ssize_t max_stop_len = 0
+    cdef long n_words = 0            # denominator for #3 #4 #7
+    cdef long n_nonsym_words = 0     # -> #1; denominator for #2
+    cdef long nonsym_len_sum = 0     # -> #2
+    cdef long n_alpha_words = 0      # -> #7
+    cdef long hash_count = 0         # -> #3
+    cdef long dot_run = 0            # -> #4 ('...' run tracker)
+    cdef long ellipsis_count = 0     # -> #4
+    cdef Py_ssize_t max_stop_len = 0 # -> #8 (slice-avoidance bound)
 
     stop_set = frozenset(stop_words)
     for w in stop_set:
         if len(w) > max_stop_len:
             max_stop_len = len(w)
-    seen_stops = set()
+    seen_stops = set()  # -> #8 (distinct stopwords found)
 
-    # ── pass 1: words + symbol counting, one codepoint loop ──────────────────
+    # ── pass 1: words + symbol counting, one codepoint loop [#1-#4, #7, #8] ──
     for i in range(n):
         ch = text[i]
 
@@ -167,10 +189,10 @@ def score_document(
             if w in stop_set:
                 seen_stops.add(w)
 
-    # ── pass 2: quality lines (\R split, one trailing terminator dropped) ────
-    cdef long n_lines = 0
-    cdef long n_bullet = 0
-    cdef long n_ellipsis_end = 0
+    # ── pass 2: quality lines (\R split, one trailing terminator dropped) [#5 #6]
+    cdef long n_lines = 0        # denominator for #5 #6
+    cdef long n_bullet = 0       # -> #5
+    cdef long n_ellipsis_end = 0 # -> #6
     cdef Py_ssize_t line_start = 0
     cdef Py_ssize_t scan_end = n
 
@@ -200,13 +222,13 @@ def score_document(
                 line_start = i + 1
             i += 1
 
-    # ── pass 3: repetition lines (\n+ split, unstripped) ──────────────────────
-    cdef long rep_line_count = 0
-    cdef long rep_line_dups = 0
-    cdef long rep_line_dup_chars = 0
+    # ── pass 3: repetition lines (\n+ split, unstripped) [#9 #10] ─────────────
+    cdef long rep_line_count = 0     # denominator for #9
+    cdef long rep_line_dups = 0      # -> #9
+    cdef long rep_line_dup_chars = 0 # -> #10
     _dup_scan_newline_split(text, 0, n, 1, &rep_line_count, &rep_line_dups, &rep_line_dup_chars)
 
-    # ── pass 4: paragraphs (\n{2,} split on stripped text) ────────────────────
+    # ── pass 4: paragraphs (\n{2,} split on stripped text) [#11 #12] ──────────
     cdef Py_ssize_t s_start = 0
     cdef Py_ssize_t s_end = n
     while s_start < n and _is_space(text[s_start]):
@@ -214,27 +236,27 @@ def score_document(
     while s_end > s_start and _is_space(text[s_end - 1]):
         s_end -= 1
 
-    cdef long para_count = 0
-    cdef long para_dups = 0
-    cdef long para_dup_chars = 0
+    cdef long para_count = 0     # denominator for #11
+    cdef long para_dups = 0      # -> #11
+    cdef long para_dup_chars = 0 # -> #12
     _dup_scan_newline_split(text, s_start, s_end, 2, &para_count, &para_dups, &para_dup_chars)
 
     # ── assemble (try_divide semantics: None on zero denominator) ────────────
-    word_count = n_nonsym_words
-    mean_word_len = (<double> nonsym_len_sum / n_nonsym_words) if n_nonsym_words > 0 else None
-    hash_ratio = (<double> hash_count / n_words) if n_words > 0 else None
-    ell_ratio = (<double> ellipsis_count / n_words) if n_words > 0 else None
-    bullet_frac = (<double> n_bullet / n_lines) if n_lines > 0 else None
-    ell_line_frac = (<double> n_ellipsis_end / n_lines) if n_lines > 0 else None
-    alpha_frac = (<double> n_alpha_words / n_words) if n_words > 0 else None
-    dup_line_frac = (<double> rep_line_dups / rep_line_count) if rep_line_count > 0 else None
-    dup_line_chars = (<double> rep_line_dup_chars / n) if n > 0 else None
-    dup_para_frac = (<double> para_dups / para_count) if para_count > 0 else None
-    dup_para_chars = (<double> para_dup_chars / n) if n > 0 else None
+    word_count = n_nonsym_words  # #1
+    mean_word_len = (<double> nonsym_len_sum / n_nonsym_words) if n_nonsym_words > 0 else None  # #2
+    hash_ratio = (<double> hash_count / n_words) if n_words > 0 else None  # #3
+    ell_ratio = (<double> ellipsis_count / n_words) if n_words > 0 else None  # #4
+    bullet_frac = (<double> n_bullet / n_lines) if n_lines > 0 else None  # #5
+    ell_line_frac = (<double> n_ellipsis_end / n_lines) if n_lines > 0 else None  # #6
+    alpha_frac = (<double> n_alpha_words / n_words) if n_words > 0 else None  # #7
+    dup_line_frac = (<double> rep_line_dups / rep_line_count) if rep_line_count > 0 else None  # #9
+    dup_line_chars = (<double> rep_line_dup_chars / n) if n > 0 else None  # #10
+    dup_para_frac = (<double> para_dups / para_count) if para_count > 0 else None  # #11
+    dup_para_chars = (<double> para_dup_chars / n) if n > 0 else None  # #12
 
     return (
         word_count, mean_word_len, hash_ratio, ell_ratio,
-        bullet_frac, ell_line_frac, alpha_frac, len(seen_stops),
+        bullet_frac, ell_line_frac, alpha_frac, len(seen_stops),  # len(seen_stops) is #8
         dup_line_frac, dup_line_chars, dup_para_frac, dup_para_chars,
     )
 
@@ -244,7 +266,7 @@ cdef void _classify_quality_line(
     tuple bullet_prefixes, tuple ellipsis_suffixes,
     long* n_lines, long* n_bullet, long* n_ellipsis_end,
 ):
-    """Count one quality line; bullet/ellipsis checks on l/r-stripped slice."""
+    """Count one quality line; bullet/ellipsis checks on l/r-stripped slice. [checks #5 #6]"""
     cdef Py_ssize_t a = start
     cdef Py_ssize_t b = end
     n_lines[0] += 1
@@ -265,7 +287,7 @@ cdef void _dup_scan_newline_split(
     str text, Py_ssize_t start, Py_ssize_t end, int min_newlines,
     long* out_count, long* out_dups, long* out_dup_chars,
 ):
-    """re.split("\\n{min_newlines,}", text[start:end]) with duplicate counting.
+    """re.split("\\n{min_newlines,}", text[start:end]) with duplicate counting. [checks #9-#12]
 
     Matches re.split edge semantics: leading/trailing separator runs produce
     empty elements; an empty input region yields one empty element. Duplicate
