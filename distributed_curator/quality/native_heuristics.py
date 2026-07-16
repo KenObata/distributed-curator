@@ -149,7 +149,7 @@ def _rstrip(line: Column) -> Column:
     return F.regexp_replace(line, r"(?U)\s+$", "")
 
 
-def compute_heuristic_scores(
+def compute_native_heuristic_scores(
     df: DataFrame,
     text_column: str = "text",
     config: HeuristicConfig | None = None,

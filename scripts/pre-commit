@@ -274,16 +274,18 @@ fi
 
 # ── stale compiled extension check (mirror of the Scala stale-JAR check) ──
 # -z "$SO" — string test: true if the string is empty (zero length).
-if $HAS_PYX; then
-    header "Cython"
-    for f in $STAGED_PYX; do
-        SO=$(ls "$(dirname "$f")"/*.so 2>/dev/null | head -1)
-        if [[ -z "$SO" || "$f" -nt "$SO" ]]; then
-            printf "  ${FAIL} %s changed but built .so is stale/missing. Run: ${YELLOW}python setup.py build_ext --inplace${NC}\n" "$f"
-            FAILED=1
-        fi
-    done
-fi
+
+# Note: we don't have .so file because we create wheel file instead.
+# if $HAS_PYX; then
+#    header "Cython"
+#    for f in $STAGED_PYX; do
+#        SO=$(ls "$(dirname "$f")"/*.so 2>/dev/null | head -1)
+#        if [[ -z "$SO" || "$f" -nt "$SO" ]]; then
+#            printf "  ${FAIL} %s changed but built .so is stale/missing. Run: ${YELLOW}python setup.py build_ext --inplace${NC}\n" "$f"
+#            FAILED=1
+#        fi
+#    done
+# fi
 # ==============================================================================
 # RESULT
 # ==============================================================================

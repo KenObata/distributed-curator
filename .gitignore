@@ -80,3 +80,6 @@ distributed_curator/cython_minhash/build/
 # result of build
 distributed_curator/cython_minhash/shingle_hash.c 
 distributed_curator/jars/*.jar
+distributed_curator/quality/kernel/heuristic_kernel.c
+distributed_curator/quality/kernel/heuristic_kernel.h
+distributed_curator/quality/kernel/heuristic_kernel.so
