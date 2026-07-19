@@ -35,12 +35,16 @@ Columns (see also the DCLM key aliases handled by the pool I/O layer):
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 import pyspark.sql.functions as F
 from pyspark.sql import DataFrame
 from pyspark.sql.types import DoubleType, StringType, StructField, StructType
 
 from distributed_curator.quality.config import FastTextConfig
+
+if TYPE_CHECKING:
+    import fasttext
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -58,7 +62,7 @@ _LABEL_PREFIX = "__label__"
 _MODEL_CACHE: dict = {}
 
 
-def _load_model(model_path: str):
+def _load_model(model_path: str) -> fasttext.FastText._FastText:
     """Load (and cache) a fastText model in this worker process."""
     model = _MODEL_CACHE.get(model_path)
     if model is None:
@@ -114,6 +118,9 @@ def compute_fasttext_quality_scores(
 
     Returns:
         ``df`` with ``q_ft_score`` appended. NULL text -> NULL score.
+
+    NOTE:
+      - this is Oracle, so it's called only from pytest unit test.
     """
     config = config or FastTextConfig()
     if not config.quality_model_path:
@@ -128,9 +135,16 @@ def compute_fasttext_quality_scores(
 
     @pandas_udf(DoubleType())
     def quality_udf(texts):
-        model = _load_model(model_path)
+        model: fasttext.FastText._FastText = _load_model(model_path)
+        rows = []
+        for text in texts:
+            if isinstance(text, str):
+                rows.append(score_quality(model, text, negative_label))
+            else:
+                rows.append(None)
+
         return pd.Series(
-            [score_quality(model, t, negative_label) if isinstance(t, str) else None for t in texts],
+            rows,
             dtype="float64",
         )
 
@@ -146,6 +160,9 @@ def compute_language_scores(
     """Append ``q_lid_lang`` and ``q_lid_score`` using a fastText LID model.
 
     NULL text -> NULL in both columns.
+
+    NOTE:
+      - this is Oracle, so it's called only from pytest unit test.
     """
     config = config or FastTextConfig()
     if not config.lid_model_path:
@@ -166,7 +183,12 @@ def compute_language_scores(
     @pandas_udf(schema)
     def lid_udf(texts):
         model = _load_model(model_path)
-        rows = [score_language(model, t) if isinstance(t, str) else (None, None) for t in texts]
+        rows = []
+        for text in texts:
+            if isinstance(text, str):
+                rows.append(score_language(model, text))
+            else:
+                rows.append((None, None))
         return pd.DataFrame(rows, columns=[LID_LANG_COLUMN, LID_SCORE_COLUMN])
 
     logger.info(f"fastText language ID (oracle path) on text_column='{text_column}'")

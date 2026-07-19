@@ -358,8 +358,12 @@ class FastTextConfig:
 
     quality_model_path: str | None = None
     lid_model_path: str | None = None
+
+    # __label__cc stands for common crawl and it's negative because it's raw text from the web
     negative_label: str = "__label__cc"
 
     # DCLM's published threshold for the OH2.5+ELI5 classifier. Documented for
     # reference only: this layer emits scores; filtering is a separate step.
+    # ClassVar enforces that: you can read FastTextConfig.DCLM_REFERENCE_THRESHOLD
+    # or some_config.DCLM_REFERENCE_THRESHOLD, but you can't pass it in or accidentally override it
     DCLM_REFERENCE_THRESHOLD: ClassVar[float] = 0.018112
