@@ -74,15 +74,23 @@ def _load_model(model_path: str) -> fasttext.FastText._FastText:
 
 
 def normalize_text(content: str) -> str:
-    """DCLM-verbatim input normalization (see module docstring)."""
-    return " ".join(content.strip().splitlines())
+    """DCLM-verbatim input normalization (see module docstring).
+    NOTE:
+    - this is Oracle, mirroring DCLM's classify_fasttext_hq_prob
+    """
+    trimed_leading_training_whitespace = content.strip()
+    return " ".join(trimed_leading_training_whitespace.splitlines())
 
 
 def score_quality(model, content: str, negative_label: str) -> float:
     """DCLM-verbatim hq probability for one document."""
     labels, probs = model.predict(normalize_text(content))
     label, prob = labels[0], float(probs[0])
-    return 1.0 - prob if label == negative_label else prob
+
+    if label == negative_label:  # __label__cc
+        return 1.0 - prob
+    else:  # positive case model.predict(text) returns top label and its probability
+        return prob
 
 
 def score_language(model, content: str) -> tuple[str, float]:
