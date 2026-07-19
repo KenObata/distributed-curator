@@ -17,6 +17,10 @@ The kernel must be indistinguishable from the native Spark-SQL implementation
    guarantees as the native path.
 """
 
+# Python 3.9 compatibility: PEP 604 unions (str | None) are evaluated at
+# def time without this import, and the repo targets py39 (venv39).
+from __future__ import annotations
+
 import json
 import math
 import os
