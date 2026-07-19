@@ -14,6 +14,7 @@ can apply them in the separate filter step.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 # Gopher stop words (Rae et al. 2021 / datatrove STOP_WORDS).
 # NOTE: membership is checked case-sensitively against distinct words,
@@ -340,3 +341,31 @@ class HeuristicConfig:
     stop_words: tuple[str, ...] = GOPHER_STOP_WORDS
     bullet_prefixes: tuple[str, ...] = ("\u2022", "-")  # placeholder, fixed below
     ellipsis_suffixes: tuple[str, ...] = ("...", "\u2026")  # placeholder, fixed below
+
+
+@dataclass(frozen=True)
+class FastTextConfig:
+    """Model paths and label names for the fastText scoring layer.
+
+    Model files are NEVER vendored in this repo (2.39 GB for the DCLM
+    classifier, ~126 MB for lid.176.bin) and are not downloaded automatically.
+    See docs/fasttext.md for download instructions, sizes, and licenses. Paths
+    must resolve on every executor.
+
+    negative_label is the class whose probability gets inverted to produce
+    P(high quality), matching DCLM's classify_fasttext_hq_prob.
+    """
+
+    quality_model_path: str | None = None
+    lid_model_path: str | None = None
+
+    # __label__cc stands for common crawl and it's negative because it's raw text from the web
+    negative_label: str = "__label__cc"
+
+    # DCLM's published threshold for the OH2.5+ELI5 classifier. Documented for
+    # reference only: this layer emits scores; filtering is a separate step.
+    # ClassVar enforces that: you can read FastTextConfig.DCLM_REFERENCE_THRESHOLD
+    # or some_config.DCLM_REFERENCE_THRESHOLD, but you can't pass it in or accidentally override it
+
+    # TLDR: fast text emits quality score, and its top 10% is 0.018112
+    DCLM_REFERENCE_THRESHOLD: ClassVar[float] = 0.018112
