@@ -366,4 +366,6 @@ class FastTextConfig:
     # reference only: this layer emits scores; filtering is a separate step.
     # ClassVar enforces that: you can read FastTextConfig.DCLM_REFERENCE_THRESHOLD
     # or some_config.DCLM_REFERENCE_THRESHOLD, but you can't pass it in or accidentally override it
+
+    # TLDR: fast text emits quality score, and its top 10% is 0.018112
     DCLM_REFERENCE_THRESHOLD: ClassVar[float] = 0.018112
