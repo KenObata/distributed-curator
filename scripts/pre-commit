@@ -270,22 +270,42 @@ fi
 # ==============================================================================
 # -n (non-empty)
 # [[]] - breaks if empty or contains spaces
-# -nt - newer than 
+# -nt - newer than
 
-# ── stale compiled extension check (mirror of the Scala stale-JAR check) ──
-# -z "$SO" — string test: true if the string is empty (zero length).
-
-# Note: we don't have .so file because we create wheel file instead.
-# if $HAS_PYX; then
-#    header "Cython"
-#    for f in $STAGED_PYX; do
-#        SO=$(ls "$(dirname "$f")"/*.so 2>/dev/null | head -1)
-#        if [[ -z "$SO" || "$f" -nt "$SO" ]]; then
-#            printf "  ${FAIL} %s changed but built .so is stale/missing. Run: ${YELLOW}python setup.py build_ext --inplace${NC}\n" "$f"
-#            FAILED=1
-#        fi
-#    done
-# fi
+# ── built-extension freshness check ───────────────────────────────────────────
+# Workflow-agnostic replacement for the old ".so sitting next to the .pyx"
+# check: that assumed an in-place build, but we ship a wheel. Instead ask
+# Python where the module actually resolves from (in-place .so OR installed
+# wheel) and compare mtimes against the staged sources.
+#
+# Why this matters: quality_kernel_test.py skips its whole module when the
+# kernel is not importable, so a missing/stale build turns real failures into
+# silent skips (this is how the 12-vs-21 column mismatch reached main).
+if $HAS_PYX; then
+    header "Cython"
+    for f in $STAGED_PYX; do
+        # distributed_curator/quality/kernel/x.pyx -> distributed_curator.quality.kernel.x
+        MODULE=$(echo "${f%.*}" | tr '/' '.')
+        # .pxd files are compile-time headers with no module of their own;
+        # check the sibling .pyx instead.
+        if [[ "$f" == *.pxd ]]; then
+            [[ -f "${f%.pxd}.pyx" ]] || continue
+        fi
+        BUILT=$(python3 -c "import ${MODULE} as m; print(m.__file__)" 2>/dev/null || true)
+        if [[ -z "$BUILT" ]]; then
+            printf "  ${FAIL} %s is staged but %s is not importable.\n" "$f" "$MODULE"
+            printf "       Build it: ${YELLOW}python setup.py build_ext --inplace${NC} (or reinstall the wheel)\n"
+            printf "       Without a built extension, quality_kernel_test.py SKIPS silently.\n"
+            FAILED=1
+        elif [[ "$f" -nt "$BUILT" ]]; then
+            printf "  ${FAIL} %s is newer than its built extension (%s).\n" "$f" "$(basename "$BUILT")"
+            printf "       Rebuild: ${YELLOW}python setup.py build_ext --inplace${NC} (or reinstall the wheel)\n"
+            FAILED=1
+        else
+            printf "  ${PASS} %s built and current\n" "$f"
+        fi
+    done
+fi
 # ==============================================================================
 # RESULT
 # ==============================================================================

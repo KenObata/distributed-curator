@@ -28,11 +28,30 @@ from pyspark.sql.types import StringType, StructField, StructType
 
 from distributed_curator.quality import SCORE_COLUMN_GROUPS, HeuristicConfig, compute_heuristic_scores
 
-kernel_mod = pytest.importorskip(
-    "distributed_curator.quality.kernel.heuristic_kernel",
-    reason="Cython kernel not built (python setup.py build_ext --inplace)",
-)
-from distributed_curator.quality.kernel_scoring import KERNEL_COLUMN_ORDER  # noqa: E402
+# Skipping this module is OPT-IN, not automatic.
+#
+# This file used to call pytest.importorskip(), which silently skipped all of
+# its tests when the Cython extension was not built. That converted real
+# breakage into a green run: the kernel/Spark column mismatch (score_document
+# returning 21 values while KERNEL_COLUMN_ORDER declared 12) reached main
+# behind a wall of 's' characters in the pytest output.
+#
+# Contributors without a build toolchain can still opt out:
+#     DC_ALLOW_KERNEL_SKIP=1 pytest
+try:
+    from distributed_curator.quality.kernel import heuristic_kernel as kernel_mod
+except ImportError as exc:  # pragma: no cover - environment-dependent
+    if os.environ.get("DC_ALLOW_KERNEL_SKIP") == "1":
+        pytest.skip(
+            f"Cython kernel not built and DC_ALLOW_KERNEL_SKIP=1: {exc}",
+            allow_module_level=True,
+        )
+    raise RuntimeError(
+        "The Cython kernel is not importable, so these tests cannot verify it.\n"
+        "Build it with:  python setup.py build_ext --inplace   (or reinstall the wheel)\n"
+        "To skip anyway: DC_ALLOW_KERNEL_SKIP=1 pytest"
+    ) from exc
+from distributed_curator.quality.kernel_scoring import KERNEL_COLUMN_ORDER
 
 FIXTURE_PATH = os.path.join(os.path.dirname(__file__), "fixtures", "quality_golden.json")
 
@@ -285,3 +304,27 @@ class TestNativeOmitsNgramColumns:
         assert ngram_cols.isdisjoint(native_cols)
         assert ngram_cols.issubset(kernel_cols)
         assert len(kernel_cols) == len(native_cols) + 9
+
+
+class TestKernelSchemaAlignment:
+    """The kernel's return arity and the Spark column list must not drift.
+
+    Regression guard: PR-3b landed the kernel side (score_document returning
+    21 values) without the Spark wiring (KERNEL_COLUMN_ORDER still 12), so
+    every implementation="kernel" call failed at runtime with
+    '12 columns passed, passed data had 21 columns'. These assertions fail
+    loudly on the driver instead, with no Spark session needed.
+    """
+
+    def test_return_arity_matches_column_order(self):
+        assert len(kernel_mod.score_document("a b c")) == len(KERNEL_COLUMN_ORDER)
+
+    def test_null_return_arity_matches_column_order(self):
+        assert len(kernel_mod.score_document(None)) == len(KERNEL_COLUMN_ORDER)
+
+    def test_every_kernel_column_is_registered_in_a_group(self):
+        from distributed_curator.quality.native_heuristics import SCORE_COLUMN_GROUPS
+
+        registered = {c for cols in SCORE_COLUMN_GROUPS.values() for c in cols}
+        missing = [c for c in KERNEL_COLUMN_ORDER if c not in registered]
+        assert not missing, f"kernel columns absent from SCORE_COLUMN_GROUPS: {missing}"

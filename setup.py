@@ -24,6 +24,18 @@ try:
     extensions = cythonize(
         [
             Extension(
+                # n-gram repetition scans (checks #13-#21). Must be declared
+                # as its own extension: heuristic_kernel cimports it, so the
+                # module has to exist at import time or heuristic_kernel
+                # fails to load even though it compiled fine.
+                "distributed_curator.quality.kernel.ngram_kernel",
+                sources=["distributed_curator/quality/kernel/ngram_kernel.pyx"],
+                extra_compile_args=[
+                    "-O3",
+                    "-march=native",
+                ],
+            ),
+            Extension(
                 # Python import path:
                 # from distributed_curator.quality.kernel.heuristic_kernel import score_document
                 "distributed_curator.quality.kernel.heuristic_kernel",
