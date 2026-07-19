@@ -112,7 +112,12 @@ The JVM never had refcounts. It uses a tracing garbage collector — the GC walk
   Each Python worker reads those bytes and unpickles them into its own private heap, caching the result in that worker's _broadcastRegistry dict.
   => 28 copies too.
 
-**Phase 3 — KenLM layer (won't do).**
+### what is the difference between __label__hq vs __label__cc
+DCLM uses the __label__hq score
+- Positive class = the reference data (OH-2.5 + ELI5, or Wikipedia, or whichever variant is being ablated) — this is what you'd be calling __label__hq.
+- Negative class = random RefinedWeb-reproduction Common Crawl documents — this is what you'd be calling __label__cc.
+
+## Phase 3 — KenLM layer (won't do).
  EMR bootstrap/install docs and script; per-partition binding load; perplexity scoring column; graceful degradation (clear error, not silent nulls) when the native lib is absent; tests gated to skip cleanly where KenLM isn't installed. Deliverable: perplexity matches reference KenLM CLI output on fixtures.
 
  Won't do because DCLM papers already proved that good Heuristic and fastText achieves the same result against becnhmark done by KenLM layer.
@@ -121,10 +126,10 @@ The JVM never had refcounts. It uses a tracing garbage collector — the GC walk
 - KenLM is a generative language model, not a classifier. A 5-gram model trained on Wikipedia learns P(word | previous 4 words), and perplexity measures how surprised the model is by your document. It needs only one corpus (the "good" one) — no negatives, no labels. What it detects is fluency: gibberish, keyword-stuffed SEO spam, scrambled boilerplate, and machine-mangled text all have high perplexity because their word sequences are statistically improbable. But it has no notion of content value — a fluent, grammatical product listing or a clickbait article scores great perplexity.
 - fastText is a discriminative classifier. It needs both positives and negatives, and it learns whatever separates them — which in practice is largely topical and stylistic signal: vocabulary distribution, n-grams that look encyclopedic vs. commercial. It can catch the fluent-but-worthless content KenLM waves through. But its weakness is the mirror image: it's only as good as the positive set's definition of quality, and it can be fooled by spam that mimics the right vocabulary.
 
-**Phase 4 — Composition + filter step.**
+## Phase 4 — Composition + filter step.
  A `QualityPipeline` that chains any subset of layers; a filter step supporting **two threshold modes**: (a) static — user-supplied SQL expression over score columns, and (b) **dynamic percentile thresholding** — "keep top X% by score" with the cutoff computed on-corpus via `approxQuantile` (this is a first-class feature, not an example: DCLM's own tooling ships a hardcoded threshold and lists dynamic percentile computation as an open gap — this feature is a headline differentiator; document the relativeError/accuracy tradeoff and benchmark the quantile pass separately); an end-to-end example notebook/script: WET sample → all 2 score layers (heauristic + astText) → dynamic-threshold filter → summary stats (score distributions, retention rate per rule).
 
-**Phase 5 — Benchmark + release.** 
+## Phase 5 — Benchmark + release
 Comparative benchmark mirroring the dedup module's, with two layers: (a) scoring throughput and cost-per-TB on a multi-node EMR run vs. datatrove's quality filters on the same sample, and (b) **whole-pipeline benchmark — the headline number**: dedup + scoring + dynamic-threshold filter composed as a single Spark job (one scan, no intermediate materialization) vs. the same stages run as sequential datatrove-style passes; report end-to-end wall-clock and cost. Plus score-agreement analysis vs. DCLM-Baseline classifier on a common sample; README/docs to release quality; version tag. (Positioning note for docs: do not claim shuffle/coordination advantages for scoring itself — it is map-only; the claims are single-pass pipeline composition, dynamic thresholding, and cost economics.)
 
 ## Discussion
