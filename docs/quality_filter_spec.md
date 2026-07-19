@@ -24,7 +24,7 @@ WARC dumps are roughly 3–4× larger than WET, and HTML parsing per document is
  Implement the approved heuristic set as score columns. Include: a config object enabling/disabling each rule; golden-file tests with hand-computed expected scores on ~20 crafted documents (clean prose, boilerplate, code, gibberish, repeated lines, non-English); a benchmark harness measuring rows/sec/core on sample WET data. Deliverable: scores match golden files; benchmark numbers reported.
 
 ### Phase 1a 
- create 12 native q_heur_* columns
+ create 12 native q_heur_* columns. we implement this in Cython because SQL expression scan the same document 12 times, but Cython allows to scan only 2 times as for loop.
 
 #### why can't we import from datatrove directly.
 - datatrove's PUNCTUATION_SET, copied exactly from `datatrove/utils/text.py` 
@@ -32,6 +32,24 @@ WARC dumps are roughly 3–4× larger than WET, and HTML parsing per document is
 
 ### Phase 1b 
  9 Gopher n-gram repetition columns via Cython kernel + pandas_udf 
+ - top_ngram_char_frac_3: "how dominant is the single most repeated short phrase?"
+ - dup_ngram_char_frac_5: it means "how much of the document is covered by any repeated long phrase?"
+
+ex) `buy cheap shoes online buy cheap shoes online buy cheap shoes today and save`
+total char = 76
+
+top_ngram_char_frac_3: count every 3-word window, take the most frequent one:
+buy cheap shoes appears 3× (word positions 1, 5, 9). Its char length is 15. So 15 × 3 / 76 = 0.592
+
+dup_ngram_char_frac_5: it means "how much of the document is covered by any repeated long phrase?"
+  `buy cheap shoes online buy` appeans from position 5. it consists of 26 chars
+  so 26/76 = 0.342
+
+we do this for top_ngram_char_frac_2 to top_ngram_char_frac_4, dup_ngram_char_frac_5 to dup_ngram_char_frac10
+
+**how to interpret this document?**
+this document repeats a 4-word cycle about 2.5 times, so duplication is visible up to n=7 and vanishes at n=8
+
 
 ### diff between 12 heauristic vs 9 n-gram.
 - 12 Phase-1a heuristics are stateless expressions

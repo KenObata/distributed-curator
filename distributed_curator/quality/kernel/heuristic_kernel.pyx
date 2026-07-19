@@ -43,6 +43,8 @@ with tuples) for exact datatrove-style semantics.
 #   #10 q_heur_dup_line_char_frac   <- rep_line_dup_chars / len(text)  (pass 3, _dup_scan_newline_split)
 #   #11 q_heur_dup_para_frac        <- para_dups / para_count          (pass 4, _dup_scan_newline_split)
 #   #12 q_heur_dup_para_char_frac   <- para_dup_chars / len(text)      (pass 4, _dup_scan_newline_split)
+#   #13-#15 q_heur_top_ngram_char_frac_{2,3,4} <- pass 5 -> ngram_kernel.pyx
+#   #16-#21 q_heur_dup_ngram_char_frac_{5..10} <- pass 5 -> ngram_kernel.pyx
 #
 # NOTE: checks are fused into shared scans on purpose (that fusion is the
 # speedup); one-check-per-unit structure lives in native_heuristics.py, the
@@ -50,6 +52,9 @@ with tuples) for exact datatrove-style semantics.
 # n_lines feeds #5/#6, len(text) feeds #10/#12.
 # ══════════════════════════════════════════════════════════════════════════════
 
+from cpython.mem cimport PyMem_Free, PyMem_Malloc
+
+from distributed_curator.quality.kernel.ngram_kernel cimport ngram_scores
 from cpython.unicode cimport Py_UNICODE_ISALPHA, Py_UNICODE_ISSPACE
 
 from distributed_curator.quality.config import GOPHER_STOP_WORDS, PUNCTUATION_CHARS
@@ -69,6 +74,17 @@ for _ch in PUNCTUATION_CHARS:
 cdef const unsigned char[::1] _PUNCT_TABLE = bytes(_punct_bytes)
 
 DEF ELLIPSIS_CP = 0x2026  # '…'
+# Polynomial rolling-hash base (mod 2^64 via unsigned overflow). Chosen so
+# window hashes COMPOSE: H(A||B) = H(A) * BASE^len(B) + H(B), letting pass 1
+# precompute one hash + one power per word and pass 5 combine any window in
+# O(n_gram) multiplies instead of re-hashing every character (the re-hash
+# version measured ~44x the doc's chars across the 9 n values). String
+# identity: exact concatenation semantics, so "".join("ab","c") ==
+# "".join("a","bc") collides exactly like datatrove's strings. 64-bit
+# hash identity is the stated approximation (collision ~1e-12/doc).
+# NOTE: ngram_kernel.pyx declares the same constant; the per-word hashes
+# built here and the window combines there must share a base.
+cdef unsigned long long POLY_BASE = ((<unsigned long long> 0x100) << 32) | 0x000001B3
 
 
 cdef inline bint _is_punct(Py_UCS4 ch) nogil:
@@ -103,7 +119,7 @@ def score_document(
 ):
     """Compute the 12 heuristic scores for one document.
 
-    Returns a 12-tuple in SCORE_COLUMN ORDER (see heuristics.py):
+    Returns a 21-tuple in KERNEL_COLUMN_ORDER (see kernel_scoring.py):
     (word_count, mean_word_len, hash_word_ratio, ellipsis_word_ratio,
      bullet_line_frac, ellipsis_line_frac, alpha_word_frac, stopword_count,
      dup_line_frac, dup_line_char_frac, dup_para_frac, dup_para_char_frac)
@@ -111,7 +127,7 @@ def score_document(
     None text -> all None. Ratios are None when their denominator is zero.
     """
     if text is None:
-        return (None,) * 12
+        return (None,) * 21
 
     cdef Py_ssize_t n = len(text)
     cdef Py_ssize_t i
@@ -130,6 +146,18 @@ def score_document(
     cdef long dot_run = 0            # -> #4 ('...' run tracker)
     cdef long ellipsis_count = 0     # -> #4
     cdef Py_ssize_t max_stop_len = 0 # -> #8 (slice-avoidance bound)
+
+    # word span arrays for pass 5 (n-gram checks #13-#21). Max possible
+    # words in n chars is (n+1)//2 (single-char words separated by spaces).
+    cdef Py_ssize_t max_words = (n + 1) // 2 + 1
+    cdef int* w_len = <int*> PyMem_Malloc(max_words * sizeof(int))
+    cdef unsigned long long* w_hash = <unsigned long long*> PyMem_Malloc(max_words * sizeof(unsigned long long))
+    cdef unsigned long long* w_pow = <unsigned long long*> PyMem_Malloc(max_words * sizeof(unsigned long long))
+    if w_len == NULL or w_hash == NULL or w_pow == NULL:
+        PyMem_Free(w_len); PyMem_Free(w_hash); PyMem_Free(w_pow)
+        raise MemoryError()
+    cdef unsigned long long word_poly = 0   # rolling hash of current word's chars
+    cdef unsigned long long word_pow = 1    # POLY_BASE ** word_len
 
     stop_set = frozenset(stop_words)
     for w in stop_set:
@@ -153,6 +181,9 @@ def score_document(
 
         if _is_space(ch):
             if word_start >= 0:  # close word
+                w_hash[n_words] = word_poly  # for pass 5 window combines
+                w_pow[n_words] = word_pow
+                w_len[n_words] = <int> word_len
                 n_words += 1
                 if word_has_nonpunct:
                     n_nonsym_words += 1
@@ -167,10 +198,14 @@ def score_document(
                 word_len = 0
                 word_has_alpha = False
                 word_has_nonpunct = False
+                word_poly = 0
+                word_pow = 1
         else:
             if word_start < 0:
                 word_start = i
             word_len += 1
+            word_poly = word_poly * POLY_BASE + <unsigned long long> (<Py_UCS4> ch)
+            word_pow = word_pow * POLY_BASE
             if not word_has_alpha and Py_UNICODE_ISALPHA(ch):
                 word_has_alpha = True
             if not word_has_nonpunct and not _is_punct(ch):
@@ -178,6 +213,11 @@ def score_document(
 
     ellipsis_count += dot_run // 3  # flush trailing dot run
     if word_start >= 0:  # flush trailing word
+
+        # w_hash, w_pow, w_len are used for ngram score
+        w_hash[n_words] = word_poly
+        w_pow[n_words] = word_pow
+        w_len[n_words] = <int> word_len
         n_words += 1
         if word_has_nonpunct:
             n_nonsym_words += 1
@@ -241,6 +281,25 @@ def score_document(
     cdef long para_dup_chars = 0 # -> #12
     _dup_scan_newline_split(text, s_start, s_end, 2, &para_count, &para_dups, &para_dup_chars)
 
+
+    # ── pass 5: n-gram repetition [#13-#21] — see ngram_kernel.pyx ───────────
+    # Delegates to the n-gram module (cimported: direct C call, no overhead).
+    # It consumes exactly the per-word hashes/powers/lengths recorded above.
+    cdef double[3] top_out
+    cdef double[6] dup_out
+    cdef unsigned char[3] top_valid
+    ngram_scores(w_hash, w_pow, w_len, n_words, n, top_out, dup_out, top_valid)
+
+    top_fracs = [top_out[0] if top_valid[0] else None,
+                 top_out[1] if top_valid[1] else None,
+                 top_out[2] if top_valid[2] else None]
+    dup_fracs = [dup_out[0], dup_out[1], dup_out[2], dup_out[3], dup_out[4], dup_out[5]]
+    if n == 0:  # empty text: every n-gram column is None
+        top_fracs = [None, None, None]
+        dup_fracs = [None] * 6
+
+    PyMem_Free(w_len); PyMem_Free(w_hash); PyMem_Free(w_pow)
+
     # ── assemble (try_divide semantics: None on zero denominator) ────────────
     word_count = n_nonsym_words  # #1
     mean_word_len = (<double> nonsym_len_sum / n_nonsym_words) if n_nonsym_words > 0 else None  # #2
@@ -258,6 +317,9 @@ def score_document(
         word_count, mean_word_len, hash_ratio, ell_ratio,
         bullet_frac, ell_line_frac, alpha_frac, len(seen_stops),  # len(seen_stops) is #8
         dup_line_frac, dup_line_chars, dup_para_frac, dup_para_chars,
+        top_fracs[0], top_fracs[1], top_fracs[2],                 # #13 #14 #15
+        dup_fracs[0], dup_fracs[1], dup_fracs[2],                 # #16 #17 #18
+        dup_fracs[3], dup_fracs[4], dup_fracs[5],                 # #19 #20 #21
     )
 
 
