@@ -1,0 +1,132 @@
+[
+  {
+    "doc_id": "hq_prose",
+    "text": "explain the reason carefully because a thoughtful answer requires evidence",
+    "_derivation": "normalized='explain the reason carefully because a thoughtful answer requires evidence'; quality top label __label__hq p=0.9928494691848755 -> q_ft_score=p; lid top label __label__en p=0.9401865005493164",
+    "expected": {
+      "q_ft_score": 0.9928494691848755,
+      "q_lid_lang": "en",
+      "q_lid_score": 0.9401865005493164
+    }
+  },
+  {
+    "doc_id": "cc_spam",
+    "text": "buy cheap widgets now click here free shipping limited time offer",
+    "_derivation": "normalized='buy cheap widgets now click here free shipping limited time offer'; quality top label __label__cc p=0.9991219639778137 -> q_ft_score=1-p; lid top label __label__en p=0.5820640921592712",
+    "expected": {
+      "q_ft_score": 0.0008780360221862793,
+      "q_lid_lang": "en",
+      "q_lid_score": 0.5820640921592712
+    }
+  },
+  {
+    "doc_id": "multiline_lf",
+    "text": "explain the reason carefully\nbecause a thoughtful answer requires evidence",
+    "_derivation": "normalized='explain the reason carefully because a thoughtful answer requires evidence'; quality top label __label__hq p=0.9928494691848755 -> q_ft_score=p; lid top label __label__en p=0.9401865005493164",
+    "expected": {
+      "q_ft_score": 0.9928494691848755,
+      "q_lid_lang": "en",
+      "q_lid_score": 0.9401865005493164
+    }
+  },
+  {
+    "doc_id": "multiline_crlf",
+    "text": "buy cheap widgets now\r\nclick here free shipping",
+    "_derivation": "normalized='buy cheap widgets now click here free shipping'; quality top label __label__cc p=0.9988433718681335 -> q_ft_score=1-p; lid top label __label__en p=0.6291388869285583",
+    "expected": {
+      "q_ft_score": 0.001156628131866455,
+      "q_lid_lang": "en",
+      "q_lid_score": 0.6291388869285583
+    }
+  },
+  {
+    "doc_id": "exotic_separator",
+    "text": "explain the reason carefully because evidence matters",
+    "_derivation": "normalized='explain the reason carefully because evidence matters'; quality top label __label__hq p=0.9912862777709961 -> q_ft_score=p; lid top label __label__en p=0.9600819945335388",
+    "expected": {
+      "q_ft_score": 0.9912862777709961,
+      "q_lid_lang": "en",
+      "q_lid_score": 0.9600819945335388
+    }
+  },
+  {
+    "doc_id": "leading_trailing_ws",
+    "text": "   buy cheap widgets now click here   \n",
+    "_derivation": "normalized='buy cheap widgets now click here'; quality top label __label__cc p=0.9986612200737 -> q_ft_score=1-p; lid top label __label__en p=0.6382633447647095",
+    "expected": {
+      "q_ft_score": 0.0013387799263000488,
+      "q_lid_lang": "en",
+      "q_lid_score": 0.6382633447647095
+    }
+  },
+  {
+    "doc_id": "japanese",
+    "text": "東京 は 日本 の 首都 であり 多く の 人 が 住んで いる 都市 です",
+    "_derivation": "normalized='東京 は 日本 の 首都 であり 多く の 人 が 住んで いる 都市 です'; quality top label __label__hq p=0.5273416638374329 -> q_ft_score=p; lid top label __label__ja p=0.9989780187606812",
+    "expected": {
+      "q_ft_score": 0.5273416638374329,
+      "q_lid_lang": "ja",
+      "q_lid_score": 0.9989780187606812
+    }
+  },
+  {
+    "doc_id": "english_lid",
+    "text": "the quick brown fox jumps over the lazy dog every single morning",
+    "_derivation": "normalized='the quick brown fox jumps over the lazy dog every single morning'; quality top label __label__hq p=0.97746741771698 -> q_ft_score=p; lid top label __label__en p=0.9992066025733948",
+    "expected": {
+      "q_ft_score": 0.97746741771698,
+      "q_lid_lang": "en",
+      "q_lid_score": 0.9992066025733948
+    }
+  },
+  {
+    "doc_id": "emoji",
+    "text": "explain the reason carefully 🎉 because evidence matters 🎉",
+    "_derivation": "normalized='explain the reason carefully 🎉 because evidence matters 🎉'; quality top label __label__hq p=0.9837377071380615 -> q_ft_score=p; lid top label __label__en p=0.9309847950935364",
+    "expected": {
+      "q_ft_score": 0.9837377071380615,
+      "q_lid_lang": "en",
+      "q_lid_score": 0.9309847950935364
+    }
+  },
+  {
+    "doc_id": "mixed_script",
+    "text": "東京 tokyo は the 首都 capital です",
+    "_derivation": "normalized='東京 tokyo は the 首都 capital です'; quality top label __label__hq p=0.9680067300796509 -> q_ft_score=p; lid top label __label__ja p=0.6567342281341553",
+    "expected": {
+      "q_ft_score": 0.9680067300796509,
+      "q_lid_lang": "ja",
+      "q_lid_score": 0.6567342281341553
+    }
+  },
+  {
+    "doc_id": "single_word",
+    "text": "widgets",
+    "_derivation": "normalized='widgets'; quality top label __label__cc p=0.907391369342804 -> q_ft_score=1-p; lid top label __label__en p=0.9518479704856873",
+    "expected": {
+      "q_ft_score": 0.09260863065719604,
+      "q_lid_lang": "en",
+      "q_lid_score": 0.9518479704856873
+    }
+  },
+  {
+    "doc_id": "whitespace_only",
+    "text": "   \n  ",
+    "_derivation": "normalized=''; quality top label __label__hq p=0.7288814783096313 -> q_ft_score=p; lid top label __label__en p=0.9870683550834656",
+    "expected": {
+      "q_ft_score": 0.7288814783096313,
+      "q_lid_lang": "en",
+      "q_lid_score": 0.9870683550834656
+    }
+  },
+  {
+    "doc_id": "empty",
+    "text": "",
+    "_derivation": "normalized=''; quality top label __label__hq p=0.7288814783096313 -> q_ft_score=p; lid top label __label__en p=0.9870683550834656",
+    "expected": {
+      "q_ft_score": 0.7288814783096313,
+      "q_lid_lang": "en",
+      "q_lid_score": 0.9870683550834656
+    }
+  }
+]

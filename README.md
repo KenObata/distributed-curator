@@ -58,6 +58,58 @@ All benchmarks run on Common Crawl WET files (CC-MAIN-2024-22) with `similarity_
 | 9K WET | 253M | 55M | 21.82% | 9× r5ad.8xlarge | ~1.5 hr | ~$50 |
 | 90K WET | 2.53B | 767M | 30.39% | 63× r6gd.8xlarge | ~4.5 hr | ~$620 |
 
+## Quality Scoring
+
+Document quality scoring for LLM pretraining corpora. **Layers emit scores,
+never pass/fail** — filtering is a separate, user-configured step, so the same
+scoring pass supports analysis, static thresholds, and corpus-relative
+(percentile) cutoffs.
+
+### Heuristic scores
+
+12 `q_heur_*` columns implementing the Gopher quality and repetition rules as
+native Spark SQL expressions (no UDFs, map-only, no shuffle), plus a compiled
+Cython kernel that computes the same columns per document:
+
+```python
+from distributed_curator.quality import compute_heuristic_scores
+
+scored = compute_heuristic_scores(df, text_column="text")                     # native
+scored = compute_heuristic_scores(df, implementation="kernel")                # compiled
+```
+
+Semantics follow [datatrove](https://github.com/huggingface/datatrove)'s
+Gopher reimplementation so scores are directly comparable. Reference
+thresholds are documented per column in the docstrings; the layer never
+applies them.
+
+### fastText scoring (quality classifier + language ID)
+
+```python
+from distributed_curator.quality import (
+    FastTextConfig, compute_fasttext_quality_scores, compute_language_scores,
+)
+
+config = FastTextConfig(
+    quality_model_path="/mnt/models/oh_eli5.bin",
+    lid_model_path="/mnt/models/lid.176.ftz",
+)
+scored = compute_fasttext_quality_scores(df, config=config)   # -> q_ft_score
+scored = compute_language_scores(scored, config=config)       # -> q_lid_lang, q_lid_score
+```
+
+Input normalization and score extraction are copied verbatim from DCLM's
+`classify_fasttext_hq_prob`, so `q_ft_score` is directly comparable to
+DCLM-Baseline's published values (their reference threshold, 0.018112, is
+documented in `FastTextConfig`).
+
+Models are **never vendored** — see [docs/fasttext.md](docs/fasttext.md) for
+downloads, sizes (2.39 GB quality classifier, ~917 KB compressed LID),
+licenses (MIT and CC-BY-SA-3.0), and the per-worker memory characteristics.
+The Python implementation is the reference/oracle path: it loads the model
+once per Python worker process, duplicating a 2.39 GB model per task slot.
+Use it for correctness work and small runs.
+
 ## Configuration
 
 ```python
@@ -96,6 +148,8 @@ partition_aware_deduplicate(
 The Scala UDF JAR is compiled against Spark 3.5. Spark 4.0 support requires recompilation due to breaking API changes in `StructType`.
 
 ## Documentation
+
+- [fastText models: downloads, sizes, licenses](docs/fasttext.md)
 
 - [Architecture](docs/architecture.md) — detailed pipeline walkthrough, design decisions, and performance characteristics
 - [EMR Deployment](docs/emr-deployment.md) — Terraform setup, bootstrap configuration, and spark-submit examples
