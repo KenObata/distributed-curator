@@ -335,6 +335,7 @@ class HeuristicConfig:
     enable_alpha_word_fraction: bool = True
     enable_stop_words: bool = True
     enable_dup_lines_paragraphs: bool = True
+    enable_ngram_repetition: bool = True  # kernel-only (see NATIVE_UNSUPPORTED_GROUPS)
 
     stop_words: tuple[str, ...] = GOPHER_STOP_WORDS
     bullet_prefixes: tuple[str, ...] = ("\u2022", "-")  # placeholder, fixed below

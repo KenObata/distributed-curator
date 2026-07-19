@@ -285,3 +285,27 @@ class TestNativeOmitsNgramColumns:
         assert ngram_cols.isdisjoint(native_cols)
         assert ngram_cols.issubset(kernel_cols)
         assert len(kernel_cols) == len(native_cols) + 9
+
+
+class TestKernelSchemaAlignment:
+    """The kernel's return arity and the Spark column list must not drift.
+
+    Regression guard: PR-3b landed the kernel side (score_document returning
+    21 values) without the Spark wiring (KERNEL_COLUMN_ORDER still 12), so
+    every implementation="kernel" call failed at runtime with
+    '12 columns passed, passed data had 21 columns'. These assertions fail
+    loudly on the driver instead, with no Spark session needed.
+    """
+
+    def test_return_arity_matches_column_order(self):
+        assert len(kernel_mod.score_document("a b c")) == len(KERNEL_COLUMN_ORDER)
+
+    def test_null_return_arity_matches_column_order(self):
+        assert len(kernel_mod.score_document(None)) == len(KERNEL_COLUMN_ORDER)
+
+    def test_every_kernel_column_is_registered_in_a_group(self):
+        from distributed_curator.quality.native_heuristics import SCORE_COLUMN_GROUPS
+
+        registered = {c for cols in SCORE_COLUMN_GROUPS.values() for c in cols}
+        missing = [c for c in KERNEL_COLUMN_ORDER if c not in registered]
+        assert not missing, f"kernel columns absent from SCORE_COLUMN_GROUPS: {missing}"
