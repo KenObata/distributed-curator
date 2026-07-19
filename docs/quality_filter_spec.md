@@ -60,6 +60,13 @@ this document repeats a 4-word cycle about 2.5 times, so duplication is visible 
   - require tokenizing to words, building per-document frequency maps, membership hash sets, and the skip-ahead logic that advances past an already-counted duplicated span. That's branchy, data-structure-heavy, positional computation. Catalyst has no efficient primitive for it
   - each of the 9 columns as an independent SQL expression re-tokenizes and re-hashes the document from scratch — Catalyst can't share a frequency map across expression trees.
 
+#### why do we need to hash from n-gram in phase 1b (pass5)? 
+To count repeats you must compare windows against each other. Comparing strings means building "buy cheap shoes" (15 chars) for every window, then string-comparing on every hash-table probe. Hashing collapses each window to one 64-bit integer: equal windows → equal integer, so counting becomes integer lookups in a C array.
+Without hashing you'd allocate ~44× the document's characters as strings; with it, pass 5 touches no characters at all 
+
+##### why phase 1a (pass 1 - 4) doesn't need polinomial hash ?
+Because passes 1–4 never need to combine smaller pieces into bigger ones — each unit they compare is already a fixed, non-overlapping piece of text.
+
 
 **Phase 2 — fastText layer.**
  `mapPartitions` scoring with per-partition model load; model file distribution mechanism (SparkFiles or S3 pull — match repo conventions); training script that reproduces the DCLM-Baseline classifier from public data (document every data source and step); tests with a tiny fixture model committed to the repo. Deliverable: scoring a sample partition matches single-machine fastText output exactly; throughput benchmark.

@@ -7,7 +7,7 @@ The kernel must be indistinguishable from the native Spark-SQL implementation
 1. Golden parity: kernel output matches every fixture in quality_golden.json
    (same fixtures, same derivation provenance as the native tests — see
    quality_heuristics_test.py's module docstring).
-2. native_heuristics.py parity: kernel == native_heuristics.py, column by column, on seeded random
+2. Differential parity: kernel == native, column by column, on seeded random
    adversarial documents (unicode whitespace, CJK, \\r\\n, bullet/ellipsis,
    newline runs, empty/whitespace/None docs). A 3,001-doc run of this
    generator found two real bugs in the native implementation during PR-3a
@@ -21,6 +21,7 @@ import json
 import math
 import os
 import random
+from collections import Counter
 
 import pytest
 from pyspark.sql.types import StringType, StructField, StructType
@@ -102,7 +103,7 @@ class TestKernelGoldenParity:
                 )
 
 
-class TestKernelNativeHeuristicParity:
+class TestKernelNativeDifferential:
     """Kernel and native implementations agree column-by-column on random docs."""
 
     def test_differential_parity(self, spark):
@@ -114,8 +115,10 @@ class TestKernelNativeHeuristicParity:
         native = {r["doc_id"]: r.asDict() for r in compute_heuristic_scores(df, implementation="native").collect()}
         kernel = {r["doc_id"]: r.asDict() for r in compute_heuristic_scores(df, implementation="kernel").collect()}
 
+        ngram_cols = set(SCORE_COLUMN_GROUPS["enable_ngram_repetition"])
+        shared_cols = [c for c in KERNEL_COLUMN_ORDER if c not in ngram_cols]
         for i in range(len(docs)):
-            for column in KERNEL_COLUMN_ORDER:
+            for column in shared_cols:  # n-gram cols are kernel-only; oracle-tested below
                 n, k = native[f"d{i}"][column], kernel[f"d{i}"][column]
                 assert values_equal(k, n), f"d{i}.{column}: kernel={k} native={n} text={docs[i]!r:.80}"
 
@@ -150,3 +153,135 @@ class TestKernelContract:
         df = spark.createDataFrame([("d1", "x")], ["doc_id", "text"])
         with pytest.raises(ValueError, match="implementation"):
             compute_heuristic_scores(df, implementation="rust")
+
+    def test_top_ngram_none_at_word_count_boundary(self):
+        """out_top_valid boundary: exactly n-1 words -> column is None, not 0.0.
+
+        Targets the ngram_kernel.pyx <-> heuristic_kernel.pyx module boundary
+        specifically (the flag array), not the n-gram math itself (already
+        covered by the golden and oracle-differential tests). A bug that
+        left out_top_valid uninitialized would silently emit 0.0 here.
+        """
+        # top_ngram_char_frac_2 needs >=2 words; top_ngram_char_frac_4 needs >=4.
+        got_1w = dict(zip(KERNEL_COLUMN_ORDER, kernel_mod.score_document("solo")))
+        assert got_1w["q_heur_top_ngram_char_frac_2"] is None
+        assert got_1w["q_heur_top_ngram_char_frac_3"] is None
+        assert got_1w["q_heur_top_ngram_char_frac_4"] is None
+
+        got_3w = dict(zip(KERNEL_COLUMN_ORDER, kernel_mod.score_document("one two three")))
+        assert got_3w["q_heur_top_ngram_char_frac_2"] is not None  # 3 words >= 2
+        assert got_3w["q_heur_top_ngram_char_frac_3"] is not None  # 3 words >= 3
+        assert got_3w["q_heur_top_ngram_char_frac_4"] is None  # 3 words < 4
+
+    def test_ngram_hash_table_resize_path(self):
+        """Large documents exercise the open-addressing table's capacity
+        doubling (cap starts small, grows to >= 2*n_words+2); golden fixtures
+        are too short to reach a resize. Cross-checked against the datatrove-
+        verbatim oracle so this also confirms correctness survives the
+        larger capacity, not just that it runs without crashing.
+        """
+        words = [f"word{i}" for i in range(2000)] + ["repeat"] * 50
+        text = " ".join(words)
+        got = dict(zip(KERNEL_COLUMN_ORDER, kernel_mod.score_document(text)))
+
+        oracle_words = text.split()
+        oracle_grams = [" ".join(oracle_words[i : i + 2]) for i in range(len(oracle_words) - 1)]
+        top = Counter(oracle_grams).most_common(1)[0]
+        expected_top_2 = len(top[0]) * top[1] / len(text)
+
+        assert values_equal(got["q_heur_top_ngram_char_frac_2"], expected_top_2)
+        assert got["q_heur_dup_ngram_char_frac_5"] > 0  # the 50x "repeat" run
+
+
+# ── datatrove n-gram reference, copied verbatim (gopher_repetition_filter.py) ──
+def _get_n_grams(words, n):
+    return [" ".join(words[i : i + n]) for i in range(len(words) - n + 1)]
+
+
+def _find_top_duplicate(x):
+    from collections import Counter
+
+    counter = Counter()
+    for element in x:
+        counter[element] += 1
+    top_n_gram = counter.most_common(1)[0]
+    return len(top_n_gram[0]) * top_n_gram[1]
+
+
+def _find_all_duplicate(words, n):
+    unique = set()
+    repeated_chars, idx = 0, 0
+    while idx < len(words) - n + 1:
+        n_gram = "".join(words[idx : idx + n])
+        if n_gram in unique:
+            repeated_chars += len(n_gram)
+            idx += n
+        else:
+            unique.add(n_gram)
+            idx += 1
+    return repeated_chars
+
+
+def oracle_ngram_scores(text):
+    """Expected n-gram scores per the pinned semantics (whitespace words)."""
+    out = {}
+    if text is None or len(text) == 0:
+        for n in (2, 3, 4):
+            out[f"q_heur_top_ngram_char_frac_{n}"] = None
+        for n in range(5, 11):
+            out[f"q_heur_dup_ngram_char_frac_{n}"] = None
+        return out
+    words = text.split()
+    for n in (2, 3, 4):
+        grams = _get_n_grams(words, n)
+        out[f"q_heur_top_ngram_char_frac_{n}"] = _find_top_duplicate(grams) / len(text) if grams else None
+    for n in range(5, 11):
+        out[f"q_heur_dup_ngram_char_frac_{n}"] = _find_all_duplicate(words, n) / len(text)
+    return out
+
+
+class TestKernelNgramOracleDifferential:
+    """Kernel n-gram columns match the datatrove reference implementation.
+
+    (No Spark needed: the oracle is pure Python and the kernel is called
+    directly. A 4,001-doc run of this comparison — including the
+    '"ab"+"c" == "a"+"bc"' concatenation-identity trap and Counter tie
+    behavior — gated PR-3b; this in-suite version runs a smaller seeded
+    sample per commit.)
+    """
+
+    def test_ngram_differential_parity(self):
+        rng = random.Random(20260714)
+        phrase_words = ["the", "buy", "widgets", "ab", "c", "a", "bc", "東京", "…", "now."]
+        docs = []
+        for _ in range(400):
+            parts = []
+            for _ in range(rng.randint(1, 90)):
+                parts.append(rng.choice(phrase_words))
+                parts.append(rng.choice([" ", "  ", "\n", "\u3000"]))
+            doc = "".join(parts)
+            if rng.random() < 0.5:
+                phrase = " ".join(rng.choice(phrase_words) for _ in range(rng.randint(2, 12)))
+                doc += (" " + phrase) * rng.randint(1, 4)
+            docs.append(doc)
+        docs += ["", None, "one", "a b c d e f g a b c d e f g"]
+
+        for i, t in enumerate(docs):
+            got = dict(zip(KERNEL_COLUMN_ORDER, kernel_mod.score_document(t)))
+            for column, expected in oracle_ngram_scores(t).items():
+                assert values_equal(got[column], expected), (
+                    f"doc {i}.{column}: kernel={got[column]} oracle={expected} text={t!r:.70}"
+                )
+
+
+class TestNativeOmitsNgramColumns:
+    """Native implementation omits (with a warning) the kernel-only n-gram group."""
+
+    def test_native_omits_and_kernel_emits(self, spark):
+        df = spark.createDataFrame([("d1", "a b c d e f g a b c d e f g")], ["doc_id", "text"])
+        native_cols = set(compute_heuristic_scores(df, implementation="native").columns)
+        kernel_cols = set(compute_heuristic_scores(df, implementation="kernel").columns)
+        ngram_cols = set(SCORE_COLUMN_GROUPS["enable_ngram_repetition"])
+        assert ngram_cols.isdisjoint(native_cols)
+        assert ngram_cols.issubset(kernel_cols)
+        assert len(kernel_cols) == len(native_cols) + 9
