@@ -24,7 +24,7 @@ WARC dumps are roughly 3–4× larger than WET, and HTML parsing per document is
  Implement the approved heuristic set as score columns. Include: a config object enabling/disabling each rule; golden-file tests with hand-computed expected scores on ~20 crafted documents (clean prose, boilerplate, code, gibberish, repeated lines, non-English); a benchmark harness measuring rows/sec/core on sample WET data. Deliverable: scores match golden files; benchmark numbers reported.
 
 ### Phase 1a 
- create 12 native q_heur_* columns
+ create 12 native q_heur_* columns. we implement this in Cython because SQL expression scan the same document 12 times, but Cython allows to scan only 2 times as for loop.
 
 #### why can't we import from datatrove directly.
 - datatrove's PUNCTUATION_SET, copied exactly from `datatrove/utils/text.py` 
@@ -32,7 +32,40 @@ WARC dumps are roughly 3–4× larger than WET, and HTML parsing per document is
 
 ### Phase 1b 
  9 Gopher n-gram repetition columns via Cython kernel + pandas_udf 
+ - top_ngram_char_frac_3: "how dominant is the single most repeated short phrase?"
+ - dup_ngram_char_frac_5: it means "how much of the document is covered by any repeated long phrase?"
 
+ex) `buy cheap shoes online buy cheap shoes online buy cheap shoes today and save`
+total char = 76
+
+top_ngram_char_frac_3: count every 3-word window, take the most frequent one:
+buy cheap shoes appears 3× (word positions 1, 5, 9). Its char length is 15. So 15 × 3 / 76 = 0.592
+
+dup_ngram_char_frac_5: it means "how much of the document is covered by any repeated long phrase?"
+  `buy cheap shoes online buy` appeans from position 5. it consists of 26 chars
+  so 26/76 = 0.342
+
+we do this for top_ngram_char_frac_2 to top_ngram_char_frac_4, dup_ngram_char_frac_5 to dup_ngram_char_frac10
+
+**how to interpret this document?**
+this document repeats a 4-word cycle about 2.5 times, so duplication is visible up to n=7 and vanishes at n=8
+
+
+### diff between 12 heauristic vs 9 n-gram.
+- 12 Phase-1a heuristics are stateless expressions
+  - each one is a closed-form function of the string, expressible as a single Catalyst expression tree (length, split, regexp_count, arithmetic).
+  - they compile into WholeStageCodegen: JIT'd JVM bytecode operating directly on Tungsten rows.
+
+- 9 n-gram repetition columns are stateful algorithms.
+  - require tokenizing to words, building per-document frequency maps, membership hash sets, and the skip-ahead logic that advances past an already-counted duplicated span. That's branchy, data-structure-heavy, positional computation. Catalyst has no efficient primitive for it
+  - each of the 9 columns as an independent SQL expression re-tokenizes and re-hashes the document from scratch — Catalyst can't share a frequency map across expression trees.
+
+#### why do we need to hash from n-gram in phase 1b (pass5)? 
+To count repeats you must compare windows against each other. Comparing strings means building "buy cheap shoes" (15 chars) for every window, then string-comparing on every hash-table probe. Hashing collapses each window to one 64-bit integer: equal windows → equal integer, so counting becomes integer lookups in a C array.
+Without hashing you'd allocate ~44× the document's characters as strings; with it, pass 5 touches no characters at all 
+
+##### why phase 1a (pass 1 - 4) doesn't need polinomial hash ?
+Because passes 1–4 never need to combine smaller pieces into bigger ones — each unit they compare is already a fixed, non-overlapping piece of text.
 
 
 **Phase 2 — fastText layer.**
