@@ -33,6 +33,14 @@ WARC dumps are roughly 3–4× larger than WET, and HTML parsing per document is
 ### Phase 1b 
  9 Gopher n-gram repetition columns via Cython kernel + pandas_udf 
 
+### diff between 12 heauristic vs 9 n-gram.
+- 12 Phase-1a heuristics are stateless expressions
+  - each one is a closed-form function of the string, expressible as a single Catalyst expression tree (length, split, regexp_count, arithmetic).
+  - they compile into WholeStageCodegen: JIT'd JVM bytecode operating directly on Tungsten rows.
+
+- 9 n-gram repetition columns are stateful algorithms.
+  - require tokenizing to words, building per-document frequency maps, membership hash sets, and the skip-ahead logic that advances past an already-counted duplicated span. That's branchy, data-structure-heavy, positional computation. Catalyst has no efficient primitive for it
+  - each of the 9 columns as an independent SQL expression re-tokenizes and re-hashes the document from scratch — Catalyst can't share a frequency map across expression trees.
 
 
 **Phase 2 — fastText layer.**
