@@ -35,6 +35,17 @@ KERNEL_COLUMN_ORDER: tuple[str, ...] = (
     "q_heur_dup_line_char_frac",
     "q_heur_dup_para_frac",
     "q_heur_dup_para_char_frac",
+    # n-gram repetition group (checks #13-#21, ngram_kernel.pyx). Kernel-only:
+    # not expressible as native SQL expressions.
+    "q_heur_top_ngram_char_frac_2",
+    "q_heur_top_ngram_char_frac_3",
+    "q_heur_top_ngram_char_frac_4",
+    "q_heur_dup_ngram_char_frac_5",
+    "q_heur_dup_ngram_char_frac_6",
+    "q_heur_dup_ngram_char_frac_7",
+    "q_heur_dup_ngram_char_frac_8",
+    "q_heur_dup_ngram_char_frac_9",
+    "q_heur_dup_ngram_char_frac_10",
 )
 
 _INT_COLUMNS = frozenset({"q_heur_word_count", "q_heur_stopword_count"})

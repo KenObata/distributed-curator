@@ -58,7 +58,25 @@ SCORE_COLUMN_GROUPS: dict[str, tuple[str, ...]] = {
         "q_heur_dup_para_frac",
         "q_heur_dup_para_char_frac",
     ),
+    # Gopher n-gram repetition (Rae et al. Table A1; datatrove parity).
+    # KERNEL-ONLY: the duplicate-n-gram skip-ahead is data-dependent control
+    # flow, not expressible as SQL expressions. The native implementation
+    # omits these columns and warns.
+    "enable_ngram_repetition": (
+        "q_heur_top_ngram_char_frac_2",
+        "q_heur_top_ngram_char_frac_3",
+        "q_heur_top_ngram_char_frac_4",
+        "q_heur_dup_ngram_char_frac_5",
+        "q_heur_dup_ngram_char_frac_6",
+        "q_heur_dup_ngram_char_frac_7",
+        "q_heur_dup_ngram_char_frac_8",
+        "q_heur_dup_ngram_char_frac_9",
+        "q_heur_dup_ngram_char_frac_10",
+    ),
 }
+
+# Column groups the native (SQL-expression) implementation cannot compute.
+NATIVE_UNSUPPORTED_GROUPS: frozenset[str] = frozenset({"enable_ngram_repetition"})
 
 
 def _whitespace_words(text: Column) -> Column:
@@ -193,7 +211,18 @@ def compute_native_heuristic_scores(
     if text_column not in df.columns:
         raise ValueError(f"text_column '{text_column}' not found in DataFrame columns: {df.columns}")
 
-    enabled_columns = [col for flag, cols in SCORE_COLUMN_GROUPS.items() if getattr(config, flag) for col in cols]
+    if getattr(config, "enable_ngram_repetition", False):
+        logger.warning(
+            "n-gram repetition columns are not expressible as native SQL expressions "
+            "and will be OMITTED by implementation='native'; use implementation='kernel' "
+            "to compute them."
+        )
+    enabled_columns = [
+        col
+        for flag, cols in SCORE_COLUMN_GROUPS.items()
+        if getattr(config, flag) and flag not in NATIVE_UNSUPPORTED_GROUPS
+        for col in cols
+    ]
     scratch_columns = [_TMP_WORDS, _TMP_NONSYM_WORDS, _TMP_QUALITY_LINES, _TMP_LINE_STATS, _TMP_PARA_STATS]
     collisions = [c for c in enabled_columns + scratch_columns if c in df.columns]
     if collisions:

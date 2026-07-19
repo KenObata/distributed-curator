@@ -80,7 +80,7 @@ include = ["distributed_curator*"]
 # Include non-Python files in the package (Cython source, C source, JAR)
 [tool.setuptools.package-data]
 "distributed_curator.cython_minhash" = ["*.pyx", "*.c", "*.h"]
-"distributed_curator.quality.kernel" = ["*.pyx", "*.c", "*.h"]
+"distributed_curator.quality.kernel" = ["*.pyx", "*.pxd", "*.c", "*.h"]  # .pxd is cimported at build time
 
 # bundle jar inside of pip - users don't need manual download from github
 "distributed_curator.jars" = ["*.jar"]
