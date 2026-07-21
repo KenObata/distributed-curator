@@ -25,6 +25,21 @@ Design:
 Verification gate: :func:`verify_export` reloads the exported artifacts and
 compares them **bytewise** against ``get_input_matrix()`` / ``get_output_matrix()``.
 Bytewise rather than ``==`` so NaN and -0.0 are compared honestly.
+
+Model download one time setup:
+- mkdir -p models
+- curl -L -o models/lid.176.bin https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin
+- hf download mlfoundations/fasttext-oh-eli5 --local-dir ./models
+
+Run this script:
+- python -m distributed_curator.quality.fasttext_convert \
+    models/openhermes_reddit_eli5_vs_rw_v2_bigram_200k_train.bin \
+    ./artifacts/oh-eli5
+
+- python -m distributed_curator.quality.fasttext_convert \
+    models/lid.176.bin \
+    ./artifacts/lid176
+
 """
 
 from __future__ import annotations
