@@ -157,10 +157,49 @@ if $HAS_PY || $HAS_TEST_JSON || $HAS_PYX; then
     fi
 
     # ── 5. Test class name check ────────────────────────────────────────
-    BAD_TEST_CLASSES=$(grep -rn "^class " test/unit_test --include='*_test.py' --exclude='__init__.py' \
-     | grep -v "^.*:class Test" || true)
+    # Only classes pytest would actually try to collect — i.e. ones that
+    # define at least one test_* method — must start with 'Test'. Plain
+    # helper/stub classes used *by* tests (e.g. a fake of an external API's
+    # args object) are exempt: pytest's default `python_classes = Test*`
+    # only collects Test-prefixed classes in the first place, so a helper
+    # class was never going to be run either way. A grep on "^class " can't
+    # tell the two apart, so this uses ast instead.
+    TEST_CLASS_FILES=$(find test/unit_test -name '*_test.py' 2>/dev/null)
+    if [[ -n "$TEST_CLASS_FILES" ]]; then
+        # Intentionally unquoted $TEST_CLASS_FILES — word splitting is wanted
+        # so each path becomes a separate argv entry.
+        BAD_TEST_CLASSES=$(python3 - $TEST_CLASS_FILES <<'PYEOF'
+import ast
+import sys
+
+bad = []
+for path in sys.argv[1:]:
+    try:
+        with open(path, encoding="utf-8") as f:
+            tree = ast.parse(f.read(), filename=path)
+    except SyntaxError:
+        # Unparseable file — not this check's job to report that.
+        continue
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        has_test_method = any(
+            isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and child.name.startswith("test_")
+            for child in node.body
+        )
+        if has_test_method and not node.name.startswith("Test"):
+            bad.append(f"{path}:{node.lineno}: class {node.name}")
+
+print("\n".join(bad))
+PYEOF
+        )
+    else
+        BAD_TEST_CLASSES=""
+    fi
+
     if [[ -n "$BAD_TEST_CLASSES" ]]; then
-        printf "  ${FAIL} Test classes must start with 'Test' (capital T) for pytest discovery:\n"
+        printf "  ${FAIL} Classes containing test_* methods must start with 'Test' for pytest discovery:\n"
         echo "$BAD_TEST_CLASSES" | while read -r line; do
             printf "       %s\n" "$line"
         done
