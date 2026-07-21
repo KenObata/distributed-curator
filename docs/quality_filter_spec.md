@@ -1,13 +1,13 @@
 # Tech Spec
 
 ## Overview
-**Phase 0 — WARC/WET text extraction layer.**
+### Phase 0 — WARC/WET text extraction layer.**
 Use resiliparse (cython) .mapPartition to extract only text from WARC.
 
-### why WARC format is better than WET form in quality scoring?
+#### why WARC format is better than WET form in quality scoring?
 WARC gives you the raw HTML, so you control extraction. With the DOM available you can run a proper content extractor — trafilatura is the current standard (RefinedWeb and FineWeb both use it) — which uses tag structure, link density, and DOM position to isolate the main content block and discard chrome before any filtering happens. You also gain filtering signals that don't exist in WET: link-to-text ratio (high = nav/spam page), tag density, <code> blocks you can deliberately preserve, metadata like lang attributes, and clean paragraph boundaries that make heuristics like "fraction of lines ending in punctuation" actually meaningful. FineWeb's ablations showed WARC + trafilatura produced measurably better models than the same pipeline on WET — the extraction step alone was one of their larger wins.
 
-### Why dedupe is okay to use WET but quality scorre should use WARC?
+#### Why dedupe is okay to use WET but quality scorre should use WARC?
 WARC dumps are roughly 3–4× larger than WET, and HTML parsing per document is far more compute than reading pre-extracted text — for a dedup-focused pipeline like yours, WET is a defensible choice because MinHash over slightly noisy text still finds the duplicates, and the boilerplate is itself near-identical across pages (arguably helping template-clone detection). But for quality scoring specifically, garbage-in applies: KenLM perplexity and classifier scores computed over text that's 30% nav-menu noise are measuring the extractor as much as the page
 
 ### conclusion
@@ -20,17 +20,17 @@ WARC dumps are roughly 3–4× larger than WET, and HTML parsing per document is
   - On model quality, one recent ablation comparing all four extractors found aggregate benchmark scores of 44.29% for trafilatura, 44.02% for resiliparse, and 44.74% for jusText, versus 40.57% for WET
     - ref: https://arxiv.org/pdf/2511.18054
 
-**Phase 1 — Heuristic layer.**
+### Phase 1 — Heuristic layer.
  Implement the approved heuristic set as score columns. Include: a config object enabling/disabling each rule; golden-file tests with hand-computed expected scores on ~20 crafted documents (clean prose, boilerplate, code, gibberish, repeated lines, non-English); a benchmark harness measuring rows/sec/core on sample WET data. Deliverable: scores match golden files; benchmark numbers reported.
 
-### Phase 1a 
+#### Phase 1a 
  create 12 native q_heur_* columns. we implement this in Cython because SQL expression scan the same document 12 times, but Cython allows to scan only 2 times as for loop.
 
-#### why can't we import from datatrove directly.
+##### why can't we import from datatrove directly.
 - datatrove's PUNCTUATION_SET, copied exactly from `datatrove/utils/text.py` 
 - we need to ensure determinism. copying is fine.
 
-### Phase 1b 
+#### Phase 1b 
  9 Gopher n-gram repetition columns via Cython kernel + pandas_udf 
  - top_ngram_char_frac_3: "how dominant is the single most repeated short phrase?"
  - dup_ngram_char_frac_5: it means "how much of the document is covered by any repeated long phrase?"
@@ -51,7 +51,7 @@ we do this for top_ngram_char_frac_2 to top_ngram_char_frac_4, dup_ngram_char_fr
 this document repeats a 4-word cycle about 2.5 times, so duplication is visible up to n=7 and vanishes at n=8
 
 
-### diff between 12 heauristic vs 9 n-gram.
+#### diff between 12 heauristic vs 9 n-gram.
 - 12 Phase-1a heuristics are stateless expressions
   - each one is a closed-form function of the string, expressible as a single Catalyst expression tree (length, split, regexp_count, arithmetic).
   - they compile into WholeStageCodegen: JIT'd JVM bytecode operating directly on Tungsten rows.
@@ -68,21 +68,62 @@ Without hashing you'd allocate ~44× the document's characters as strings; with 
 Because passes 1–4 never need to combine smaller pieces into bigger ones — each unit they compare is already a fixed, non-overlapping piece of text.
 
 
-**Phase 2 — fastText layer.**
+### Phase 2 — fastText layer.**
  `mapPartitions` scoring with per-partition model load; model file distribution mechanism (SparkFiles or S3 pull — match repo conventions); training script that reproduces the DCLM-Baseline classifier from public data (document every data source and step); tests with a tiny fixture model committed to the repo. Deliverable: scoring a sample partition matches single-machine fastText output exactly; throughput benchmark.
 
-### fastText - which model to use
+#### fastText - which model to use
 we'll use fasttext-oh-eli5 2.39 GB
 
 ### How to load 2.4gb model to each executor/core
 - (a) JVM mapPartitions — one copy/executor, but a fastText JVM impl (fastText4j or your own) + parity gate + Scala surface.
   
 - (b) Python + memmap — one copy/node, pure Python, ~15 lines + parity gate, no Scala.
+  - .bin contains the model and we only need the model so we need to unzip .bin
   - unzip .bin model and convert into custom model
 - (c) Python naive — 28 copies/node, budget the RAM, ship it; optimize only if it OOMs.
   - this will OOM easily.
 
-### Why JVM supports shared access?
+**Decision: JVM scorer fed by an offline model converter.** The model is
+loaded once per *executor* on the JVM heap — task slots are threads sharing
+one address space, so it's one copy per executor by construction (vs. the
+Python path's one copy per *worker process* = 28 copies ≈ 67 GB/node on an
+r6gd.8xlarge). The per-executor copy is also legible to YARN container
+accounting.
+
+Rather than parse fastText's `.bin` format on the JVM (fastText4j's mistake —
+unmaintained since 2019, open UTF-8/subword bug, not thread-safe), we split
+the work:
+- **PR-6 — offline converter (Python).** The official fastText library parses
+  the `.bin` and exports raw matrices + vocab + a JSON manifest. Format: flat
+  little-endian float32 per matrix + `manifest.json` (shapes, dtype,
+  endianness, per-file SHA-256, source-model hash, fastText args). Chosen over
+  `.npy` (JVM would need a header parser) and Arrow IPC (a library dependency
+  for a load-once-at-startup blob). Scoped to `oh-eli5` (flat softmax) only;
+  `lid.176` uses hierarchical softmax — a different inference algorithm
+  (Huffman-tree walk), deferred to Phase 2 language ID, gated by a
+  `loss == "softmax"` assert in the converter.
+   - the converted will output these:
+     - vocab.txt
+       - each line in input_matrix.f32 is a vector about a word representation.
+       - vocab.txt is a list of words corresponding to each row in input_matrix.f32
+       - nput_matrix.f32 is just raw numbers. a big grid of floats with no labels attached. Row 47,382 is some word's vector, but the file itself doesn't say which word. vocab.txt is the missing half: line i names the word that lives at row i. At inference time, scoring a document means: for each word in it, look up its row index (via vocab.txt), pull that row out of the matrix, and use the vector. Without vocab.txt, input_matrix.f32 is 5.7 million anonymous vectors — useless.
+     - labels.txt
+       - output_matrix.f32 has 2 rows. But which row is __label__hq and which is __label__cc? fastText assigns label indices internally based on training-time bookkeeping (label-encounter order, not alphabetical, not anything you can predict from outside). If row 0 happens to be __label__cc and you assumed it was __label__hq, every quality score PR-7 produces would be inverted.
+    - manifest.json
+      - JVM scala mapPartition() loads this file. 
+      - How to read the raw bytes: shape (rows, cols) and dtype/byte-order for each .f32 file
+      - How to run inference: dim, wordNgrams, bucket (needed to hash bigrams into the right range), minn/maxn (confirmed 0 for oh-eli5, so no subword hashing branch needed), label prefix.
+      - Provenance/integrity: source.sha256 traces a staged S3 artifact set back to the exact .bin it came from
+
+- **PR-7 — JVM inference (Scala).** Loads only converted artifacts
+  (`ByteBuffer.order(LITTLE_ENDIAN).asFloatBuffer()`, reshaped and
+  SHA-verified via the manifest). Never parses the `.bin`. Hashes over UTF-8
+  `byte[]` (never Java `char`), immutable shared matrices + per-thread scratch.
+  Parity gate: matches the Python oracle's committed fixtures within 1e-6,
+  including CJK/emoji.
+- **PR-8 — Spark wiring + S3 model distribution + throughput/RSS benchmark.**
+
+#### Why JVM supports shared access?
 One JVM executor is one OS process with one heap. Its task slots are threads, and threads share the process's address space by definition. So a model loaded into that heap is visible to all 7 threads at one memory address
 
 #### Process vs thread (refresher)
@@ -90,7 +131,7 @@ One JVM executor is one OS process with one heap. Its task slots are threads, an
   - thread1
   - thread2
 
-### Then Why Spark python fork a process per task, not per executor?
+#### Then Why Spark python fork a process per task, not per executor?
 Short answer: because CPython has a GIL
 
 - python uses GIL which enforces one thread at one time per process.
@@ -117,7 +158,10 @@ DCLM uses the __label__hq score
 - Positive class = the reference data (OH-2.5 + ELI5, or Wikipedia, or whichever variant is being ablated) — this is what you'd be calling __label__hq.
 - Negative class = random RefinedWeb-reproduction Common Crawl documents — this is what you'd be calling __label__cc.
 
-## Phase 3 — KenLM layer (won't do).
+### Model Converter 
+To enable model load in scala JVM, we can't use .bin 
+
+### Phase 3 — KenLM layer (won't do).
  EMR bootstrap/install docs and script; per-partition binding load; perplexity scoring column; graceful degradation (clear error, not silent nulls) when the native lib is absent; tests gated to skip cleanly where KenLM isn't installed. Deliverable: perplexity matches reference KenLM CLI output on fixtures.
 
  Won't do because DCLM papers already proved that good Heuristic and fastText achieves the same result against becnhmark done by KenLM layer.
