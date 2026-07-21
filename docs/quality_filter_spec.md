@@ -283,17 +283,39 @@ vocab + config (dim, wordNgrams, bucket, labels). Works for oh-eli5 and lid.176.
 No quantized-model support (out of scope by design).
 Gate: converted artifacts reload and reproduce get_*_matrix() bitwise.
 
-PR-7 · Phase 2b: JVM inference (Scala)
-Loads converted artifacts only (never parses Facebook binary format). UTF-8
-byte[] hashing (never Java chars); immutable shared matrices + per-thread
+PR-7 · Phase 2b: JVM inference (Scala) — quality classifier only
+- Loads converted artifacts only (never parses Facebook binary format). Scope is
+the oh-eli5 quality classifier (plain softmax): whole-word + whole-bigram
+lookups, matvec + softmax.
+- No subword/character hashing (oh-eli5 has minn=maxn=0).
+- UTF-8 byte[] hashing (never Java chars); immutable shared matrices + per-thread
 scratch (thread-safe by design); one model instance per executor.
-Gate: matches PR-5 parity fixtures within 1e-6, incl. non-ASCII docs.
+- **LID is NOT on this path** — lid.176 is hierarchical softmax, unconvertible to the
+flat-matrix format, and stays on the Python pandas_udf scorer (see PR-8). JVM
+hierarchical-softmax support is a separate, conditionally-triggered backlog item
+(see PR-8 gate), not part of PR-7.
+- Gate: q_ft_score matches PR-5 parity fixtures within 1e-6, incl. non-ASCII docs.
+
+We split PR 7 into 2 pieces:
+- PR-7a — pure inference, no Spark. Load artifacts (manifest + mmap the .f32 files), tokenize, hash (UTF-8 byte[], MurmurHash parity, bigram-into-bucket), matvec + softmax, return the hq probability for a String. 
+  - Tested entirely off-cluster against the PR-5 parity fixtures — a plain JVM unit test, no SparkSession.
+
+- PR-7b — concurrency + lifecycle. 
+  - Immutable shared matrices, per-thread scratch, one-instance-per-executor.
+  - Tested for thread-safety under real concurrent access.
 
 PR-8 · fastText Spark integration + benchmark
-Column API wiring (q_ft_score, q_lid_lang, q_lid_score); S3-pull model
-distribution to node-local disk; EMR memory-config notes; throughput benchmark
-(rows/sec/core) + worker/executor RSS measurement on pilot.
-Gate: benchmark numbers reported; memory within executor budget.
+Column API wiring: q_ft_score via the JVM scorer (PR-7); q_lid_lang / q_lid_score
+via the existing Python pandas_udf scorer (lid.176.ftz, ~917 KB — tiny, so no
+per-worker memory problem, and native C++ predict() sidesteps the hierarchical-
+softmax issue entirely). S3-pull model distribution to node-local disk; EMR
+memory-config notes; throughput benchmark (rows/sec/core) + worker/executor RSS
+measurement on pilot — measure the Python LID path here specifically.
+Gate: benchmark numbers reported; memory within executor budget. If (and only if)
+the Python LID path is a measured throughput bottleneck, open a follow-up PR to
+port LID to JVM hierarchical-softmax (Huffman-tree export + tree-walking
+inference) and benchmark it against the pandas_udf path. Until that number says
+otherwise, LID stays on Python — no speculative JVM tree work.
 
 ## Chain D: composition + filtering
 
