@@ -74,7 +74,15 @@ Because passes 1–4 never need to combine smaller pieces into bigger ones — e
 #### fastText - which model to use
 we'll use fasttext-oh-eli5 2.39 GB
 
-### How to load 2.4gb model to each executor/core
+** How to tokenize (bigram vs n=3,4,5...) to feed this model? ** 
+We follow DCLM's n=2. This library's main contribution is the orchestration, not algorithm.
+
+In addition to that, a few reasons:
+- Sparsity. DCLM trained on only ~400k documents. Each specific trigram appears far less often than each bigram, so trigram weights get fewer training examples each — noisier estimates, more overfitting to the small positive set.
+- Collision pressure. Remember wordNgrams=3 is additive: bigrams and trigrams all hash into the same fixed 2M-bucket space. A document of n words contributes ~n bigrams + ~n trigrams — roughly double the hashed features fighting over the same rows, so more unrelated features share (and corrupt) each other's weights.
+- Diminishing returns. For a linear bag-of-features classifier doing coarse quality ranking, most of the "does this read like instructional text" signal is already captured at the two-word level. The marginal signal in "explain like I'm" over "explain like" + "like I'm" is small, and it's being bought at the sparsity and collision costs above.
+
+#### How to load 2.4gb model to each executor/core
 - (a) JVM mapPartitions — one copy/executor, but a fastText JVM impl (fastText4j or your own) + parity gate + Scala surface.
   
 - (b) Python + memmap — one copy/node, pure Python, ~15 lines + parity gate, no Scala.
