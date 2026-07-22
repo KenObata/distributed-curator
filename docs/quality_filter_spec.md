@@ -237,7 +237,7 @@ Read more...
 - Process heap (what fastText does today) 
   - allocations are private anonymous memory (malloc)
 - mmap sharing (what would fix it)
-  -  2.4 GB, once per node
+  -  2.4 GB, once per node (executor in scala)
 
 # Previous Studies
 IBM Data Prep Kit (Granite models) — open source, and the orchestration pattern is the lesson. DPK's modules were tested producing pretraining datasets for the Granite models, include quality/dedup/PII filter transforms, and are built on common frameworks for Spark and Ray. But look at how: each transform is a Python class over parquet chunks, and Ray or Spark wrappers are provided to readily scale out the Python implementations, with multi-step pipelines orchestrated by Kubeflow Pipelines. Their stated design goal was that users shouldn't need deep knowledge of Kubernetes, Ray, or Spark.
@@ -305,7 +305,16 @@ hierarchical-softmax support is a separate, conditionally-triggered backlog item
 - Gate: q_ft_score matches PR-5 parity fixtures within 1e-6, incl. non-ASCII docs.
 
 We split PR 7 into 2 pieces:
-- PR-7a — pure inference, no Spark. Load artifacts (manifest + mmap the .f32 files), tokenize, hash (UTF-8 byte[], MurmurHash parity, bigram-into-bucket), matvec + softmax, return the hq probability for a String. 
+- PR-7a — pure inference, no Spark. 
+  - Load artifacts (manifest + mmap share the .f32 files per executor, it's executor, not per node because threads in JVM share memory per executor, not EC2 instance nodes.)
+  - tokenize (bigram decided to follow DCLM)
+  - hash: UTF-8 byte[] (never Java chars), FNV-1a word hash (seed 2166136261,
+    ×16777619 — matches fastText's Dictionary::hash), bigram-into-bucket via
+    the rolling combine (h = h*116049371 + next_hash, mod bucket, + n_words
+    offset).
+  - matvec (reminder: each row in the fasttext model converted represents one word and we have vocab.txt to do the mapping of row to word)
+  - softmax (not hierarchial softmax because this is binary classification at this stage, hierarchial is for the LID)
+  - return the hq probability for a String. 
   - Tested entirely off-cluster against the PR-5 parity fixtures — a plain JVM unit test, no SparkSession.
 
 - PR-7b — concurrency + lifecycle. 
