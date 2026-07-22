@@ -308,6 +308,10 @@ We split PR 7 into 2 pieces:
 - PR-7a — pure inference, no Spark. 
   - Load artifacts (manifest + mmap share the .f32 files per executor, it's executor, not per node because threads in JVM share memory per executor, not EC2 instance nodes.)
   - tokenize (bigram decided to follow DCLM)
+    - method: byte match on 7 white spaces to be consistent with what fasttext was trained on, not what we think a white space should be.
+    - ex) 日本語U+3000テスト in fasttext is one word because that's how fasttext is trained.
+    - in byte, U+3000 = UTF-8 bytes (E3 80 80)
+    - in heauristic, we split these into 日本語 as one word, テスト as second word.
   - hash: UTF-8 byte[] (never Java chars), FNV-1a word hash (seed 2166136261,
     ×16777619 — matches fastText's Dictionary::hash), bigram-into-bucket via
     the rolling combine (h = h*116049371 + next_hash, mod bucket, + n_words
