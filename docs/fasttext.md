@@ -72,10 +72,11 @@ worker per concurrent task slot, so the model is duplicated per slot:
 | Per executor (4 task slots) | ~9.6 GB | ~3.7 MB |
 | Per r6gd.8xlarge node (28 slots) | **~67 GB** | ~26 MB |
 
-The production scorer (Phase 2b) loads the model once per **executor** on the
-JVM heap, where task slots are threads sharing one address space — one copy
-by construction, and legible to YARN's container accounting. Use the Python
-path for fixtures, correctness work, and small runs.
+The production scorer (Phase 2b) memory-maps the converted `.f32` matrices
+(`FileChannel.map`, read-only) once per **executor**. Task slots are threads
+sharing one address space, so it is one mapping per executor by construction.
+The input matrix (~2.31 GB) exceeds Java's ~2 GiB single-mapping limit, so it
+is mapped as row-aligned 1 GiB segments
 
 ## Python environment caveat
 

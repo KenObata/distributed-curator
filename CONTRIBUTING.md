@@ -7,8 +7,12 @@ Thanks for your interest in contributing! This guide covers how to set up your d
 ### Prerequisites
 
 - Python 3.9+
-- Java 17 (for Spark and Scala compilation)
-- sbt (for building the Scala UDF JAR)
+- Java 17 or 21 (for Spark and Scala compilation). **Java 23+ will not work**: it removed
+  `Subject.getSubject`, which Hadoop calls when Spark starts, so every Spark test fails with
+  `UnsupportedOperationException: getSubject is not supported`.
+- sbt (for building the Scala UDF JAR). Note: Homebrew's `sbt` pulls in Homebrew's latest
+  `openjdk` (currently 25) and uses it whenever `JAVA_HOME` is unset, so set `JAVA_HOME`
+  explicitly (see Setup step 2).
 - A C compiler (gcc or clang, for Cython extension)
 
 ### Setup
@@ -26,9 +30,13 @@ pip install -e ".[dev]"
 - build, twine for publishing
 - pytest ruff for pre-commit
 
-2. Build the Scala UDF JAR:
+2. Point sbt at a supported JDK, then build the Scala UDF JAR:
 
 ```bash
+# macOS; add to ~/.zshrc so it persists. Use -v 17 if that's what you have.
+export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+
+sbt about   # banner should read "welcome to sbt ... (... Java 21.x)", not Java 23+
 sbt assembly
 cp target/scala-2.12/minhash-udf-assembly-0.1.jar distributed_curator/jars/
 ```
@@ -96,6 +104,10 @@ For sample terraform setup, see [EMR Deployment](docs/emr-deployment.md)
 sbt test
 ```
 
+If most Spark suites fail with `getSubject is not supported`, sbt is running on Java 23+.
+Check the JDK in the `welcome to sbt` banner and set `JAVA_HOME` as in Setup step 2.
+(The Python venv has no effect on which JDK sbt uses.)
+
 ### All checks (same as pre-commit)
 
 ```bash
@@ -117,7 +129,18 @@ Follow semantic versioning: patch (0.1.x) for bug fixes, minor (0.x.0) for new f
 ## Code Style
 
 - **Python**: ruff handles lint and formatting. Config is in `pyproject.toml`. Line length is 120 characters.
-- **Scala**: scalafmt handles formatting. Config is in `.scalafmt.conf`.
+- **Scala**: scalafmt handles formatting. Config is in `.scalafmt.conf`. scalafmt is an sbt
+  plugin (`project/plugins.sbt`), not a standalone CLI, so run it through sbt. A bare
+  `scalafmt` in your shell will say "command not found", and that's expected.
+
+  If the pre-commit hook fails with `scalafmt: N files must be formatted`:
+
+  ```bash
+  sbt scalafmtAll        # rewrites files in place, using .scalafmt.conf
+  sbt scalafmtCheckAll   # read-only check (what the hook runs); confirm it's clean
+  ```
+
+  Then `git add` the reformatted files and commit again.
 - **Test files**: use `_test.py` suffix (e.g., `spark_utils_test.py`), not `test_` prefix.
 
 The pre-commit hook runs all style checks automatically. To bypass in rare cases: `git commit --no-verify`.
