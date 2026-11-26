@@ -2,7 +2,7 @@ package fasttext.cpp_mirror
 
 import org.eclipse.collections.impl.list.mutable.primitive.IntArrayList
 
-import fasttext.FastTextModelLoader.RowMajorFloatMatrix
+import fasttext.RowMajorFloatMatrix
 
 /**
  * Pure mirror of fastText's `Model` class (src/model.cc) — the part that runs before the loss function. Two
