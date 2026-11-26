@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets
 
 import FastTextModelLoader.Loaded
 import fasttext.cpp_mirror.{FastTextDictionary, FastTextModel, FastTextSoftmaxLoss}
+import org.eclipse.collections.impl.list.mutable.primitive.IntArrayList
 
 /**
  * PR-7a's own logic: wires the C++ mirrors together and picks one label's probability out of the result. Nothing in
@@ -28,6 +29,9 @@ import fasttext.cpp_mirror.{FastTextDictionary, FastTextModel, FastTextSoftmaxLo
  *
  * Concurrency contract for PR-7b: this class is immutable; all mutable scratch (hidden vector, id list, logits) is
  * method-local per score() call. Share one instance per executor; call score() from any thread.
+ *
+ * @param positiveLabel
+ *   label to score, e.g. "__label__hq" (oh-eli5: "__label__hq" or "__label__cc").
  */
 final class FastTextScorer(model: Loaded, positiveLabel: String) {
 
@@ -42,7 +46,7 @@ final class FastTextScorer(model: Loaded, positiveLabel: String) {
   )
 
   private val positiveIndex: Int = {
-    val idx = model.labels.indexOf(positiveLabel)
+    val idx: Int = model.labels.indexOf(positiveLabel)
     require(idx >= 0, s"label $positiveLabel not in labels.txt: ${model.labels.mkString(", ")}")
     idx
   }
@@ -61,21 +65,26 @@ final class FastTextScorer(model: Loaded, positiveLabel: String) {
    * an oracle that replaces newlines with spaces before predict(). If PR-5 preprocessed differently, mirror it here.
    */
   def score(text: String): Option[Double] = {
-    val ids = dictionary.collectInputIds(text.getBytes(StandardCharsets.UTF_8))
+    // from Eclipse Collections
+    val ids: IntArrayList = dictionary.collectInputIds(text.getBytes(StandardCharsets.UTF_8))
     if (ids.isEmpty) return None
 
-    val logits = FastTextModel.forward(
+    /* forward returns:
+      ex) logits = [- 1.2, 2.3]
+     */
+    val logits: Array[Float] = FastTextModel.forward(
       model.inputMatrix,
       model.outputMatrix,
       ids,
       config.dim,
       config.nLabels
     )
-    /* FastTextModelLoader/validateSupported() already checks len(probs) == 2
+    /* FastTextModelLoader/validateSupported() already checks len(softmaxOutput) == 2
     ex) good docs = [0.03, 0.97]
      */
-    val probs: Array[Float] = FastTextSoftmaxLoss.softmax(logits)
-    Some(probs(positiveIndex).toDouble)
+    val softmaxOutput: Array[Float]  = FastTextSoftmaxLoss.softmax(logits)
+    val qualityScore: Option[Double] = Some(softmaxOutput(positiveIndex).toDouble)
+    qualityScore
   }
 
 }
