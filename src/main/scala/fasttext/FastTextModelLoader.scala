@@ -134,6 +134,9 @@ object FastTextModelLoader {
         "PR-7a scope (oh-eli5 has none)"
     )
     require(c.wordNgrams >= 1, "wordNgrams must be >= 1")
+
+    /* check len(softmax output) == 2 */
+    require(c.nLabels == 2, s"n_labels=${c.nLabels} != 2")
   }
 
   private def validateMatrixSpec(spec: JsonNode, name: String): Unit = {

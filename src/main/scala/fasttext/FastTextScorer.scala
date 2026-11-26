@@ -71,7 +71,10 @@ final class FastTextScorer(model: Loaded, positiveLabel: String) {
       config.dim,
       config.nLabels
     )
-    val probs = FastTextSoftmaxLoss.softmax(logits)
+    /* FastTextModelLoader/validateSupported() already checks len(probs) == 2
+    ex) good docs = [0.03, 0.97]
+     */
+    val probs: Array[Float] = FastTextSoftmaxLoss.softmax(logits)
     Some(probs(positiveIndex).toDouble)
   }
 
