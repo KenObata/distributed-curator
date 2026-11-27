@@ -38,9 +38,9 @@ final class FastTextScorer(model: Loaded, positiveLabel: String) {
   private val config = model.config
 
   private val dictionary = new FastTextDictionary(
-    model.wordIds,
+    model.word2Id,
     config.labelPrefix,
-    config.wordNgrams,
+    config.wordNgrams, // manifest.json defines N grams such as 2
     config.nWords,
     config.bucket
   )
@@ -65,7 +65,11 @@ final class FastTextScorer(model: Loaded, positiveLabel: String) {
    * an oracle that replaces newlines with spaces before predict(). If PR-5 preprocessed differently, mirror it here.
    */
   def score(text: String): Option[Double] = {
-    // from Eclipse Collections
+    // from Eclipse Collections. row IDs of fasttext input matrix.
+    // ex) text = "not good"
+    // tokens = ['not','good', '</s>','not good','good </s>']
+    // -> ids = [id(not), id(good), id(</s>), 4368801, 5585756]
+    //            vocab rows from vocab.txt
     val ids: IntArrayList = dictionary.collectInputIds(text.getBytes(StandardCharsets.UTF_8))
     if (ids.isEmpty) return None
 

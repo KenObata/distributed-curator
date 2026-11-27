@@ -63,7 +63,7 @@ object FastTextModelLoader {
     val config: Config,
     val inputMatrix: RowMajorFloatMatrix,
     val outputMatrix: RowMajorFloatMatrix,
-    val wordIds: ObjectIntHashMap[ByteKey],
+    val word2Id: ObjectIntHashMap[ByteKey],
     val labels: Array[String]
   )
 
@@ -100,7 +100,7 @@ object FastTextModelLoader {
     require(outputMatrix.rows == config.nLabels, "output rows != n_labels")
     require(inputMatrix.cols == config.dim && outputMatrix.cols == config.dim, "matrix cols != dim")
 
-    val wordIds = loadVocab(
+    val word2Id = loadVocab(
       dir.resolve(manifest.get("vocab").get("file").asText()),
       config.nWords
     )
@@ -109,7 +109,7 @@ object FastTextModelLoader {
       config.nLabels
     ).map(new String(_, StandardCharsets.UTF_8))
 
-    new Loaded(config, inputMatrix, outputMatrix, wordIds, labels)
+    new Loaded(config, inputMatrix, outputMatrix, word2Id, labels)
   }
 
   private def readConfig(node: JsonNode): Config = Config(

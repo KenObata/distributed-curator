@@ -24,7 +24,7 @@ import fasttext.FastTextModelLoader.ByteKey
  * sharing contract).
  */
 final class FastTextDictionary(
-  wordIds: ObjectIntHashMap[ByteKey],
+  word2Id: ObjectIntHashMap[ByteKey],
   labelPrefix: String,
   wordNgrams: Int,
   nWords: Int,
@@ -43,6 +43,12 @@ final class FastTextDictionary(
    *
    * EOS ("</s>") is a real vocab entry: it gets an id and a hash like any word, so the final bigram is (last_word,
    * </s>).
+   *
+   * Args:
+   *   - word2Id: dictionary from vocab.txt {"not": 1024}
+   *   - wordNgrams: defined in manifest.json ex) 2
+   *   - nWords: how many words are in the dictionary, which is the same as the number of lines in vocab.txt
+   *   - bucket: how many rows do we allocate in the fasttext matrix for bigram, defined in manifest.json
    *
    * Return: IntArrayList
    *   - ArrayList because The size isn't known upfront. It has to grow as you scan the document
@@ -84,7 +90,7 @@ final class FastTextDictionary(
     wordHashes: IntArrayList
   ): Unit = {
     val token = java.util.Arrays.copyOfRange(bytes, start, end)
-    val id    = wordIds.getIfAbsent(new ByteKey(token), -1)
+    val id    = word2Id.getIfAbsent(new ByteKey(token), -1)
     if (id >= 0) {
       ids.add(id)
       wordHashes.add(fnv1aHash(token))
