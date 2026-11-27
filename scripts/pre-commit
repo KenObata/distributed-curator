@@ -227,7 +227,7 @@ if $HAS_SCALA; then
     if command -v sbt &>/dev/null; then
         printf "  Running scalafmt check ...\n"
         # scalafmtCheckAll: checks based on .scalafmt.conf
-        run_step "scalafmt" sbt -batch -no-colors "scalafmtCheckAll"
+        run_step "scalafmt" sbt -batch -no-colors "scalafixAll" "scalafmtCheckAll"
     else
         printf "  ${SKIP} sbt not found — skipping scalafmt\n"
     fi
