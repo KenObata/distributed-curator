@@ -76,7 +76,13 @@ The production scorer (Phase 2b) memory-maps the converted `.f32` matrices
 (`FileChannel.map`, read-only) once per **executor**. Task slots are threads
 sharing one address space, so it is one mapping per executor by construction.
 The input matrix (~2.31 GB) exceeds Java's ~2 GiB single-mapping limit, so it
-is mapped as row-aligned 1 GiB segments
+is mapped as row-aligned 1 GiB segments.
+
+The mapping is **off-heap**: it does not count against `spark.executor.memory`,
+but the pages count toward the executor process's resident memory once touched,
+and YARN enforces its container limit on that. Size the ~2.3 GB model into
+`spark.executor.memoryOverhead`, not the heap, or YARN may kill the container
+under load. Use the Python path for fixtures, correctness work, and small runs.
 
 ## Python environment caveat
 

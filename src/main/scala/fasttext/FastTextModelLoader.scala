@@ -1,19 +1,7 @@
 package fasttext
-// NOTE: adjust package to match the repo's existing Scala package layout.
 
-/*
-FastTextModelLoader.scala — artifact loading.
-- The non-obvious piece: oh-eli5's input matrix is 2.31 GB, which exceeds Java's 2 GiB single-MappedByteBuffer cap,
-so the matrix is mapped as row-aligned 1 GiB segments with index arithmetic on top.
-- Reads are absolute-indexed (get(base + i), no buffer position mutation),
-  which is what makes one instance shareable across threads. the property 7b will rely on.
-
- */
-
-import java.nio.channels.FileChannel
 import java.nio.charset.StandardCharsets
-import java.nio.file.{Files, Path, Paths, StandardOpenOption}
-import java.nio.{ByteBuffer, ByteOrder, FloatBuffer}
+import java.nio.file.{Files, Path, Paths}
 import java.util.{Arrays => JArrays}
 
 import com.fasterxml.jackson.databind.{JsonNode, ObjectMapper}

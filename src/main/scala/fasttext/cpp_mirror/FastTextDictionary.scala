@@ -1,7 +1,10 @@
 /*
 This is a util file for FastTextScorer.scala
- and this is a mirror from fasttext's C++ mirror.cpp
- so the logic is copied form them. But written in scala.
+ and this is a mirror from fasttext's C++ src/dictionary.cc
+ so the logic is copied from it. But written in scala.
+Hash function:
+ - FNV-1a (Fowler–Noll–Vo, variant "a") is a simple, fast, non-cryptographic hash function.
+ - This is to mirror fastText's C++ Dictionary::hash.
  */
 package fasttext.cpp_mirror
 

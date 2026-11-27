@@ -1,10 +1,7 @@
 package fasttext
 /*
 Goal of this file:
- - The inference core, with every parity-critical line annotated with the C++ it mirrors.
-Hash function:
- - FNV-1a (Fowler–Noll–Vo, variant "a") is a simple, fast, non-cryptographic hash function.
- - This is to mirror fastText's C++ implementation
+ - The inference core: wires the cpp_mirror collaborators together and selects one label's probability.
  */
 
 import java.nio.charset.StandardCharsets
@@ -97,7 +94,7 @@ object FastTextScorer {
 
   /**
    * Convenience: load artifacts and build a scorer for __label__hq. reason why only need __label__hq is because if we
-   * now __label__hq, we can derive __label__cc as complement
+   * know __label__hq, we can derive __label__cc as complement
    */
   def forQualityModel(artifactDir: String): FastTextScorer =
     new FastTextScorer(FastTextModelLoader.load(artifactDir), "__label__hq")
