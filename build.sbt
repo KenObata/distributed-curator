@@ -13,3 +13,8 @@ libraryDependencies ++= Seq(
   "org.eclipse.collections" % "eclipse-collections" % "11.1.0",
   "org.eclipse.collections" % "eclipse-collections-api" % "11.1.0"
 )
+
+// for import lint, sbt-scalafix
+semanticdbEnabled := true
+semanticdbVersion := scalafixSemanticdb.revision
+scalacOptions += "-Ywarn-unused"
