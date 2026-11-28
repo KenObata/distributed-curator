@@ -30,7 +30,7 @@ import org.eclipse.collections.impl.list.mutable.primitive.IntArrayList
  * @param positiveLabel
  *   label to score, e.g. "__label__hq" (oh-eli5: "__label__hq" or "__label__cc").
  */
-final class FastTextScorer(model: Loaded, positiveLabel: String) {
+final class FastTextScorer(model: Loaded, positiveLabel: String, normalizeFn: String => String = identity) {
 
   private val config = model.config
 
@@ -67,7 +67,8 @@ final class FastTextScorer(model: Loaded, positiveLabel: String) {
     // tokens = ['not','good', '</s>','not good','good </s>']
     // -> ids = [id(not), id(good), id(</s>), 4368801, 5585756]
     //            vocab rows from vocab.txt
-    val ids: IntArrayList = dictionary.collectInputIds(text.getBytes(StandardCharsets.UTF_8))
+    val normalizedText: String = normalizeFn(text)
+    val ids: IntArrayList      = dictionary.collectInputIds(normalizedText.getBytes(StandardCharsets.UTF_8))
     if (ids.isEmpty) return None
 
     /* forward returns:
@@ -97,6 +98,6 @@ object FastTextScorer {
    * know __label__hq, we can derive __label__cc as complement
    */
   def forQualityModel(artifactDir: String): FastTextScorer =
-    new FastTextScorer(FastTextModelLoader.load(artifactDir), "__label__hq")
+    new FastTextScorer(FastTextModelLoader.load(artifactDir), "__label__hq", TextNormalizer.normalize)
 
 }

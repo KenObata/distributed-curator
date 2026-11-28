@@ -83,3 +83,8 @@ distributed_curator/jars/*.jar
 distributed_curator/quality/kernel/heuristic_kernel.c
 distributed_curator/quality/kernel/heuristic_kernel.h
 distributed_curator/quality/kernel/heuristic_kernel.so
+
+artifacts/
+dist/
+replacements.txt
+.jvmopts
